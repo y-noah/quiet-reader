@@ -1,0 +1,38 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'app.quietreader'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'app.quietreader'
+        minSdk 26
+        targetSdk 35
+        versionCode 24
+        versionName '0.3.13'
+        testInstrumentationRunner project.hasProperty('weiboReadingProbeUi') ? 'app.quietreader.WeiboReadingProbeInstrumentation' : project.hasProperty('navigationRecoveryUi') ? 'app.quietreader.NavigationRecoveryInstrumentation' : project.hasProperty('identityUi') ? 'app.quietreader.IdentityInstrumentation' : project.hasProperty('tiebaDomProbeUi') ? 'app.quietreader.TiebaDomProbeInstrumentation' : project.hasProperty('sessionReuseUi') ? 'app.quietreader.SessionReuseInstrumentation' : project.hasProperty('dynamicReadingUi') ? 'app.quietreader.DynamicReadingInstrumentation' : project.hasProperty('latencyUi') ? 'app.quietreader.LatencyInstrumentation' : project.hasProperty('exploratoryUi') ? 'app.quietreader.ExploratoryInstrumentation' : project.hasProperty('releaseUi') ? 'app.quietreader.ReleaseInstrumentation' : 'app.quietreader.SmokeInstrumentation'
+    }
+    signingConfigs {
+        personal {
+            if (System.getenv('QR_STORE_PASSWORD')) {
+                storeFile rootProject.file('.tools/signing/quiet-reader.jks')
+                storePassword System.getenv('QR_STORE_PASSWORD')
+                keyAlias 'quiet-reader'
+                keyPassword System.getenv('QR_STORE_PASSWORD')
+            }
+        }
+    }
+    buildTypes { release { minifyEnabled true; signingConfig signingConfigs.personal; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro' } }
+    compileOptions { coreLibraryDesugaringEnabled true; sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    testOptions { unitTests.returnDefaultValues = true }
+}
+dependencies {
+    implementation 'org.jsoup:jsoup:1.23.2'
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs_nio:2.1.5'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}
+tasks.register('liveProbe', JavaExec) {
+    dependsOn 'compileDebugUnitTestJavaWithJavac'
+    classpath = files("$buildDir/intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes", "$buildDir/intermediates/javac/debug/compileDebugJavaWithJavac/classes") + configurations.debugUnitTestRuntimeClasspath
+    mainClass = 'app.quietreader.LiveProbe'
+    if (project.hasProperty('probeUrl')) args project.property('probeUrl')
+}

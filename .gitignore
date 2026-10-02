@@ -1,0 +1,15 @@
+.tools/
+.gradle/
+**/build/
+local.properties
+*.jks
+*.keystore
+artifacts/
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+password.xml
+.codex/
+.codex-remote-attachments/
