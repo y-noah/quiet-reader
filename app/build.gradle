@@ -6,8 +6,8 @@ android {
         applicationId 'app.quietreader'
         minSdk 26
         targetSdk 35
-        versionCode 35
-        versionName '0.3.24'
+        versionCode 36
+        versionName '0.3.25'
         testInstrumentationRunner project.hasProperty('aggregateUi') ? 'app.quietreader.AggregateInstrumentation' : project.hasProperty('weiboReadingProbeUi') ? 'app.quietreader.WeiboReadingProbeInstrumentation' : project.hasProperty('navigationRecoveryUi') ? 'app.quietreader.NavigationRecoveryInstrumentation' : project.hasProperty('identityUi') ? 'app.quietreader.IdentityInstrumentation' : project.hasProperty('tiebaDomProbeUi') ? 'app.quietreader.TiebaDomProbeInstrumentation' : project.hasProperty('sessionReuseUi') ? 'app.quietreader.SessionReuseInstrumentation' : project.hasProperty('dynamicReadingUi') ? 'app.quietreader.DynamicReadingInstrumentation' : project.hasProperty('latencyUi') ? 'app.quietreader.LatencyInstrumentation' : project.hasProperty('exploratoryUi') ? 'app.quietreader.ExploratoryInstrumentation' : project.hasProperty('releaseUi') ? 'app.quietreader.ReleaseInstrumentation' : 'app.quietreader.SmokeInstrumentation'
     }
     signingConfigs {
@@ -32,6 +32,9 @@ dependencies {
 }
 if (project.hasProperty('aggregateReadingUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.AggregateReadingInstrumentation'
 if (project.hasProperty('navigationImageUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.NavigationImageInstrumentation'
+if (project.hasProperty('userJourneyRepairUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.UserJourneyRepairInstrumentation'
+if (project.hasProperty('answerPagingUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.AnswerPagingInstrumentation'
+if (project.hasProperty('liveReadingRepairUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.LiveReadingRepairInstrumentation'
 tasks.register('liveProbe', JavaExec) {
     dependsOn 'compileDebugUnitTestJavaWithJavac'
     classpath = files("$buildDir/intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes", "$buildDir/intermediates/javac/debug/compileDebugJavaWithJavac/classes") + configurations.debugUnitTestRuntimeClasspath

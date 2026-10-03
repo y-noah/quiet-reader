@@ -7,8 +7,8 @@ import static app.quietreader.Models.*;
 
 public class AdditionalSourcesTest {
     @Test public void aggregateAddsOneEntryAndKeepsSixTabs(){
-        assertEquals(13,Source.aggregateSources().length);assertEquals(13,new HashSet<>(Arrays.asList(Source.aggregateSources())).size());
-        assertEquals(7,Source.navigationOrder().length);assertEquals(Source.AGGREGATE,Source.navigationOrder()[0]);
+        assertEquals(12,Source.aggregateSources().length);assertEquals(12,new HashSet<>(Arrays.asList(Source.aggregateSources())).size());
+        assertEquals(6,Source.navigationOrder().length);assertEquals(Source.AGGREGATE,Source.navigationOrder()[0]);
         assertEquals(Source.ZHIHU,Source.navigationOrder()[1]);assertFalse(Source.AGGREGATE.readable());
         for(Source source:Source.aggregateSources())assertTrue(source.readable());assertFalse(Source.TIEBA.readable());
     }

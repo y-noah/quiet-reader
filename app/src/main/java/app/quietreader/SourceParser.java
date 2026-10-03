@@ -275,6 +275,7 @@ public final class SourceParser {
         }
         if(result.filteredVideos>0)result.notice=(result.notice.isEmpty()?"":result.notice+" ")+VideoPolicy.filteredNotice(result.filteredVideos);
         if(!result.hasContent()&&result.related.isEmpty()&&!hasVideo&&result.filteredVideos==0) result.notice="尚未取得可阅读正文，可能需要登录、页面尚未加载或此类型暂不支持。";
+        if(source==Source.DOUBAN&&!result.hasContent()&&(body.contains("你没有权限访问这个页面")||body.contains("请登录后重试"))){result.loginRequired=true;result.notice="豆瓣要求登录或当前账号没有访问权限。请在来源页确认后重新读取。";}
         return result;
     }
     private static String sectionId(Source source,Element root){

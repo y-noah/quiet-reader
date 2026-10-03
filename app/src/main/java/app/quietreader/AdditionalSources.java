@@ -14,7 +14,7 @@ final class AdditionalSources {
         if(source==Source.DOUBAN){
             JSONArray items=new JSONObject(raw).getJSONArray("items");
             for(int n=0;n<items.length();n++){JSONObject item=items.getJSONObject(n);String id=item.optString("id");
-                if(item.optBoolean("is_ad")||!item.optBoolean("is_public",true)||!id.matches("[1-9]\\d*"))continue;
+                if(item.optBoolean("is_ad")||!item.optBoolean("is_public",true)||!id.matches("[1-9]\\d*")||!item.optString("type","gallery_topic").equals("gallery_topic"))continue;
                 add(out,source,item.optString("title",item.optString("name")),"https://www.douban.com/gallery/topic/"+id+"/",item.optString("card_subtitle"),VideoPolicy.metadata(item));}
         }else if(source==Source.JUEJIN){
             JSONObject response=new JSONObject(raw);if(response.optInt("err_no",-1)!=0)throw new IllegalStateException("掘金未返回热榜");
@@ -66,7 +66,8 @@ final class AdditionalSources {
             JSONObject author=target.optJSONObject("author");
             doc.related.add(new Item(Source.DOUBAN,title.length()>160?title.substring(0,160)+"…":title,url,author==null?"":author.optString("name")));
         }
-        doc.notice="此处是话题当前返回的首批热门图文，不是全部讨论；点击条目阅读。部分原帖可能需要在来源页登录。";
+        doc.notice=doc.related.isEmpty()?"这个话题当前未返回可阅读的公开图文。可重试或打开来源页确认；不代表话题没有讨论。":"此处是话题当前返回的首批热门图文，不是全部讨论；点击条目阅读。部分原帖可能需要在来源页登录。";
+        doc.sourceUnavailable=doc.related.isEmpty();
         return doc;
     }
 }

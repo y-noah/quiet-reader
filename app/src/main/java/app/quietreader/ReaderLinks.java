@@ -23,7 +23,7 @@ public final class ReaderLinks {
                 case CLS: pattern="/(?:detail|share/article)/\\d+/?";break;
                 case GEEKPARK: pattern="/news/\\d+/?";break;
                 case GUOKR: pattern="/article/\\d+/?";break;
-                case DOUBAN: pattern="/(?:gallery/topic|topic|note|review|people/[^/]+/status)/\\d+/?";break;
+                case DOUBAN: pattern="/(?:gallery/topic|group/topic|topic|note|review|people/[^/]+/status)/\\d+/?";break;
                 case ITHOME: pattern="/(?:\\d+/\\d+/\\d+|html/\\d+)\\.htm";break;
                 case IFANR: pattern="/(?:app/)?\\d+/?";break;
                 case JUEJIN: pattern="/post/\\d+/?";break;

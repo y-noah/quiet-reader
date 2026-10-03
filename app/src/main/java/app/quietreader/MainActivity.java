@@ -45,7 +45,7 @@ public final class MainActivity extends Activity {
     private final NavigationScroll navigationScroll=new NavigationScroll();
     private boolean restoringBoard;
     private ScrollView scroll;
-    private Source selected=Source.ZHIHU;
+    private Source selected=Source.AGGREGATE;
     private int generation=0, font=19;
     private Item current;
     private Document reading;
@@ -75,7 +75,7 @@ public final class MainActivity extends Activity {
         // A new launch opens the first tab; rotation/settings recreation restores current state below.
         try { saved=Models.fromJson(new JSONArray(getPreferences(0).getString("saved","[]"))); } catch(Exception ignored) {}
         if(state!=null) {
-            try { selected=Source.valueOf(state.getString("source",Source.ZHIHU.name())); } catch(Exception ignored) {}
+            try { selected=Source.valueOf(state.getString("source",Source.AGGREGATE.name())); } catch(Exception ignored) {}
             Bundle boards=state.getBundle("boardMarks");
             if(boards!=null)for(Source source:Source.values()){
                 Bundle value=boards.getBundle(source.name());if(value==null)continue;
@@ -83,7 +83,7 @@ public final class MainActivity extends Activity {
                 mark.position=value.getInt("position");mark.offset=value.getInt("offset");boardMarks.put(source,mark);
             }
         }
-        if(!selected.navigable())selected=Source.ZHIHU;
+        if(!selected.navigable())selected=Source.AGGREGATE;
         if(state!=null) {
             savedPage=false; // Legacy saved links stay on disk, but no longer have an app entry point.
             try {
@@ -347,7 +347,7 @@ public final class MainActivity extends Activity {
             new AlertDialog.Builder(this).setTitle("移除收藏？").setMessage(item.title).setNegativeButton("取消",null).setPositiveButton("移除",(dialog,which)->{saved.removeIf(entry->entry.url.equals(item.url));persistSaved();bookmarks();}).show();return true;
         });
     }
-    private void aggregateInfo(){new AlertDialog.Builder(this).setTitle("13个平台 · 来源与排序").setMessage(aggregateDetail).setPositiveButton("知道了",null).show();}
+    private void aggregateInfo(){new AlertDialog.Builder(this).setTitle(Source.aggregateSources().length+"个平台 · 来源与排序").setMessage(aggregateDetail).setPositiveButton("知道了",null).show();}
     private void aggregateLogin(){Source[] sources=Source.aggregateSources();new AlertDialog.Builder(this).setTitle("选择来源 / 登录").setItems(Arrays.stream(sources).map(s->s.label).toArray(String[]::new),(d,n)->{Source s=sources[n];login(new Item(s,s.label,s.login,""));}).show();}
     private void openAggregate(Item item){
         AggregateRanker.Entry entry=aggregateEntries.get(item.url);
@@ -428,6 +428,7 @@ public final class MainActivity extends Activity {
                                 open(new Item(Source.WEIBO,"微博原帖",parts.get(n).continuationUrl,"来源全文入口"),true);
                         }catch(Exception ignored){}
                     } else if(dest.equals(ReaderHtml.ACTION+"more"))loadMore();
+                    else if(dest.equals(ReaderHtml.ACTION+"login"))login(current);
                     else if(dest.equals(readerPageUrl))return false;
                     else if(dest.equals(doc.url))login(current);
                     else if(dest.equals(doc.nextUrl)&&UrlPolicy.sameThread(current.source,doc.url,dest))open(new Item(current.source,doc.title,dest,"下一页"),true);
@@ -464,8 +465,9 @@ public final class MainActivity extends Activity {
             content.addView(text("选择一篇内容继续阅读",15,MUTED)); space(content,16);
             for(Item item:repo.visibleItems(doc.related)) card(item,0);
         }
+        if(doc.sourceUnavailable)content.addView(button("重试",()->open(current,false)));
         if(doc.filteredVideos>0&&!doc.hasContent()&&doc.related.isEmpty())content.addView(button("返回图文列表",this::goBack));
-        else content.addView(button("来源页 / 登录后重新读取",()->login(current)));
+        if(doc.sourceUnavailable||doc.filteredVideos==0||doc.hasContent()||!doc.related.isEmpty())content.addView(button("来源页 / 登录后重新读取",()->login(current)));
     }
     private WebResourceResponse imageResponse(String url,String referer)throws Exception {
         if(SourceParser.isImagePlaceholder(url))throw new java.io.IOException("Placeholder is not article content");
@@ -571,11 +573,13 @@ public final class MainActivity extends Activity {
     /** Read only our escaped, CSP-protected document. No remote scripts or native bridge are enabled. */
     private void appendAtReadingPosition(Document doc,int request,Set<String> previousAnswerIds){
         if(request!=generation)return;
-        atReadingPosition(()->{
-            loadingMore=false;morePaused=!AnswerStream.hasNewAnswers(doc,previousAnswerIds);reading=doc;repo.cacheArticle(doc);
-            if(readerStatus!=null)readerStatus.setText(doc.moreStatus.equals("login")?"知乎要求登录。请用右上角菜单「来源 / 登录」后重新读取。":doc.moreStatus.equals("unavailable")?doc.notice:morePaused?"本次没有新回答，不能据此确认已读完。可点底部按钮重试。":"已追加回答 · 共 "+AnswerStream.answers(doc)+" 条");
+        Runnable commit=()->{
+            loadingMore=false;morePaused=!AnswerStream.hasNewAnswers(doc,previousAnswerIds)||!doc.moreStatus.equals("loaded");reading=doc;repo.cacheArticle(doc);
+            if(readerStatus!=null)readerStatus.setText(doc.moreStatus.equals("login")?"知乎要求登录。请用右上角菜单「来源 / 登录」后重新读取。":!doc.moreStatus.equals("loaded")?doc.notice:morePaused?"本次没有新回答，不能据此确认已读完。可点底部按钮重试。":"已追加回答 · 共 "+AnswerStream.answers(doc)+" 条");
             reloadReader(doc);
-        },()->{loadingMore=false;morePaused=true;if(readerStatus!=null)readerStatus.setText("阅读布局已改变，已读内容保留。可点「加载下一批回答」重试。");});
+            toast(doc.moreStatus.equals("login")?"知乎要求登录，未能加载下一批；已读回答保留":morePaused?doc.notice:"已追加 "+(AnswerStream.answerIds(doc).stream().filter(id->!previousAnswerIds.contains(id)).count())+" 条回答");
+        };
+        atReadingPosition(commit,()->{int pos=readerWeb==null?0:readerWeb.getScrollY();streamAnchor="";commit.run();restorePosition(pos);});
     }
     private void atReadingPosition(Runnable apply,Runnable stale){
         WebView web=readerWeb;if(web==null)return;

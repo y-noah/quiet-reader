@@ -51,6 +51,7 @@ public final class DynamicReader {
             @Override public void onPageFinished(WebView w,String url) { ready(w,url); }
             @Override public void onReceivedSslError(WebView w,SslErrorHandler h,android.net.http.SslError e) { h.cancel(); fail("来源证书异常，已停止读取"); }
             @Override public void onReceivedError(WebView w,WebResourceRequest r,WebResourceError e){if(r.isForMainFrame())fail("来源连接失败，请检查网络后重试");}
+            @Override public void onReceivedHttpError(WebView w,WebResourceRequest r,WebResourceResponse response){if(r.isForMainFrame()&&response.getStatusCode()>=400)fail(response.getStatusCode()==401||response.getStatusCode()==403?"来源要求登录或限制了访问。请在来源页确认权限后重新读取。":"来源暂时返回错误，可稍后重试或打开来源页确认。");}
         });
         web.setDownloadListener((u,a,c,m,n)->{});
         SourceSurface.attach(activity,web);

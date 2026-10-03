@@ -126,7 +126,7 @@ public class Top100PolicyTest {
     }
 
     @Test public void ifanrReplacesOnlyTheIndividualGeekparkTab() {
-        assertArrayEquals(new Source[]{Source.ZHIHU,Source.IFANR,Source.CLS,Source.SMZDM,Source.HUPU,Source.WEIBO},Source.displayOrder());
+        assertArrayEquals(new Source[]{Source.ZHIHU,Source.WEIBO,Source.HUPU,Source.CLS,Source.IFANR},Source.displayOrder());
         assertFalse(Source.GEEKPARK.visible());assertTrue(Source.IFANR.visible());
         assertTrue(Arrays.asList(Source.aggregateSources()).contains(Source.GEEKPARK));
         assertTrue(Arrays.asList(Source.aggregateSources()).contains(Source.IFANR));

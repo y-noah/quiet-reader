@@ -565,8 +565,8 @@ runOnMainSync(()->{if(!pointerActive.get()){done.countDown();return;}WebView w=f
         sourceCheckpoint(report,"RUNNING anonymous source observations; filter="+sourceFilter+"; wallstreetOriginal="+wallstreetOriginal+"; fixedTieba="+fixedTieba+"; incomplete until final PASS. No account authentication claim.");
         sourceContentPolicyChecks();
         sourceCheckpoint(report,"POLICY_SELF_CHECKS_PASS: pure synthetic strings only; not a live-source result.");
-        String[] names={"知乎","爱范儿","财联社","什么值得买","虎扑","微博"};
-        String[] sourceKeys={"ZHIHU","IFANR","CLS","SMZDM","HUPU","WEIBO"};
+        String[] names={"知乎","微博","虎扑","财联社","爱范儿"};
+        String[] sourceKeys={"ZHIHU","WEIBO","HUPU","CLS","IFANR"};
         for(int n=0;n<names.length;n++) {
             if(!sourceFilter.equals("all")&&!sourceFilter.equals(sourceKeys[n]))continue;
             readerTapDiagnostics.setLength(0);
@@ -785,7 +785,7 @@ String expression="(function(){var exact=location.protocol==='https:'&&location.
         android.content.pm.ApplicationInfo info=pm.getApplicationInfo("app.quietreader",0);
         check("News".contentEquals(pm.getApplicationLabel(info)),"Installed app label is News");
         android.content.pm.PackageInfo version=pm.getPackageInfo(info.packageName,0);
-        check("0.3.24".equals(version.versionName)&&version.versionCode==35,"Exact renamed release version");
+        check("0.3.25".equals(version.versionName)&&version.versionCode==36,"Exact renamed release version");
         android.graphics.drawable.Drawable icon=pm.getApplicationIcon(info);
         check(icon instanceof android.graphics.drawable.AdaptiveIconDrawable,"Launcher icon supports system masks");
         android.graphics.drawable.AdaptiveIconDrawable adaptive=(android.graphics.drawable.AdaptiveIconDrawable)icon;
@@ -802,23 +802,23 @@ String expression="(function(){var exact=location.protocol==='https:'&&location.
         runOnMainSync(()->{
             check(nativeView(home.getWindow().getDecorView(),"设置",true)==null,"No duplicate standalone settings button");
             check(nativeView(home.getWindow().getDecorView(),"搜索当前榜单",true)==null,"No temporary title-filter search box");
-            View first=nativeView(home.getWindow().getDecorView(),"知乎",true);check(first!=null&&first.isSelected(),"Fresh launch selects Zhihu, the first platform");
+            View first=nativeView(home.getWindow().getDecorView(),"总榜",true);check(first!=null&&first.isSelected(),"Fresh launch selects total ranking");
         });
         screenshot("01-brand-home");menu("阅读设置");await("返回 · 阅读设置",true,10);tap("返回 · 阅读设置");await("News",true,10);
         runOnMainSync(()->{
             View root=home.getWindow().getDecorView();int right=-1;
-            for(String source:new String[]{"综合","知乎","爱范儿","财联社","什么值得买","虎扑","微博"}){
+            for(String source:new String[]{"总榜","知乎","微博","虎扑","财联社","爱范儿"}){
                 View tab=nativeView(root,source,true);android.graphics.Rect bounds=new android.graphics.Rect();
                 check(tab!=null&&tab.getGlobalVisibleRect(bounds)&&bounds.left>=right,"Requested platform order: "+source);right=bounds.right;
             }
             check(nativeView(root,"贴吧",true)==null&&nativeView(root,"华尔街见闻",true)==null&&nativeView(root,"极客公园",true)==null,"Retired platform entries absent");
         });
-        for(String source:new String[]{"综合","知乎","爱范儿","财联社","什么值得买","虎扑","微博"}){
+        for(String source:new String[]{"总榜","知乎","微博","虎扑","财联社","爱范儿"}){
             tap(source);Thread.sleep(250);
             runOnMainSync(()->{View tab=nativeView(foreground.getWindow().getDecorView(),source,true);check(tab!=null&&tab.isSelected(),"Platform switching remains available: "+source);});
-            if(source.equals("综合")){Thread.sleep(800);screenshot("02-brand-aggregate");runOnMainSync(()->check(nativeView(foreground.getWindow().getDecorView(),"综合推荐 Top100",false)!=null,"Released aggregate uses Top100 disclosure"));}
+            if(source.equals("总榜")){Thread.sleep(800);screenshot("02-brand-aggregate");runOnMainSync(()->check(nativeView(foreground.getWindow().getDecorView(),"综合推荐 Top100",false)!=null,"Released aggregate uses Top100 disclosure"));}
         }
-        Bundle result=new Bundle();result.putString("stream","PASS "+assertions+" release UI assertions. News label/icon, compact header without search/duplicate settings, overflow settings return and aggregate plus six platform switches. No account data cleared.");finish(Activity.RESULT_OK,result);
+        Bundle result=new Bundle();result.putString("stream","PASS "+assertions+" release UI assertions. News label/icon, compact header without search/duplicate settings, overflow settings return and aggregate plus five platform switches. No account data cleared.");finish(Activity.RESULT_OK,result);
     }
     @Override public void onStart(){
         Bundle result=new Bundle();

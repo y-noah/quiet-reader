@@ -6,7 +6,7 @@ import static app.quietreader.Models.*;
 
 public class NewSourcesTest {
     @Test public void orderedSixAndRetiredPlatformsStayHidden(){
-        assertArrayEquals(new Source[]{Source.ZHIHU,Source.IFANR,Source.CLS,Source.SMZDM,Source.HUPU,Source.WEIBO},Source.displayOrder());
+        assertArrayEquals(new Source[]{Source.ZHIHU,Source.WEIBO,Source.HUPU,Source.CLS,Source.IFANR},Source.displayOrder());
         assertTrue(Source.IFANR.visible());assertFalse(Source.GEEKPARK.visible());assertTrue(Source.GEEKPARK.readable());
         assertFalse(Source.TIEBA.visible());assertFalse(Source.WALLSTREET.visible());
         assertEquals(Source.WALLSTREET,ReaderLinks.readerSource("https://wallstreetcn.com/articles/123")); // Aggregate-only reader, not a standalone tab.

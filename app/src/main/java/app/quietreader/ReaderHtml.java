@@ -49,7 +49,11 @@ public final class ReaderHtml {
             else {h.append("<p class='preview'>").append(escape(text.substring(0,Math.min(130,text.length())))).append(text.length()>130?"…":"").append("</p>");if(imageCount>0)h.append("<div class='meta'>包含 ").append(imageCount).append(" 张图片 · 展开后查看</div>");}
             h.append("</section>");index++;
         }
-        if(source==Source.ZHIHU&&d.url.matches("https://[^/]*zhihu.com/question/\\d+.*"))h.append("<a class='action' href='").append(ACTION).append("more'>").append(loading?"正在加载下一批回答…":"加载下一批回答 ↓").append("</a>");
+        if(source==Source.ZHIHU&&d.url.matches("https://[^/]*zhihu.com/question/\\d+.*")){
+            if(!d.moreStatus.isEmpty())h.append("<div class='notice continuation-status' role='status'>").append(escape(d.notice)).append("</div>");
+            if(d.moreStatus.equals("login"))h.append("<a class='action' href='").append(ACTION).append("login'>来源 / 登录 →</a>");
+            h.append("<a class='action' href='").append(ACTION).append("more'>").append(loading?"正在加载下一批回答…":d.moreStatus.equals("login")?"重新尝试加载（需先登录来源） ↓":d.moreStatus.equals("end")?"重新检查后续回答 ↓":"加载下一批回答 ↓").append("</a>");
+        }
         h.append("<div class='end'>— 当前已提取内容结束 —</div>");
         if(UrlPolicy.sameThread(source,d.url,d.nextUrl))h.append("<a class='action' href='").append(escape(d.nextUrl)).append("'>继续阅读下一页 →</a>");
         return h.append("</main></body></html>").toString();

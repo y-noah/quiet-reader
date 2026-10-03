@@ -26,7 +26,7 @@ public final class AggregateInstrumentation extends Instrumentation {
     private int checks;
     private final StringBuilder report=new StringBuilder();
     private boolean ifanrOnly;
-    private final String[] platforms={"综合","知乎","爱范儿","财联社","什么值得买","虎扑","微博"};
+    private final String[] platforms={"总榜","知乎","微博","虎扑","财联社","爱范儿"};
     @Override public void onCreate(Bundle args){super.onCreate(args);ifanrOnly=args!=null&&"ifanr".equals(args.getString("mode"));start();}
     @Override public void callActivityOnResume(Activity activity){super.callActivityOnResume(activity);this.activity=activity;}
     @Override public void onStart(){
@@ -39,7 +39,7 @@ public final class AggregateInstrumentation extends Instrumentation {
             activity=startActivitySync(launch);waitForIdleSync();SystemClock.sleep(1800);shot("00-initial");
             if(ifanrOnly){ifanrJourney();report.append("PASS ").append(checks).append(" ifanr/theme assertions\n");write();result.putString("stream",report+"Output: "+output.getAbsolutePath()+"\n");finish(Activity.RESULT_OK,result);return;}
             navigation();
-            tap("综合");shot("01-aggregate-opening");
+            tap("总榜");shot("01-aggregate-opening");
             long began=SystemClock.elapsedRealtime(),firstAt=-1;int previous=-1;
             while(SystemClock.elapsedRealtime()-began<25000){
                 int size=cards().size();
@@ -66,11 +66,11 @@ public final class AggregateInstrumentation extends Instrumentation {
             tap("来源状态 · 排序说明");SystemClock.sleep(250);shot("03-source-status");
             android.view.accessibility.AccessibilityNodeInfo tree=getUiAutomation().getRootInActiveWindow();
             String stateText=accessibilityText(tree);report.append("Source status dialog:\n").append(stateText).append('\n');
-            check(stateText.contains("13个平台"),"Source status dialog opens");
+            check(stateText.contains("12个平台"),"Source status dialog opens");
             sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);waitForIdleSync();
             check(nativeText().contains("Top100"),"Closing source status returns to aggregate");
             for(String platform:platforms){tap(platform);waitForIdleSync();check(selected(platform),"Selected tab: "+platform);}
-            tap("综合");SystemClock.sleep(500);
+            tap("总榜");SystemClock.sleep(500);
             check(nativeText().contains("Top100"),"Returning from another source restores aggregate");
             if(cards().isEmpty())report.append("OBSERVATION: No live rows available; article journey not claimed.\n");
             else readAndReturn();
@@ -106,7 +106,7 @@ public final class AggregateInstrumentation extends Instrumentation {
         try{for(int mode:new int[]{2,1}){
             String prefix=mode==2?"10-dark":"20-light";
             prefs.edit().putInt("mode",mode).commit();runOnMainSync(()->activity.recreate());SystemClock.sleep(1500);
-            tap("综合");SystemClock.sleep(1000);shot(prefix+"-aggregate");
+            tap("总榜");SystemClock.sleep(1000);shot(prefix+"-aggregate");
             final List<View> rows=cards();runOnMainSync(()->{Integer left=null;for(View row:rows){ViewGroup c=(ViewGroup)row;ViewGroup body=(ViewGroup)c.getChildAt(1);int[] xy=new int[2];body.getLocationOnScreen(xy);if(left==null)left=xy[0];check(left==xy[0],"All aggregate ranks including 100 use the same text column");}});
             if(!rows.isEmpty()){runOnMainSync(()->{ScrollView s=findScroll(activity.getWindow().getDecorView());s.fullScroll(View.FOCUS_DOWN);});SystemClock.sleep(500);shot(prefix+"-aggregate-end");}
             tap("爱范儿");long until=SystemClock.elapsedRealtime()+22000;
@@ -152,7 +152,7 @@ public final class AggregateInstrumentation extends Instrumentation {
         report.append("Reader rendered: ").append(readerUrl!=null&&readerUrl.startsWith("https://quiet-reader.invalid/?render=")).append('\n');
         check(readerUrl!=null&&readerUrl.startsWith("https://quiet-reader.invalid/?render="),"Real aggregate article reached the app reader");
         tap("返回");SystemClock.sleep(650);
-        check(selected("综合"),"Reader back returns to aggregate, not the article's native source tab");
+        check(selected("总榜"),"Reader back returns to aggregate, not the article's native source tab");
         int[] after={0};runOnMainSync(()->after[0]=findScroll(activity.getWindow().getDecorView()).getScrollY());
         report.append("Board return scroll px: ").append(before[0]).append(" -> ").append(after[0]).append('\n');
         check(Math.abs(before[0]-after[0])<50,"Aggregate return keeps reading position");

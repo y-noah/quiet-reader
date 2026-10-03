@@ -20,8 +20,8 @@ public class ReaderLinksTest {
         assertTrue(html.contains("href='https://tieba.baidu.com/p/123'>另一个帖子</a>"));
         assertTrue(html.contains("href='https://item.jd.com/1.html'>去购买</a>"));
     }
-    @Test public void exactlySixDomesticSourcesVisible(){
-        assertEquals(6,java.util.Arrays.stream(Source.values()).filter(Source::visible).count());
+    @Test public void exactlyFiveDomesticSourcesVisible(){
+        assertEquals(5,java.util.Arrays.stream(Source.values()).filter(Source::visible).count());
         assertFalse(Source.HACKERNEWS.visible());assertFalse(Source.TOUTIAO.visible());
     }
     @Test public void shoppingRedirectsAndUnadaptedPagesGoToBrowser(){
