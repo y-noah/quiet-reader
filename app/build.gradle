@@ -6,9 +6,9 @@ android {
         applicationId 'app.quietreader'
         minSdk 26
         targetSdk 35
-        versionCode 24
-        versionName '0.3.13'
-        testInstrumentationRunner project.hasProperty('weiboReadingProbeUi') ? 'app.quietreader.WeiboReadingProbeInstrumentation' : project.hasProperty('navigationRecoveryUi') ? 'app.quietreader.NavigationRecoveryInstrumentation' : project.hasProperty('identityUi') ? 'app.quietreader.IdentityInstrumentation' : project.hasProperty('tiebaDomProbeUi') ? 'app.quietreader.TiebaDomProbeInstrumentation' : project.hasProperty('sessionReuseUi') ? 'app.quietreader.SessionReuseInstrumentation' : project.hasProperty('dynamicReadingUi') ? 'app.quietreader.DynamicReadingInstrumentation' : project.hasProperty('latencyUi') ? 'app.quietreader.LatencyInstrumentation' : project.hasProperty('exploratoryUi') ? 'app.quietreader.ExploratoryInstrumentation' : project.hasProperty('releaseUi') ? 'app.quietreader.ReleaseInstrumentation' : 'app.quietreader.SmokeInstrumentation'
+        versionCode 35
+        versionName '0.3.24'
+        testInstrumentationRunner project.hasProperty('aggregateUi') ? 'app.quietreader.AggregateInstrumentation' : project.hasProperty('weiboReadingProbeUi') ? 'app.quietreader.WeiboReadingProbeInstrumentation' : project.hasProperty('navigationRecoveryUi') ? 'app.quietreader.NavigationRecoveryInstrumentation' : project.hasProperty('identityUi') ? 'app.quietreader.IdentityInstrumentation' : project.hasProperty('tiebaDomProbeUi') ? 'app.quietreader.TiebaDomProbeInstrumentation' : project.hasProperty('sessionReuseUi') ? 'app.quietreader.SessionReuseInstrumentation' : project.hasProperty('dynamicReadingUi') ? 'app.quietreader.DynamicReadingInstrumentation' : project.hasProperty('latencyUi') ? 'app.quietreader.LatencyInstrumentation' : project.hasProperty('exploratoryUi') ? 'app.quietreader.ExploratoryInstrumentation' : project.hasProperty('releaseUi') ? 'app.quietreader.ReleaseInstrumentation' : 'app.quietreader.SmokeInstrumentation'
     }
     signingConfigs {
         personal {
@@ -30,9 +30,16 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
 }
+if (project.hasProperty('aggregateReadingUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.AggregateReadingInstrumentation'
+if (project.hasProperty('navigationImageUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.NavigationImageInstrumentation'
 tasks.register('liveProbe', JavaExec) {
     dependsOn 'compileDebugUnitTestJavaWithJavac'
     classpath = files("$buildDir/intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes", "$buildDir/intermediates/javac/debug/compileDebugJavaWithJavac/classes") + configurations.debugUnitTestRuntimeClasspath
     mainClass = 'app.quietreader.LiveProbe'
     if (project.hasProperty('probeUrl')) args project.property('probeUrl')
+}
+tasks.register('aggregateLiveProbe', JavaExec) {
+    dependsOn 'compileDebugUnitTestJavaWithJavac'
+    classpath = files("$buildDir/intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes", "$buildDir/intermediates/javac/debug/compileDebugJavaWithJavac/classes") + configurations.debugUnitTestRuntimeClasspath
+    mainClass = 'app.quietreader.AggregateLiveProbe'
 }

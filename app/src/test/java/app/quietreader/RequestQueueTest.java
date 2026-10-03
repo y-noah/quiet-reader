@@ -37,4 +37,21 @@ public class RequestQueueTest {
         }
     }
     @Test public void closeRejectsFurtherRequests(){RequestQueue queue=new RequestQueue();queue.close();try{queue.submit(ticket->{});fail("Closed queue accepted request");}catch(RejectedExecutionException expected){}}
+    @Test public void aggregateRequestsAreConcurrentButNeverExceedThree()throws Exception{
+        try(RequestQueue queue=new RequestQueue()){
+            CountDownLatch started=new CountDownLatch(3),release=new CountDownLatch(1),done=new CountDownLatch(13);
+            AtomicInteger active=new AtomicInteger(),peak=new AtomicInteger();
+            for(int n=0;n<13;n++)queue.submitConcurrent(ticket->{int count=active.incrementAndGet();peak.accumulateAndGet(count,Math::max);started.countDown();try{release.await();ticket.check();}catch(Exception ignored){}finally{active.decrementAndGet();done.countDown();}});
+            assertTrue(started.await(2,TimeUnit.SECONDS));assertEquals(3,peak.get());release.countDown();assertTrue(done.await(2,TimeUnit.SECONDS));assertEquals(3,peak.get());
+        }
+    }
+    @Test public void aggregateCancellationDisconnectsEveryActiveSocketAndRemovesQueuedRequests()throws Exception{
+        try(RequestQueue queue=new RequestQueue()){
+            CountDownLatch entered=new CountDownLatch(3),finished=new CountDownLatch(3);AtomicBoolean queuedRan=new AtomicBoolean();
+            SlowConnection[] sockets={new SlowConnection(),new SlowConnection(),new SlowConnection()};
+            for(SlowConnection socket:sockets)queue.submitConcurrent(ticket->{try{ticket.bind(socket);entered.countDown();socket.waitForDisconnect();assertTrue(ticket.cancelled());}catch(Exception error){throw new AssertionError(error);}finally{ticket.unbind(socket);finished.countDown();}});
+            assertTrue(entered.await(2,TimeUnit.SECONDS));queue.submitConcurrent(ticket->queuedRan.set(true));queue.cancelPending();
+            assertTrue(finished.await(2,TimeUnit.SECONDS));assertFalse(queuedRan.get());for(SlowConnection socket:sockets)assertEquals(0,socket.disconnected.getCount());
+        }
+    }
 }

@@ -1,4 +1,4 @@
-param([ValidateSet('all','core','stress','lifecycle','dark','audit','images','smzdm-cache','board-return','appearance','video-filter','image-layout')][string]$Mode='all',[ValidateSet('emulator-5556','emulator-5558')][string]$Serial='emulator-5556')
+param([ValidateSet('all','core','predictive','stress','lifecycle','dark','audit','images','smzdm-cache','board-return','appearance','video-filter','image-layout','login-return','home-cleanup','tieba-auth')][string]$Mode='all',[ValidateSet('emulator-5556','emulator-5558')][string]$Serial='emulator-5556')
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 $env:ANDROID_USER_HOME=Join-Path $projectRoot '.tools/android-user'

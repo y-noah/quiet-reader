@@ -21,16 +21,16 @@ public final class Repository {
     private final Handler main=new Handler(Looper.getMainLooper());
     private final Context context;
     private static final android.util.LruCache<String,Document> articles=new android.util.LruCache<String,Document>(2*1024*1024){
-        @Override protected int sizeOf(String key,Document d){int n=1024;for(Block b:d.blocks){n+=2*b.value.length()+64;for(InlineImage i:b.inlineImages)n+=2*(i.url.length()+i.alt.length())+64;for(InlineLink link:b.inlineLinks)n+=2*link.url.length()+32;}return n;}
+        @Override protected int sizeOf(String key,Document d){return DocumentSize.estimate(d);}
     };
     private static final android.util.LruCache<String,Long> articleTimes=new android.util.LruCache<>(60);
     public Document cachedArticle(Item i){Long at=articleTimes.get(i.url);return at!=null&&(offline()||System.currentTimeMillis()-at<10*60*1000)?articles.get(i.url):null;}
     public boolean offline(){android.net.ConnectivityManager cm=(android.net.ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);return cm!=null&&cm.getActiveNetwork()==null;}
     public void cacheArticle(Document d){
-        if(d.filteredVideo){articles.remove(d.url);articleTimes.remove(d.url);return;}
+        if(d.filteredVideo||d.loginRequired){articles.remove(d.url);articleTimes.remove(d.url);return;}
         // A confirmed empty result must replace earlier unclassified video prose too.
         // Preserve the excluded IDs so reopening and later continuation cannot revive it.
-        if(d.hasContent()||d.filteredVideos>0||!d.filteredSectionIds.isEmpty()){articles.put(d.url,d);articleTimes.put(d.url,System.currentTimeMillis());}
+        if(d.hasContent()||!d.related.isEmpty()||d.filteredVideos>0||!d.filteredSectionIds.isEmpty()){articles.put(d.url,d);articleTimes.put(d.url,System.currentTimeMillis());}
     }
     public boolean hiddenVideo(Item item){
         return item.video||VideoPolicy.url(item.source,item.url)||(!(item.source==Source.WEIBO&&VideoPolicy.weiboTopic(item.url))&&System.currentTimeMillis()-context.getSharedPreferences("video-filter",0).getLong(VideoPolicy.key(item),0)<7L*24*60*60*1000);
@@ -45,6 +45,9 @@ public final class Repository {
         entries.sort(java.util.Comparator.comparingLong(e->e.getValue() instanceof Long?(Long)e.getValue():0));
         for(int n=0;n<entries.size()-255;n++)edit.remove(entries.get(n).getKey());edit.apply();
         articles.remove(item.url);articleTimes.remove(item.url);
+        // Remove the row from the saved board too, without making its freshness look newer.
+        android.content.SharedPreferences boards=context.getSharedPreferences("boards",0);
+        try{List<Item> rows=Models.fromJson(new JSONArray(boards.getString(item.source.name(),"[]")));rows.removeIf(row->VideoPolicy.key(row).equals(VideoPolicy.key(item)));boards.edit().putString(item.source.name(),Models.toJson(rows).toString()).apply();}catch(Exception ignored){}
     }
     public void invalidateArticles(){articles.evictAll();articleTimes.evictAll();}
     public Repository(Context context) { this.context=context.getApplicationContext(); }
@@ -75,7 +78,11 @@ public final class Repository {
         requests.submit(ticket->{
             try {
                 Document doc;
-                if(item.source==Source.WALLSTREET&&item.url.matches("https://wallstreetcn.com/articles/\\d+")){
+                String topicId=item.source==Source.DOUBAN?AdditionalSources.doubanTopicId(item.url):"";
+                if(!topicId.isEmpty()){
+                    String api="https://m.douban.com/rexxar/api/v2/gallery/topic/"+topicId+"/items?from_web=1&sort=hot&start=0&count=20&status_full_text=1&guest_only=0";
+                    doc=AdditionalSources.doubanTopic(item,fetch(api,null,item.url,ticket));
+                }else if(item.source==Source.WALLSTREET&&item.url.matches("https://wallstreetcn.com/articles/\\d+")){
                     String id=item.url.substring(item.url.lastIndexOf('/')+1);
                     org.json.JSONObject data=new org.json.JSONObject(fetch("https://api-one-wscn.awtmt.com/apiv1/content/articles/"+id+"?extract=0",null,item.url,ticket)).getJSONObject("data");
                     doc=SourceParser.article(item.source,"<h1>"+ReaderHtml.escape(data.optString("title"))+"</h1><article>"+data.optString("content")+"</article>",item.url);
@@ -96,7 +103,7 @@ public final class Repository {
     public static String fetch(String url,String cookie,String referer) throws Exception {
         return new String(bytes(url,cookie,referer,4*1024*1024),StandardCharsets.UTF_8);
     }
-    private static String fetch(String url,String cookie,String referer,RequestQueue.Ticket ticket)throws Exception{return new String(bytes(url,cookie,referer,4*1024*1024,ticket),StandardCharsets.UTF_8);}
+    static String fetch(String url,String cookie,String referer,RequestQueue.Ticket ticket)throws Exception{return new String(bytes(url,cookie,referer,4*1024*1024,ticket),StandardCharsets.UTF_8);}
     public static byte[] bytes(String url,String cookie,String referer,int limit) throws Exception {
         return bytes(url,cookie,referer,limit,null);
     }

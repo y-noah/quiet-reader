@@ -24,12 +24,18 @@ public final class DynamicReader {
     public DynamicReader(Activity activity,Item item,Repository.Result<Document> cb) {
         this.item=item; callback=cb; web=new WebView(activity);
         WebSettings s=web.getSettings(); s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true); s.setAllowFileAccess(false); s.setAllowContentAccess(false);
-        s.setUserAgentString(item.source==Source.WEIBO?WebSettings.getDefaultUserAgent(activity):Repository.DESKTOP_UA); s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); s.setMediaPlaybackRequiresUserGesture(true);
+        s.setUserAgentString(SourceSession.userAgent(activity,item.source)); s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); s.setMediaPlaybackRequiresUserGesture(true);
         // This surface only extracts text and image URLs; the own reader loads actual pictures.
         // Do not apply this to the explicit login view, where image challenges must stay visible.
         s.setBlockNetworkImage(true);
         CookieManager.getInstance().setAcceptCookie(true); CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
         web.setWebViewClient(new WebViewClient(){
+            @Override public WebResourceResponse shouldInterceptRequest(WebView w,WebResourceRequest r){
+                String path=r.getUrl().getPath();
+                if(!r.isForMainFrame()&&path!=null&&path.toLowerCase(java.util.Locale.ROOT).matches(".*\\.(mp4|webm|m3u8|mp3|m4a|aac|ts)$"))
+                    return new WebResourceResponse("text/plain","UTF-8",new java.io.ByteArrayInputStream(new byte[0]));
+                return null;
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView w,WebResourceRequest r) {
                 String url=r.getUrl().toString(),secure=UrlPolicy.upgradePlatformNavigation(item.source,url);
                 if(r.isForMainFrame()&&!secure.isEmpty()) {
@@ -63,7 +69,7 @@ public final class DynamicReader {
         attempts++;
         if(!expectedSource(web.getUrl())) { fail("来源跳转到登录、其他问题或不支持的页面，请重新读取"); return; }
         final long revision=navigation.revision();
-        web.evaluateJavascript("(function(){var html=document.documentElement.outerHTML;return JSON.stringify({url:location.href,html:html.length<4194304?html:null});})()",raw->{
+        web.evaluateJavascript(SourceSnapshot.script(item.source),raw->{
             if(ended)return;
             parser.execute(()->{
             Document parsed=null;boolean wrongPage=false;
@@ -93,7 +99,8 @@ public final class DynamicReader {
                     if(doc.canPresent()) {
                         boolean stable=snapshot.equals(lastSnapshot);
                         best=doc;
-                        if(attempts>=2&&stable) { finish(doc); return; }
+                        // A login mask may precede the asynchronous session/reply response.
+                        if(attempts>=2&&stable&&(!doc.loginRequired||attempts>=5)) { finish(doc); return; }
                     }
                 }
                 // An empty/failed snapshot breaks consecutiveness too.
@@ -112,6 +119,7 @@ public final class DynamicReader {
         return !AnswerStream.sameQuestion(item,item.url)||AnswerStream.sameQuestion(item,url);
     }
     /** Only the successful callback may transfer a loaded question to its continuation owner. */
+    void reattach(Activity activity){if(!ended&&ownsWeb)SourceSurface.attach(activity,web);}
     WebView takeSource() {
         if(!delivering||!ownsWeb||!AnswerStream.canReuse(item,web.getUrl()))return null;
         ownsWeb=false;

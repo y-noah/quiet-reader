@@ -16,6 +16,7 @@ import static app.quietreader.Models.*;
 public final class SourceParser {
     private SourceParser() {}
     public static List<Item> list(Source source,String raw) throws Exception {
+        if(AdditionalSources.supports(source))return AdditionalSources.list(source,raw);
         List<Item> out=new ArrayList<>();
         if(source==Source.WEIBO&&raw.trim().startsWith("{")) {
             JSONArray a=new JSONObject(raw).getJSONObject("data").getJSONArray("realtime");
@@ -32,6 +33,24 @@ public final class SourceParser {
         } else if(source==Source.WALLSTREET) {
             JSONArray a=new JSONObject(raw).getJSONObject("data").getJSONArray("day_items");
             for(int i=0;i<a.length();i++){JSONObject t=a.getJSONObject(i);add(out,source,t.optString("title"),t.optString("uri"),t.optString("pageviews")+" 阅读",VideoPolicy.metadata(t));}
+        } else if(source==Source.CLS) {
+            JSONObject response=new JSONObject(raw);
+            if(response.optInt("errno",-1)!=0)throw new IllegalStateException("财联社暂未返回资讯榜");
+            JSONArray a=response.getJSONArray("data");
+            for(int i=0;i<a.length();i++){
+                JSONObject t=a.getJSONObject(i);String id=t.optString("id");
+                if(!id.matches("[1-9]\\d*"))continue;
+                add(out,source,t.optString("title"),"https://api3.cls.cn/share/article/"+id+"?os=android&sv=835",
+                        t.optLong("readNum")>0?t.optLong("readNum")+" 阅读":"",VideoPolicy.metadata(t)||t.optString("article_schema").toLowerCase(java.util.Locale.ROOT).contains("video"));
+            }
+        } else if(source==Source.GEEKPARK) {
+            JSONArray a=new JSONObject(raw).getJSONArray("posts");
+            for(int i=0;i<a.length();i++){
+                JSONObject t=a.getJSONObject(i);String id=t.optString("id");
+                if(!id.matches("[1-9]\\d*"))continue;
+                add(out,source,t.optString("title"),"https://www.geekpark.net/news/"+id,"七日热门",
+                        VideoPolicy.metadata(t)||t.optString("post_type").matches("video|pure_video"));
+            }
         } else if(source==Source.HACKERNEWS) {
             for(Element row:Jsoup.parse(raw,source.endpoint).select("tr.athing")) {
                 Element a=row.selectFirst(".titleline > a");String id=row.id();
@@ -78,15 +97,19 @@ public final class SourceParser {
     }
     public static Document article(Source source,String html,String url) {
         org.jsoup.nodes.Document d=Jsoup.parse(html,url);
+        if(source==Source.CLS)d.select(".related-article-box,.related-article-content-box").remove();
         Document result=new Document(); result.url=url;
         Element h=d.selectFirst(source==Source.TIEBA?".pb-title,h1":"h1");
         result.title=h==null?d.title():h.text();
+        if(source==Source.CLS){Element title=d.selectFirst(".title-box");if(title!=null)result.title=title.text();}
+        if(source==Source.GUOKR){Element title=d.selectFirst("[class*=ArticleTitle-]");if(title!=null)result.title=title.text();}
         if(VideoPolicy.mainPost(source,d,url)){
             result.filteredVideo=true;result.filteredVideos=1;
             result.notice="已过滤视频主题，不展示视频帖及其回复。";return result;
         }
         Element author=d.selectFirst("meta[name=author]");
         if(author!=null)result.byline=author.attr("content").trim();
+        if(source==Source.CLS){Element info=d.selectFirst(".information-box");if(info!=null)result.byline=info.text();}
         for(Element a:d.select("a[rel=next],a[href]")) {
             if(!a.attr("rel").equals("next")&&!a.text().trim().matches("下一页[>›»]?"))continue;
             String next=UrlPolicy.normalize(url,a.attr("href"));
@@ -101,6 +124,14 @@ public final class SourceParser {
             case TIEBA: selector=".d_post_content, .post-content, .postContent, [class*=post-content-text], .pb-content-wrap, .comment-content, .pb-rich-text"; break;
             case WEIBO: selector=".card-wrap .txt, .weibo-text, [class*=detail_wbtext]"; break;
             case WALLSTREET: selector="article,.article-content"; break;
+            case CLS: selector="section.content-box > .content"; break;
+            case GEEKPARK: selector="#article-body .article-content"; break;
+            case GUOKR: selector="[class*=ArticleContent-]"; break;
+            case DOUBAN: selector=".note .note, #link-report .note, .topic-content, .review-content, .status-saying, .rich-content"; break;
+            case ITHOME: selector="#paragraph.post_content"; break;
+            case IFANR: selector="article.c-article-content"; break;
+            case JUEJIN: selector="#article-root .article-viewer"; break;
+            case SSPAI: selector=".article-body .wangEditor-txt"; break;
             case HACKERNEWS: selector=".toptext,.commtext"; break;
             case SMZDM: selector=".txt-detail,.article-content,.article_section,.item-preferential"; break;
             default: selector="article";
@@ -127,6 +158,7 @@ public final class SourceParser {
             }
             String continuation=source==Source.WEIBO?WeiboPost.continuation(url,root):"";
             Element clean=root.clone();
+            if(source==Source.ITHOME)clean.select(".tougao-user").remove();
             if(!continuation.isEmpty())for(Element a:clean.select("a[href]"))
                 if(WeiboPost.fulltextLabel(a)&&WeiboPost.same(continuation,UrlPolicy.normalize(url,a.attr("href"))))a.remove();
             if(source==Source.TIEBA){
@@ -164,6 +196,11 @@ public final class SourceParser {
                 Element name=container.selectFirst(".AuthorInfo-name,.author-name,.hnuser");
                 String label=answer?"回答":source==Source.ZHIHU?(root.is(".QuestionRichText")?"问题补充":"回答"):source==Source.HUPU||source==Source.TIEBA?"楼层":source==Source.WEIBO?"微博":source==Source.HACKERNEWS?"讨论":"正文";
                 if(source==Source.HUPU)label=root.closest(".reply-list-wrapper")!=null?"回复":root.closest("[class*='post-content_main-post-info']")!=null?"主帖":"楼层";
+                if(source==Source.TIEBA){
+                    Element post=root.closest(".l_post[data-field]");
+                    try{if(post!=null&&new JSONObject(post.attr("data-field")).getJSONObject("content").optInt("post_no")==1)label="主帖";}catch(Exception ignored){}
+                    if(root.closest(".pb-content-wrap")!=null&&root.closest(".comment-content,.pb-lzl-item")==null)label="主帖";
+                }
                 if(source==Source.HACKERNEWS&&name!=null){Element indent=container.selectFirst(".ind[indent]");int depth=0;try{depth=Integer.parseInt(indent==null?"0":indent.attr("indent"));}catch(Exception ignored){}label=depth>0&&discussionAuthors.containsKey(depth-1)?"回复 "+discussionAuthors.get(depth-1):"评论";discussionAuthors.put(depth,name.text());}
                 Section section=new Section(id,label+(name==null?"":" · "+name.text()),answer||label.equals("回答"));
                 section.continuationUrl=continuation;
@@ -210,7 +247,18 @@ public final class SourceParser {
             if(result.related.size()>=30) break;
         }
         String body=d.body().text();
-        if(body.contains("登录后查看")||body.contains("登录后继续")||body.contains("展开阅读全文")||body.contains("打开App查看全文"))
+        if(source==Source.TIEBA){
+            // A quoted phrase in a reply or a hidden login dialog is not authentication state.
+            for(Element gate:d.select(".login-guard-mask")){
+                boolean hidden=false;
+                for(Element node=gate;node!=null;node=node.parent()){
+                    String style=node.attr("style").replaceAll("\\s+","").toLowerCase(java.util.Locale.ROOT);
+                    if(node.hasAttr("hidden")||style.matches(".*(?:display:none|visibility:hidden|visibility:collapse)(?:!important)?(?:;.*)?$")){hidden=true;break;}
+                }
+                if(!hidden&&(gate.text().contains("登录后查看")||gate.text().contains("登录后继续"))){result.loginRequired=true;break;}
+            }
+            if(result.loginRequired)result.notice="贴吧网页仍显示回复登录限制，尚未取得受限回复。可打开「来源 / 登录」确认原帖回复是否已显示，再读取回来。";
+        }else if(body.contains("登录后查看")||body.contains("登录后继续")||body.contains("展开阅读全文")||body.contains("打开App查看全文"))
             result.notice="当前页面可能只返回部分内容。请登录后重新读取；未加载部分不会被当作全文。";
         if(source==Source.ZHIHU && !result.blocks.isEmpty()) result.notice="回答独立折叠。下滑到底或点「加载下一批回答」继续；登录限制或未加载部分不代表完整回答列表。";
         if(source==Source.WEIBO && !result.blocks.isEmpty()) {
@@ -218,9 +266,9 @@ public final class SourceParser {
             if(result.sections.stream().anyMatch(s->!s.continuationUrl.isEmpty()))result.notice+=" 部分内容是摘要，展开后可继续读取原帖。";
         }
         if((source==Source.HUPU||source==Source.TIEBA)&&!result.blocks.isEmpty())
-            result.notice=(result.notice.isEmpty()?"":result.notice+" ")+"仅展示当前页已加载的帖子和回复，不代表全部楼层。";
+            result.notice=(result.notice.isEmpty()?"":result.notice+" ")+"仅展示当前页已加载的帖子和回复；未加载部分不会显示，不代表全部楼层。";
         result.unsupportedVideo=hasVideo;
-        if(hasVideo)result.notice=(result.notice.isEmpty()?"":result.notice+" ")+"原文包含视频；静读仅整理文字和图片，视频可在来源页观看。";
+        if(hasVideo)result.notice=(result.notice.isEmpty()?"":result.notice+" ")+"原文包含视频；News 仅整理文字和图片，视频可在来源页观看。";
         if(source==Source.HACKERNEWS) {
             Element title=d.selectFirst(".titleline");if(title!=null)result.title=title.text();
             result.notice="这里整理 HN 当前页的讨论，不是外部新闻全文。外部新闻网站暂未适配。";
@@ -261,10 +309,23 @@ public final class SourceParser {
         return photos;
     }
     private static String imageSource(Element image,String base){
+        // IT之家 uses an HTTP transparent PNG in src, not a data URI. The original may
+        // live on a merchant CDN, so validate the resolved URL rather than its image host.
+        if(UrlPolicy.belongs(Source.ITHOME,base)){
+            for(String attribute:new String[]{"data-original","data-src"}){
+                String original=UrlPolicy.normalize(base,image.attr(attribute));
+                if(!original.isEmpty()&&!isImagePlaceholder(original))return original;
+            }
+        }
         String src=image.attr("src");
         if(src.isEmpty()||src.startsWith("data:"))src=image.attr("data-src");
         if(src.isEmpty())src=image.attr("data-original");
-        return UrlPolicy.normalize(base,src);
+        String resolved=UrlPolicy.normalize(base,src);
+        return isImagePlaceholder(resolved)?"":resolved;
+    }
+    static boolean isImagePlaceholder(String url){
+        try{java.net.URI uri=java.net.URI.create(url);return "img.ithome.com".equalsIgnoreCase(uri.getHost())&&"/images/v2/t.png".equals(uri.getPath());}
+        catch(Exception ignored){return false;}
     }
     private static void cleanTiebaChrome(Element clean){
         // Observed UI containers only. The same words inside actual prose remain untouched.
@@ -275,6 +336,7 @@ public final class SourceParser {
             else header.replaceWith(new Element("p").text(name+"："));
         }
         clean.select(".lzl-wrapper > .show-more-lzl").remove();
+        clean.select(".login-guard-mask").remove(); // Report access state via notice, never as post prose.
     }
     private static void visit(Node node,Document result,StringBuilder buffer,List<InlineImage> inline,List<InlineLink> links,String base) {
         if(node instanceof TextNode) { buffer.append(((TextNode)node).text()); return; }

@@ -30,6 +30,7 @@ try {
     if($LASTEXITCODE -ne 0){throw 'APK signature verification failed'}
     New-Item -ItemType Directory -Force -Path (Join-Path $projectRoot 'artifacts') | Out-Null
     Copy-Item -LiteralPath $apk -Destination (Join-Path $projectRoot 'artifacts/静读.apk')
+    Copy-Item -LiteralPath $apk -Destination (Join-Path $projectRoot 'artifacts/news.apk')
     Get-FileHash -LiteralPath $apk -Algorithm SHA256
 } finally {
     $env:QR_STORE_PASSWORD=$previousSecret

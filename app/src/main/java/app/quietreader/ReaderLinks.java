@@ -12,7 +12,7 @@ public final class ReaderLinks {
     static Source readerSource(String url){
         if(!allowed(url))return null;
         String path=java.net.URI.create(url).getPath();
-        for(Source source:Source.values())if(source.visible()&&UrlPolicy.belongs(source,url)){
+        for(Source source:Source.values())if(source.readable()&&UrlPolicy.belongs(source,url)){
             String pattern;
             switch(source){
                 case SMZDM: pattern="/p/\\d+/?";break;
@@ -20,6 +20,14 @@ public final class ReaderLinks {
                 case TIEBA: pattern="/p/\\d+/?";break;
                 case HUPU: pattern="/\\d+(?:-\\d+)?\\.html";break;
                 case WALLSTREET: pattern="/(?:articles|livenews)/\\d+/?";break;
+                case CLS: pattern="/(?:detail|share/article)/\\d+/?";break;
+                case GEEKPARK: pattern="/news/\\d+/?";break;
+                case GUOKR: pattern="/article/\\d+/?";break;
+                case DOUBAN: pattern="/(?:gallery/topic|topic|note|review|people/[^/]+/status)/\\d+/?";break;
+                case ITHOME: pattern="/(?:\\d+/\\d+/\\d+|html/\\d+)\\.htm";break;
+                case IFANR: pattern="/(?:app/)?\\d+/?";break;
+                case JUEJIN: pattern="/post/\\d+/?";break;
+                case SSPAI: pattern="/post/\\d+/?";break;
                 case WEIBO: pattern="/(?:detail/[A-Za-z0-9]+|status/[A-Za-z0-9]+|\\d+/[A-Za-z0-9]+)/?";break;
                 default: continue;
             }
@@ -27,7 +35,15 @@ public final class ReaderLinks {
         }
         return null; // Shopping redirects / login / unsupported pages belong in the chosen browser.
     }
-    private static String anchor(String url,String label){return "<a class='content-link' href='"+ReaderHtml.escape(url)+"'>"+ReaderHtml.escape(label)+"</a>";}
+    static String shortLabel(String url){
+        String host=UrlPolicy.host(url);
+        if(UrlPolicy.domain(host,"jd.com"))return "京东商品 ↗";
+        if(UrlPolicy.domain(host,"smzdm.com"))return "值得买链接 ↗";
+        if(UrlPolicy.domain(host,"taobao.com")||UrlPolicy.domain(host,"tmall.com"))return "淘宝 / 天猫 ↗";
+        if(UrlPolicy.domain(host,"zhihu.com"))return "知乎链接 ↗";
+        return host+" ↗";
+    }
+    private static String anchor(String url,String label){String text=label.matches("(?is)^https?://.*")?shortLabel(url):label;return "<a class='content-link' title='"+ReaderHtml.escape(url)+"' href='"+ReaderHtml.escape(url)+"'>"+ReaderHtml.escape(text)+"</a>";}
     static String plain(String text){
         Matcher m=URL.matcher(text);StringBuilder out=new StringBuilder();int at=0;
         while(m.find()){

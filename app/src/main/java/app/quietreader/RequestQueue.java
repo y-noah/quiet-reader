@@ -10,6 +10,7 @@ final class RequestQueue implements AutoCloseable {
     private final ThreadPoolExecutor workers=(ThreadPoolExecutor)Executors.newFixedThreadPool(3,r->{Thread t=new Thread(r,"reader-request");t.setDaemon(true);return t;});
     private final ExecutorService cancellations=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"reader-cancel");t.setDaemon(true);return t;});
     private Ticket latest;
+    private final java.util.Set<Ticket> concurrent=new java.util.HashSet<>();
     private boolean closed;
 
     final class Ticket {
@@ -37,8 +38,17 @@ final class RequestQueue implements AutoCloseable {
         return ticket;
     }
     synchronized void cancelPending(){
+        // Mark the entire batch before disconnecting any socket can free a worker slot.
+        for(Ticket ticket:concurrent)ticket.cancelled=true;
         if(latest!=null){latest.cancel();latest=null;}
+        for(Ticket ticket:concurrent)ticket.cancel();concurrent.clear();
         workers.purge();
+    }
+    synchronized Ticket submitConcurrent(Consumer<Ticket> work){
+        if(closed)throw new RejectedExecutionException("Request queue closed");
+        Ticket ticket=new Ticket();concurrent.add(ticket);
+        ticket.future=workers.submit(()->{try{if(!ticket.cancelled())work.accept(ticket);}finally{synchronized(RequestQueue.this){concurrent.remove(ticket);}}});
+        return ticket;
     }
     @Override public synchronized void close(){if(closed)return;cancelPending();closed=true;workers.shutdownNow();cancellations.shutdown();}
 }

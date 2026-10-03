@@ -83,7 +83,7 @@ final class AnswerStream {
         if(closed||!busy)return;busy=false;main.removeCallbacksAndMessages(null);
         accumulated.moreStatus=stopReason.isEmpty()?"loaded":stopStatus;int count=answers(accumulated);
         accumulated.notice=!stopReason.isEmpty()?stopReason:!hasNewAnswers(accumulated,previousAnswerIds)?"本次没有新增回答。已保留 "+count+" 条回答，请点「加载下一批回答」重试；未取得新内容不等于已读完全部回答。":"已加载 "+count+" 条回答。可继续下滑或点「加载下一批回答」；未取得新内容不等于已读完全部回答。";
-        if(accumulated.unsupportedVideo)accumulated.notice+=" 原文包含视频；静读仅整理文字和图片，视频可在来源页观看。";
+        if(accumulated.unsupportedVideo)accumulated.notice+=" 原文包含视频；News 仅整理文字和图片，视频可在来源页观看。";
         if(accumulated.filteredVideos>0)accumulated.notice+=" "+VideoPolicy.filteredNotice(accumulated.filteredVideos);
         callback.success(accumulated);
     }

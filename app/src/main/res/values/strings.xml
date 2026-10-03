@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">News</string>
+    <color name="launcher_red">#B80000</color>
+</resources>

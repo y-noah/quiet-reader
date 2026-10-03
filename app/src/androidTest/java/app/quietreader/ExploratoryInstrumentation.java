@@ -46,6 +46,7 @@ public final class ExploratoryInstrumentation extends Instrumentation {
     private final String fixtureUrl="https://bbs.hupu.com/999999999.html";
     interface Checked { void run() throws Exception; }
     @Override public void onCreate(Bundle arguments){super.onCreate(arguments);if(arguments!=null)mode=arguments.getString("mode","core");start();}
+    @Override public void callActivityOnResume(Activity page){super.callActivityOnResume(page);if(page instanceof MainActivity)activity=(MainActivity)page;}
     private void ui(Checked action)throws Exception{
         Throwable[] error={null};runOnMainSync(()->{try{action.run();}catch(Throwable e){error[0]=e;}});
         waitForIdleSync();if(error[0]!=null)throw new Exception(error[0]);
@@ -131,6 +132,137 @@ public final class ExploratoryInstrumentation extends Instrumentation {
         ui(()->{TextView selected=textView(activity.getWindow().getDecorView(),Source.TIEBA.label,false);Rect r=new Rect();visible[0]=selected!=null&&selected.isSelected()&&selected.getGlobalVisibleRect(r)&&r.width()>=selected.getWidth()*0.8;detail[0]=r.toShortString();});
         shot("01-selected-rightmost-tab");check(visible[0],"Selected rightmost platform remains visible after choosing it, bounds="+detail[0]);
     }
+    private void loginReturn()throws Exception{
+        String url="https://tieba.baidu.com/p/99999881726",cookie="qr_return_fixture=1; Path=/p/99999881726; Secure; SameSite=Lax";
+        Item item=new Item(Source.TIEBA,"合成登录返回测试",url,"");
+        Document before=SourceParser.article(Source.TIEBA,"<h1>合成测试</h1><div class='d_post_content'>合成旧主帖</div><div class='login-guard-mask'>登录后查看全部评论内容</div>",url);
+        CountDownLatch cookieSaved=new CountDownLatch(1);
+        try{
+            ui(()->{
+                set("current",item);set("reading",before);((Repository)field("repo")).cacheArticle(before);
+                android.webkit.CookieManager.getInstance().setAcceptCookie(true);
+                android.webkit.CookieManager.getInstance().setCookie(url,cookie,value->cookieSaved.countDown());
+            });
+            if(!cookieSaved.await(3,TimeUnit.SECONDS))throw new Exception("Synthetic session setup timed out");
+            ui(()->{
+                set("wasStopped",true);
+                activity.onActivityResult(100,Activity.RESULT_CANCELED,null);
+                check(field("reading")==null,"Back result discards the anonymous reading snapshot");
+                check(((Repository)field("repo")).cachedArticle(item)==null,"Back result invalidates pre-login article cache");
+                check(!(Boolean)field("wasStopped"),"Return owns refresh; resume cannot issue a duplicate");
+                DynamicReader reader=(DynamicReader)field("dynamic");
+                check(reader!=null,"Back result starts a fresh Tieba dynamic read without explicit import");
+                if(reader==null)throw new Exception("No fresh source view");
+                Field wf=DynamicReader.class.getDeclaredField("web");wf.setAccessible(true);WebView source=(WebView)wf.get(reader);
+                android.webkit.WebViewClient original=source.getWebViewClient();
+                String html="<!doctype html><meta charset='utf-8'><h1>合成会话验证</h1><div class='d_post_content'>合成主帖：这不是真实平台登录。</div><div class='login-guard-mask'>登录后查看全部评论内容</div><script>setTimeout(function(){if(document.cookie.indexOf('qr_return_fixture=1')>=0){document.querySelector('.login-guard-mask').remove();var reply=document.createElement('div');reply.className='d_post_content';reply.textContent='合成回复：新来源视图复用了现有会话';document.body.appendChild(reply);}},2600);</script>";
+                source.setWebViewClient(new android.webkit.WebViewClient(){
+                    @Override public android.webkit.WebResourceResponse shouldInterceptRequest(WebView w,android.webkit.WebResourceRequest r){return new android.webkit.WebResourceResponse("text/html","UTF-8",new java.io.ByteArrayInputStream((r.isForMainFrame()?html:"").getBytes(StandardCharsets.UTF_8)));}
+                    @Override public void onPageStarted(WebView w,String u,Bitmap b){original.onPageStarted(w,u,b);}
+                    @Override public void onPageCommitVisible(WebView w,String u){original.onPageCommitVisible(w,u);}
+                    @Override public void onPageFinished(WebView w,String u){original.onPageFinished(w,u);}
+                });
+            });
+            boolean[] ready={false};
+            for(int i=0;i<30&&!ready[0];i++){Thread.sleep(250);ui(()->ready[0]=field("reading")!=null);}
+            ui(()->{
+                Document after=(Document)field("reading");
+                check(after!=null&&after.blocks.stream().anyMatch(b->b.value.contains("新来源视图复用了现有会话")),"Fresh source actually sees the synthetic session and extracts its reply");
+                check(after!=null&&!after.notice.contains("请登录"),"Old login warning is replaced by the new extraction");
+            });
+            shot("login-return-synthetic-reply");
+            ui(()->{
+                Document imported=new Document();imported.title="合成手动读取";imported.url=url;imported.blocks.add(new Block("text","手动读取仍保留已展开的内容。"));
+                LoginActivity.pendingDocument=imported;
+                activity.onActivityResult(100,Activity.RESULT_OK,new Intent().putExtra("source",Source.TIEBA.name()));
+                check(field("reading")==imported&&field("dynamic")==null,"Explicit source import still displays imported content without redundant reload");
+                check(LoginActivity.pendingDocument==null,"Imported result is consumed once");
+            });
+        }finally{
+            CountDownLatch removed=new CountDownLatch(1);
+            ui(()->android.webkit.CookieManager.getInstance().setCookie(url,"qr_return_fixture=; Max-Age=0; Path=/p/99999881726; Secure; SameSite=Lax",v->removed.countDown()));
+            if(!removed.await(3,TimeUnit.SECONDS))throw new Exception("Synthetic cookie cleanup timed out");
+        }
+    }
+    private void tiebaSessionAndBack()throws Exception{
+        SharedPreferences prefs=getTargetContext().getSharedPreferences("source-session",0);Map<String,?> saved=new HashMap<>(prefs.getAll());
+        LoginActivity sourcePage=null;
+        try{
+            ui(()->{
+                Item item=new Item(Source.TIEBA,"合成模式测试","https://tieba.baidu.com/p/99999881726","");
+                for(boolean desktop:new boolean[]{false,true}){
+                    SourceSession.remember(activity,Source.TIEBA,desktop);
+                    DynamicReader reader=new DynamicReader(activity,item,new Repository.Result<Document>(){public void success(Document d){}public void failure(String s){}});
+                    Field f=DynamicReader.class.getDeclaredField("web");f.setAccessible(true);WebView view=(WebView)f.get(reader);
+                    check(view.getSettings().getUserAgentString().equals(desktop?Repository.DESKTOP_UA:android.webkit.WebSettings.getDefaultUserAgent(activity)),"Tieba read matches remembered login display mode: desktop="+desktop);
+                    reader.close(); // Cancel constructor's posted load; no fixture URL reaches network.
+                }
+                SourceSession.remember(activity,Source.TIEBA,false);
+                Document gated=SourceParser.article(Source.TIEBA,"<div class='d_post_content'>合成主帖</div><div class='login-guard-mask'>登录后查看全部评论内容</div>",item.url);
+                ((Repository)field("repo")).cacheArticle(gated);
+                check(((Repository)field("repo")).cachedArticle(item)==null,"Gated result cannot enter 10-minute article cache");
+                set("current",item);set("reading",gated);
+            });
+            ActivityMonitor monitor=addMonitor(LoginActivity.class.getName(),null,false);
+            try{ui(()->invoke("login",new Class<?>[]{Item.class},(Item)field("current")));sourcePage=(LoginActivity)waitForMonitorWithTimeout(monitor,5000);}finally{removeMonitor(monitor);}
+            if(sourcePage==null)throw new Exception("No explicit source page");
+            Thread.sleep(500);waitForIdleSync(); // ActivityMonitor can observe creation before resume.
+            LoginActivity page=sourcePage;CountDownLatch loaded=new CountDownLatch(1);WebView[] source={null};
+            ui(()->{
+                Field f=LoginActivity.class.getDeclaredField("web");f.setAccessible(true);WebView view=(WebView)f.get(page);source[0]=view;
+                check(view.getSettings().getUserAgentString().equals(android.webkit.WebSettings.getDefaultUserAgent(page)),"Login page itself reuses saved mobile mode");
+                String fixture="<!doctype html><meta charset='utf-8'><style>.resolved-mask{display:none}</style><h1>合成已解锁原帖</h1><div class='d_post_content'>合成主帖正文。</div><div class='d_post_content'>只存在于这个来源页面的合成回复。</div><div class='resolved-mask'><div class='login-guard-mask'>登录后查看全部评论内容</div></div>";
+                view.stopLoading();view.setWebViewClient(new android.webkit.WebViewClient(){
+                    @Override public android.webkit.WebResourceResponse shouldInterceptRequest(WebView v,android.webkit.WebResourceRequest r){return new android.webkit.WebResourceResponse("text/html","UTF-8",new java.io.ByteArrayInputStream((r.isForMainFrame()?fixture:"").getBytes(StandardCharsets.UTF_8)));}
+                    @Override public void onPageFinished(WebView v,String u){if(u.equals("https://tieba.baidu.com/p/99999881726"))loaded.countDown();}
+                });
+                view.loadUrl("https://tieba.baidu.com/p/99999881726");
+            });
+            if(!loaded.await(5,TimeUnit.SECONDS))throw new Exception("Synthetic source not ready");
+            // Exercise real snapshot with a CSS-hidden ancestor, not just inline-style fixtures.
+            JSONObject snapshot=null;
+            for(int attempt=0;attempt<16;attempt++){
+                CountDownLatch inspected=new CountDownLatch(1);String[] result={null};
+                ui(()->source[0].evaluateJavascript(SourceSnapshot.script(Source.TIEBA),v->{result[0]=v;inspected.countDown();}));
+                if(!inspected.await(3,TimeUnit.SECONDS))throw new Exception("Snapshot timeout");
+                Object raw=result[0]==null?null:new JSONTokener(result[0]).nextValue();
+                if(raw instanceof String){JSONObject candidate=new JSONObject((String)raw);if(candidate.optString("html").contains("只存在于这个来源页面")){snapshot=candidate;break;}}
+                Thread.sleep(200);
+            }
+            if(snapshot==null)throw new Exception("Exact synthetic document did not become ready");
+            check("https://tieba.baidu.com/p/99999881726".equals(snapshot.optString("url")),"Source snapshot has exact fixture post identity, not a data-document origin");
+            ui(()->check("https://tieba.baidu.com/p/99999881726".equals(source[0].getUrl()),"Native source URL and rendered snapshot agree"));
+            Document fixtureDocument=SourceParser.article(Source.TIEBA,snapshot.getString("html"),snapshot.getString("url"));
+            check(fixtureDocument.hasContent()&&!fixtureDocument.loginRequired,"Rendered source snapshot is readable without a visible gate");
+            ui(()->{Field f=LoginActivity.class.getDeclaredField("initialUrl");f.setAccessible(true);check(UrlPolicy.sameForumPost(Source.TIEBA,(String)f.get(page),source[0].getUrl()),"Auto-return target matches the original post");check(!page.isFinishing(),"Source activity still active before Back");});
+            check(!snapshot.getString("html").contains("登录后查看全部评论内容"),"Computed-style hidden gate is excluded from snapshot");
+            ui(()->{View back=control(page.getWindow().getDecorView(),"返回",false);check(back!=null&&back.performClick(),"Explicit source Back control activated");});
+            boolean[] done={false};for(int n=0;n<24&&!done[0];n++){Thread.sleep(200);ui(()->{Document d=(Document)field("reading");done[0]=d!=null&&d.title.equals("合成已解锁原帖");});}
+            ui(()->{Document doc=(Document)field("reading");check(done[0]&&doc.blocks.stream().anyMatch(b->b.value.contains("只存在于这个来源页面")),"Back imports the actual already-loaded reply instead of reconstructing the source page");check(done[0]&&!doc.loginRequired&&field("dynamic")==null,"No false login warning and no redundant source reload after import");});
+            shot("tieba-back-preserved-source-reply");
+        }finally{if(sourcePage!=null&&!sourcePage.isFinishing()){LoginActivity page=sourcePage;ui(page::finish);}restorePreferences(prefs,saved);}
+    }
+    private void platformBadges()throws Exception{
+        for(boolean dark:new boolean[]{false,true}){
+            ui(()->{getTargetContext().getSharedPreferences("appearance",0).edit().putInt("mode",dark?2:1).commit();activity.recreate();});Thread.sleep(750);
+            ui(()->{set("selected",Source.ZHIHU);invoke("home",new Class<?>[]{boolean.class},false);
+                List<Item> rows=new ArrayList<>();for(int i=1;i<=6;i++)rows.add(new Item(Source.ZHIHU,"合成预览 "+i+" · 热榜排版与平台配色",Source.ZHIHU.login,"预览"));
+                invoke("showBoard",new Class<?>[]{List.class,String.class},rows,"外观预览 · 非实时热搜");
+                check("News".equals(activity.getString(app.quietreader.R.string.app_name)),"App display name is News");
+            });
+            // Newly rebuilt native views have no measured bounds until the layout pass.
+            Thread.sleep(350);
+            ui(()->{
+                for(Source source:Source.values())if(source.visible()){
+                    TextView tab=textView(activity.getWindow().getDecorView(),source.label,false);Rect r=new Rect();
+                    check(tab instanceof PlatformMarkView&&tab.getText().length()==1&&tab.getGlobalVisibleRect(r)&&r.width()==tab.getWidth()&&tab.getBackground()==null,"Rounded lettermark without a background tile fully visible: "+source.label+" dark="+dark);
+                }
+            });shot("platform-badges-"+(dark?"dark":"light"));
+            for(Source source:Source.values())if(source.visible()){
+                pressNative(source.label,false);ui(()->check(textView(activity.getWindow().getDecorView(),source.label,false).isSelected(),"Real platform tap updates selection: "+source.label+" dark="+dark));
+            }
+        }
+    }
     private void loadingAndLinks()throws Exception{
         ui(()->{invoke("home",new Class<?>[]{boolean.class},false);invoke("status",new Class<?>[]{String.class,String.class},"正在整理内容…","合成加载状态，不访问网络");});Thread.sleep(200);
         ui(()->{View spinner=control(activity.getWindow().getDecorView(),"加载中",false);check(spinner instanceof android.widget.ProgressBar&&((android.widget.ProgressBar)spinner).isIndeterminate()&&spinner.isShown(),"Loading state shows native indeterminate spinner");});shot("00-loading-spinner");
@@ -161,7 +293,7 @@ public final class ExploratoryInstrumentation extends Instrumentation {
     private void queryBoard(String query)throws Exception{View[] input={null};ui(()->input[0]=control(activity.getWindow().getDecorView(),"搜索当前榜单",false));Bundle args=new Bundle();args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,query);ui(()->{if(input[0]==null||!input[0].performAccessibilityAction(AccessibilityNodeInfo.ACTION_SET_TEXT,args))throw new Exception("Search text entry failed");});Thread.sleep(250);}
     private List<Item> returnBoardFixture()throws Exception{
         List<Item> items=new ArrayList<>();for(int i=1;i<=30;i++)items.add(new Item(Source.HUPU,"合成连续阅读第"+i+"项"+(i%10==4?" · 目标专题":""),"https://bbs.hupu.com/999990"+String.format(java.util.Locale.ROOT,"%02d",i)+".html","合成缓存，不请求远程"));
-        ui(()->{Repository repo=(Repository)field("repo");repo.cache(Source.HUPU,items);for(Item item:items){Document doc=fixture();doc.title=item.title;doc.url=item.url;repo.cacheArticle(doc);}set("selected",Source.HUPU);invoke("home",new Class<?>[]{boolean.class},false);});Thread.sleep(500);queryBoard("");return items;
+        ui(()->{Repository repo=(Repository)field("repo");repo.cache(Source.HUPU,items);for(Item item:items){Document doc=fixture();doc.title=item.title;doc.url=item.url;repo.cacheArticle(doc);}set("selected",Source.HUPU);invoke("home",new Class<?>[]{boolean.class},false);});Thread.sleep(500);return items;
     }
     private String cardDescription(Item item){return item.title+"，"+item.detail+"，进入阅读";}
     private android.widget.ScrollView boardScroll(View view){if(view instanceof android.widget.ScrollView)return (android.widget.ScrollView)view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){android.widget.ScrollView found=boardScroll(((ViewGroup)view).getChildAt(i));if(found!=null)return found;}return null;}
@@ -272,8 +404,8 @@ public final class ExploratoryInstrumentation extends Instrumentation {
         ui(()->{Repository repository=(Repository)field("repo");repository.cancelPending();repository.cache(Source.HUPU,java.util.Arrays.asList(video,text));set("selected",Source.HUPU);invoke("home",new Class<?>[]{boolean.class},false);});queryBoard("");
         ui(()->check(boardCards(activity.getWindow().getDecorView(),false)==2,"Before source classification both unknown-video and text-title candidates exist"));
         acceptSyntheticSource(Source.HUPU,parsed);
-        ui(()->{check(field("reading")==parsed&&parsed.filteredVideo,"Actual source-result entry renders the parsed filter result");check(control(activity.getWindow().getDecorView(),"已过滤视频主题",false)!=null,"Video filtering is explained visibly instead of presenting a blank reader");check(control(activity.getWindow().getDecorView(),"合成回复不得冒充正文",true)==null,"Filtered main-post replies are absent from rendered native UI");check(web()==null,"Filtered whole topic does not masquerade as a readable own WebView");});shot("video-filter-main-excluded");
-        pressNative("返回图文列表",false);Thread.sleep(400);
+        ui(()->{check(field("current")==null&&field("reading")==null,"Classified video automatically returns to the board");check(control(activity.getWindow().getDecorView(),"已过滤视频主题",false)==null,"No video-filter interstitial forces an extra return tap");check(control(activity.getWindow().getDecorView(),"合成回复不得冒充正文",true)==null,"Filtered main-post replies are absent from rendered native UI");check(web()==null,"Filtered whole topic does not masquerade as a readable own WebView");});shot("video-filter-main-excluded");
+        Thread.sleep(400);
         ui(()->check(control(activity.getWindow().getDecorView(),cardDescription(video),false)==null&&control(activity.getWindow().getDecorView(),cardDescription(text),false)!=null,"Actual return hides classified video URL while preserving title-containing-video text topic"));shot("video-filter-returned-board");
         Repository fresh=new Repository(getTargetContext());try{check(fresh.hiddenVideo(video)&&fresh.cached(Source.HUPU).size()==1&&fresh.cached(Source.HUPU).get(0).url.equals(text.url),"A newly constructed Repository reapplies persisted classification to existing cached board");}finally{fresh.close();}
         ui(()->{invoke("showBoard",new Class<?>[]{List.class,String.class},java.util.Arrays.asList(video,text),"合成刷新回调");check(control(activity.getWindow().getDecorView(),cardDescription(video),false)==null,"Synthetic refresh callback cannot resurrect a classified video URL");((Repository)field("repo")).cache(Source.HUPU,Collections.singletonList(video));invoke("home",new Class<?>[]{boolean.class},false);});Thread.sleep(250);
@@ -432,7 +564,7 @@ public final class ExploratoryInstrumentation extends Instrumentation {
             freshReader();shot("11-small-200-reader");for(String label:new String[]{"返回","更多选项"})visibleControl(activity,label);menuContents(true);
             JSONObject size=dom("({width:innerWidth,scrollWidth:document.documentElement.scrollWidth})");check(size.getInt("width")==size.getInt("scrollWidth"),"Small screen plus 200% system font has no horizontal reader overflow");
             LoginActivity login=(LoginActivity)startActivitySync(new Intent(getTargetContext(),LoginActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("source",Source.WEIBO.name()).putExtra("url",Source.WEIBO.login));Thread.sleep(1000);
-            shot("12-small-200-login-toolbar");for(String label:new String[]{"返回","读取到静读","桌面版"})visibleControl(login,label);
+            shot("12-small-200-login-toolbar");for(String label:new String[]{"返回","读取到 News","桌面版"})visibleControl(login,label);
             String[] fullStatus={""};ui(()->{Field statusField=LoginActivity.class.getDeclaredField("status");statusField.setAccessible(true);TextView status=(TextView)statusField.get(login);fullStatus[0]=status.getText().toString();check(status.getMaxLines()==2&&status.getLineCount()<=2,"Small-screen source status occupies at most two lines at 200% system font");status.performClick();});Thread.sleep(350);
             android.view.accessibility.AccessibilityNodeInfo detailRoot=getUiAutomation().getRootInActiveWindow();boolean detailShown=false;if(detailRoot!=null){for(android.view.accessibility.AccessibilityNodeInfo node:detailRoot.findAccessibilityNodeInfosByText(fullStatus[0]))if(fullStatus[0].contentEquals(node.getText()==null?"":node.getText()))detailShown=true;check(!detailRoot.findAccessibilityNodeInfosByText("来源状态").isEmpty()&&detailShown,"Tapping truncated source status exposes the complete original text in a detail dialog");}else check(false,"Source status detail dialog is accessible");
             shot("12b-small-200-source-status-details");choose("关闭");ui(login::finish);
@@ -678,18 +810,81 @@ public final class ExploratoryInstrumentation extends Instrumentation {
             ui(()->check(!web().getSettings().getJavaScriptEnabled(),name+": temporary observation scripting is disabled"));
         }finally{slow.release.countDown();}
     }
+    private void preloaderContract()throws Exception{
+        class Fake implements ArticlePreloader.Loader {int calls,cancels;Repository.Result<Document> pending;public void load(Item i,Repository.Result<Document> cb){calls++;pending=cb;}public void cancel(){cancels++;}}
+        Fake fake=new Fake();ArticlePreloader[] loader={null};int[] delivered={0},removed={0};
+        String fixture="https://bbs.hupu.com/"+System.currentTimeMillis();
+        Item a=new Item(Source.HUPU,"预读测试A",fixture+"01.html",""),b=new Item(Source.HUPU,"预读测试B",fixture+"02.html",""),c=new Item(Source.HUPU,"预读测试C",fixture+"03.html",""),d=new Item(Source.HUPU,"不应预读D",fixture+"04.html","");
+        try{
+            ui(()->{((ArticlePreloader)field("preloader")).pause();((Repository)field("repo")).invalidateArticles();loader[0]=new ArticlePreloader(activity,()->removed[0]++,fake);loader[0].offer(java.util.Arrays.asList(a,b,c,d));});Thread.sleep(450);
+            check(fake.calls==1,"Predictive queue starts one request only");
+            ui(()->check(loader[0].promote(a,new Repository.Result<Document>(){public void success(Document value){delivered[0]++;}public void failure(String why){}}),"Tap promotes the existing in-flight request"));
+            ui(()->{Document doc=new Document();doc.url=a.url;doc.blocks.add(new Block("text","合成预读正文"));fake.pending.success(doc);});Thread.sleep(450);
+            check(fake.calls==1&&delivered[0]==1,"Promotion does not restart request or run remaining speculation");
+            ui(()->loader[0].offer(java.util.Arrays.asList(a,b,c,d)));Thread.sleep(450);check(fake.calls==2,"Fresh viewport skips cached item and starts the next prediction");
+            Repository.Result<Document> stale=fake.pending;
+            ui(()->{loader[0].pause();Document doc=new Document();doc.url=b.url;doc.blocks.add(new Block("text","过期回调"));stale.success(doc);check(((Repository)field("repo")).cachedArticle(b)==null,"Cancelled callbacks cannot populate the cache");});
+            ui(()->loader[0].offer(java.util.Arrays.asList(b,c,d,a)));Thread.sleep(450);
+            for(Item item:java.util.Arrays.asList(b,c,d)){ui(()->{Document doc=new Document();doc.url=item.url;if(item==b)doc.filteredVideo=true;else doc.blocks.add(new Block("text","合成预读正文"));fake.pending.success(doc);});Thread.sleep(100);}
+            check(fake.calls==5,"A viewport runs at most three predictions serially");check(removed[0]==1,"Preloaded video classification notifies board removal before any tap");
+            ui(()->{Repository r=(Repository)field("repo");check(r.hiddenVideo(b)&&r.cachedArticle(b)==null,"Video has a persistent exclusion, never a readable body cache");});
+        }finally{ui(()->{if(loader[0]!=null)loader[0].close();});}
+    }
+    private void readingControls()throws Exception{
+        freshReader();expandLong();tap("#part-1 nav.section-nav a[href$='index=2']");
+        check(isExpanded("synthetic-2"),"Next-answer link expands its destination without a refetch");
+        check(box("#part-2").getDouble("y")<80,"Next-answer navigation lands at the answer header");
+        menu("回答 / 楼层目录");sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
+        ActivityMonitor monitor=addMonitor(SettingsActivity.class.getName(),null,false);menu("阅读设置");Activity settings=waitForMonitorWithTimeout(monitor,3000);removeMonitor(monitor);
+        check(settings instanceof SettingsActivity,"Settings is reachable from the reading overflow");
+        if(settings!=null){
+            Activity[] page={settings};ui(()->{View row=control(page[0].getWindow().getDecorView(),"阅读配色",true);Rect bounds=new Rect();check(row!=null&&row.getGlobalVisibleRect(bounds),"Palette setting and current value are visible");row.performClick();});
+            ActivityMonitor changed=addMonitor(SettingsActivity.class.getName(),null,false);choose("暖灰 / 米白");Activity next=waitForMonitorWithTimeout(changed,3000);removeMonitor(changed);if(next!=null)page[0]=next;
+            check(getTargetContext().getSharedPreferences("appearance",0).getInt("palette",0)==1,"Palette selection is saved by its real settings control");
+            ui(()->control(page[0].getWindow().getDecorView(),"正文行距",true).performClick());choose("宽松");
+            check(getTargetContext().getSharedPreferences("appearance",0).getInt("spacing",1)==2,"Line-spacing selection is saved by its real settings control");shot("predictive-settings");
+            MainActivity before=activity;ui(()->page[0].finish());long until=SystemClock.elapsedRealtime()+3000;while((activity==before||activity.isDestroyed())&&SystemClock.elapsedRealtime()<until)Thread.sleep(50);check(activity!=before&&!activity.isDestroyed(),"Returning from settings rebuilds the reader with saved preferences");Thread.sleep(400);
+            JSONObject style=dom("({bg:getComputedStyle(document.body).backgroundColor,line:getComputedStyle(document.querySelector('p')).lineHeight,font:getComputedStyle(document.querySelector('p')).fontSize})");
+            check(style.getString("bg").equals(Theme.dark(activity)?"rgb(37, 34, 31)":"rgb(247, 240, 227)"),"Selected palette reaches the actual reader, not just the settings preview");
+            check(Double.parseDouble(style.getString("line").replace("px",""))/Double.parseDouble(style.getString("font").replace("px",""))>2,"Selected wider line spacing reaches the actual reader");
+        }
+    }
+    private void livePrefetch()throws Exception{
+        // Separate measured live journey; no synthetic content is used for these timings.
+        if(activity==null||activity.isDestroyed())throw new Exception("No resumed MainActivity for live measurement");
+        Repository[] repository={null};List<Item> items=new ArrayList<>();String[] error={""};CountDownLatch board=new CountDownLatch(1);
+        ui(()->{repository[0]=new Repository(activity);repository[0].board(Source.HUPU,new Repository.Result<List<Item>>(){public void success(List<Item> value){items.addAll(value);board.countDown();}public void failure(String why){error[0]=why;board.countDown();}});});
+        try{
+            if(!board.await(35,TimeUnit.SECONDS)||items.isEmpty())throw new Exception("Live Hupu board unavailable: "+error[0]);
+            ui(()->{set("selected",Source.HUPU);repository[0].invalidateArticles();invoke("home",new Class<?>[]{boolean.class},false);});
+            long started=SystemClock.elapsedRealtime();Item[] ready={null};
+            while(SystemClock.elapsedRealtime()-started<40000&&ready[0]==null){ui(()->{for(Item item:items)if(repository[0].cachedArticle(item)!=null){ready[0]=item;break;}});Thread.sleep(80);}
+            check(ready[0]!=null,"Live viewport preloads a not-yet-opened article");if(ready[0]==null)return;
+            report.append("MEASURE live prefetch ready after ").append(SystemClock.elapsedRealtime()-started).append(" ms; ").append(ready[0].url).append('\n');
+            long tap=SystemClock.elapsedRealtime();ui(()->invoke("open",new Class<?>[]{Item.class,boolean.class},ready[0],true));
+            boolean shown=false;while(SystemClock.elapsedRealtime()-tap<5000&&!shown){try{JSONObject state=dom("({text:document.querySelector('main')?.innerText||'',loaded:document.readyState})");shown=state.getString("text").length()>50;}catch(Exception ignored){}if(!shown)Thread.sleep(40);}
+            long elapsed=SystemClock.elapsedRealtime()-tap;report.append("MEASURE live preloaded tap-to-body ").append(elapsed).append(" ms\n");check(shown&&elapsed<1000,"Preloaded live article text appears in less than one second (not just a loading shell)");shot("predictive-live-first-body");
+            ui(()->{android.util.LruCache<?,?> cache=(android.util.LruCache<?,?>)field("images");check(cache.maxSize()==2*1024*1024,"Image byte cache is capped at 2 MiB");Field f=Repository.class.getDeclaredField("articles");f.setAccessible(true);android.util.LruCache<?,?> articles=(android.util.LruCache<?,?>)f.get(null);check(articles.maxSize()==2*1024*1024&&articles.size()<=articles.maxSize(),"Conservatively accounted text cache is capped at 2 MiB");});
+        }finally{ui(()->repository[0].close());}
+    }
     @Override public void onStart(){
         SharedPreferences boards=getTargetContext().getSharedPreferences("boards",0);Map<String,?> originalBoards=new HashMap<>(boards.getAll());
         boolean appearanceMode=mode.equals("appearance")||mode.equals("all");
-        boolean videoMode=mode.equals("video-filter")||mode.equals("all"),isolatedMode=appearanceMode||videoMode||mode.equals("image-layout");
+        boolean videoMode=mode.equals("video-filter")||mode.equals("predictive")||mode.equals("all"),isolatedMode=!mode.equals("smzdm-cache");
         SharedPreferences appearance=getTargetContext().getSharedPreferences("appearance",0),mainPreferences=getTargetContext().getSharedPreferences(MainActivity.class.getSimpleName(),0);
         Map<String,?> originalAppearance=new HashMap<>(appearance.getAll()),originalMain=new HashMap<>(mainPreferences.getAll());
         SharedPreferences videoPreferences=getTargetContext().getSharedPreferences("video-filter",0);Map<String,?> originalVideos=new HashMap<>(videoPreferences.getAll());Document originalPending=LoginActivity.pendingDocument;
         try{
             android.accessibilityservice.AccessibilityServiceInfo accessibility=getUiAutomation().getServiceInfo();accessibility.flags|=android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;getUiAutomation().setServiceInfo(accessibility);
             if(mode.equals("smzdm-cache")){journey("smzdm-cache-migration",this::smzdmCacheMigration);}else{
+            appearance.edit().putInt("palette",0).putInt("accent",0).putInt("face",0).putInt("spacing",1).commit();
             Repository cache=new Repository(getTargetContext());for(Source source:Source.values())cache.cache(source,Collections.singletonList(new Item(source,"合成测试榜单：无网络依赖",source.login,"不是实网热搜")));cache.close();
+            if(mode.equals("tieba-auth"))mainPreferences.edit().putString("selected",Source.WEIBO.name()).commit();
             activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));waitForIdleSync();
+            if(mode.equals("tieba-auth")){ui(()->check(field("selected")==Source.ZHIHU,"New launch defaults to first tab Zhihu despite legacy Weibo preference"));journey("login-back-refresh",this::loginReturn);journey("tieba-source-session-back",this::tiebaSessionAndBack);}
+            if(mode.equals("login-return")){journey("login-back-refresh",this::loginReturn);journey("platform-badges",this::platformBadges);}
+            if(mode.equals("home-cleanup")){journey("board-middle-return",this::boardMiddleReturn);journey("platform-badges",this::platformBadges);}
+            if(mode.equals("predictive")){journey("bounded-preloader-promotion",this::preloaderContract);journey("reading-settings-jump",this::readingControls);journey("live-hupu-prefetch",this::livePrefetch);}
             if(mode.equals("image-layout")){journey("short-top",()->delayedImageLayout("short-top",0,true));journey("long-above",()->delayedImageLayout("long-above",0,false));journey("long-below",()->delayedImageLayout("long-below",1,false));journey("long-middle",()->delayedImageLayout("long-middle",6,false));journey("long-bottom",()->delayedImageLayout("long-bottom",40,false));}
             if(mode.equals("core")||mode.equals("all")){journey("platform-switch",this::selectedTab);journey("loading-and-links",this::loadingAndLinks);journey("compact-search-menus",this::compactBoard);journey("search-keyboard-reading",this::searchKeyboardReading);journey("collapse-bottom",this::collapseBottom);journey("font-reading-anchor",this::fontAnchor);journey("dark-reading-state",this::darkAndRestore);journey("cache-return",this::cacheReturn);journey("reader-safety",this::renderSafety);}
             if(mode.equals("board-return")||mode.equals("all")){journey("board-middle-return",this::boardMiddleReturn);journey("board-search-return",this::boardSearchReturn);journey("board-platform-theme",this::boardPlatformAndTheme);journey("board-refresh-anchor",this::boardRefreshAnchor);}
@@ -707,7 +902,7 @@ public final class ExploratoryInstrumentation extends Instrumentation {
             if(isolatedMode){restorePreferences(appearance,originalAppearance);restorePreferences(mainPreferences,originalMain);check(appearance.getAll().equals(originalAppearance),"Global appearance preferences restored exactly");check(mainPreferences.getAll().equals(originalMain),"Original main preferences including source/font/favorites restored exactly");check(boards.getAll().equals(originalBoards),"Original board cache restored exactly after isolated fixtures");}
             if(videoMode){restorePreferences(videoPreferences,originalVideos);LoginActivity.pendingDocument=originalPending;check(videoPreferences.getAll().equals(originalVideos)&&LoginActivity.pendingDocument==originalPending,"Original video classifications and pending source document restored exactly");}
         }
-        report.append("\nSUMMARY ").append(checks).append(" checks; ").append(failures).append(" failures. Output: ").append(outputDirectory()).append(". Screenshots: ").append(screenshots).append("\nLimits: synthetic own-reader interaction journeys only; no real-platform extraction, network speed, authenticated login, or SMZDM App hot-search claim. Original board cache restored; real cookies and bookmarks not cleared.\n");
+        report.append("\nSUMMARY ").append(checks).append(" checks; ").append(failures).append(" failures. Output: ").append(outputDirectory()).append(". Screenshots: ").append(screenshots).append(mode.equals("predictive")?"\nLimits: bounded-queue/controls/video tests are synthetic; only the explicitly labelled Hupu timing is live, on an emulator, not the user's phone. No authenticated login or other-platform speed claim.\n":"\nLimits: synthetic own-reader interaction journeys only; no real-platform extraction, network speed, authenticated login, or SMZDM App hot-search claim. Original board cache restored; real cookies and bookmarks not cleared.\n");
         try{File dir=outputDirectory();dir.mkdirs();try(FileOutputStream out=new FileOutputStream(new File(dir,"report.txt"))){out.write(report.toString().getBytes(StandardCharsets.UTF_8));}}catch(Exception ignored){}
         Bundle result=new Bundle();result.putString("stream",report.toString());finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);
     }

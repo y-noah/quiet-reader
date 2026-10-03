@@ -59,7 +59,7 @@ public final class ReleaseInstrumentation extends Instrumentation {
         if(view instanceof WebView){String url=((WebView)view).getUrl();if(url!=null&&url.startsWith("https://quiet-reader.invalid/?render="))return (WebView)view;}
         if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){WebView found=findOwnReader(((ViewGroup)view).getChildAt(i));if(found!=null)return found;}return null;
     }
-@Override public void onCreate(Bundle args){super.onCreate(args);smzdmImageJourney=args!=null&&"1".equals(args.getString("smzdmImageJourney","0"));smzdmImageProbe=args!=null&&"1".equals(args.getString("smzdmImageProbe","0"));weiboReaderJourney=args!=null&&"1".equals(args.getString("weiboReaderJourney","0"));mode=args==null?"":args.getString("mode","");sourceFilter=args==null?"all":args.getString("source","all");wallstreetOriginal=args!=null&&"1".equals(args.getString("wallstreetOriginal","0"));fixedTieba=args!=null&&"1".equals(args.getString("fixedTieba","0"));weiboFulltextProbe=args!=null&&"1".equals(args.getString("weiboFulltextProbe","0"));weiboProbe=weiboFulltextProbe||args!=null&&"1".equals(args.getString("weiboProbe","0"));offline=mode.equals("offline");if(mode.equals("sources")||mode.equals("normal")){String runId=args==null?"":args.getString("runId","");if(!runId.matches("[0-9]{10,20}"))runId=Long.toString(System.currentTimeMillis());outputDirectory+=(mode.equals("sources")?"/sources-":"/normal-")+runId;}start();}
+@Override public void onCreate(Bundle args){super.onCreate(args);smzdmImageJourney=args!=null&&"1".equals(args.getString("smzdmImageJourney","0"));smzdmImageProbe=args!=null&&"1".equals(args.getString("smzdmImageProbe","0"));weiboReaderJourney=args!=null&&"1".equals(args.getString("weiboReaderJourney","0"));mode=args==null?"":args.getString("mode","");sourceFilter=args==null?"all":args.getString("source","all");wallstreetOriginal=args!=null&&"1".equals(args.getString("wallstreetOriginal","0"));fixedTieba=args!=null&&"1".equals(args.getString("fixedTieba","0"));weiboFulltextProbe=args!=null&&"1".equals(args.getString("weiboFulltextProbe","0"));weiboProbe=weiboFulltextProbe||args!=null&&"1".equals(args.getString("weiboProbe","0"));offline=mode.equals("offline");if(mode.equals("sources")||mode.equals("normal")||mode.equals("branding")){String runId=args==null?"":args.getString("runId","");if(!runId.matches("[0-9]{10,20}"))runId=Long.toString(System.currentTimeMillis());outputDirectory+=(mode.equals("sources")?"/sources-":"/normal-")+runId;}start();}
     private org.json.JSONObject ownReaderDom(String expression)throws Exception{
         java.util.concurrent.CountDownLatch done=new java.util.concurrent.CountDownLatch(1);String[] raw={null};WebView[] target={null};Throwable[] error={null};
         runOnMainSync(()->{try{WebView web=findOwnReader(foreground.getWindow().getDecorView());check(web!=null,"Inspection restricted to own escaped reader, not hidden source/login page");check(!web.getSettings().getJavaScriptEnabled(),"Reader scripting off before independent content inspection");target[0]=web;web.getSettings().setJavaScriptEnabled(true);web.evaluateJavascript("JSON.stringify("+expression+")",value->{web.getSettings().setJavaScriptEnabled(false);raw[0]=value;done.countDown();});}catch(Throwable failure){error[0]=failure;done.countDown();}});
@@ -541,7 +541,7 @@ runOnMainSync(()->{if(!pointerActive.get()){done.countDown();return;}WebView w=f
             if(weiboFulltextProbe){observeWeiboFulltext(target[0],report);break;}
             sourceCheckpoint(report,"WEIBO_PUBLIC_CARD_STRUCTURE phase="+phase+" "+publicWeiboCardStructure(target[0]));
             org.json.JSONObject mediaWitness=weiboTextWitness(target[0]);
-            tap("读取到静读");Thread.sleep(1200);
+            tap("读取到 News");Thread.sleep(1200);
             String[] status={""};runOnMainSync(()->status[0]=foreground==login?sourceNativeStatus(login.getWindow().getDecorView()):"Returned to app; body not certified by this diagnostic");
             sourceCheckpoint(report,"WEIBO_READ_ACTION phase="+phase+" remainsSource="+(foreground==login)+" nativeStatus="+status[0]);
             screenshot("source-0-after-read-"+(phase==0?"mobile":"desktop"));
@@ -565,8 +565,8 @@ runOnMainSync(()->{if(!pointerActive.get()){done.countDown();return;}WebView w=f
         sourceCheckpoint(report,"RUNNING anonymous source observations; filter="+sourceFilter+"; wallstreetOriginal="+wallstreetOriginal+"; fixedTieba="+fixedTieba+"; incomplete until final PASS. No account authentication claim.");
         sourceContentPolicyChecks();
         sourceCheckpoint(report,"POLICY_SELF_CHECKS_PASS: pure synthetic strings only; not a live-source result.");
-        String[] names={"微博","知乎","贴吧","虎扑","华尔街见闻","什么值得买"};
-        String[] sourceKeys={"WEIBO","ZHIHU","TIEBA","HUPU","WALLSTREET","SMZDM"};
+        String[] names={"知乎","爱范儿","财联社","什么值得买","虎扑","微博"};
+        String[] sourceKeys={"ZHIHU","IFANR","CLS","SMZDM","HUPU","WEIBO"};
         for(int n=0;n<names.length;n++) {
             if(!sourceFilter.equals("all")&&!sourceFilter.equals(sourceKeys[n]))continue;
             readerTapDiagnostics.setLength(0);
@@ -574,7 +574,7 @@ runOnMainSync(()->{if(!pointerActive.get()){done.countDown();return;}WebView w=f
             try {
             sourceCheckpoint(report,names[n]+": START stage="+stage);
             startActivitySync(new Intent().setClassName("app.quietreader","app.quietreader.MainActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
-            await("搜索当前榜单",true,15);selectSource(names[n]);stage="fresh-board";boardStart=android.os.SystemClock.elapsedRealtime();menu("刷新榜单");await("更新于",false,45);boardMs=android.os.SystemClock.elapsedRealtime()-boardStart;
+            await("News",true,15);selectSource(names[n]);stage="fresh-board";boardStart=android.os.SystemClock.elapsedRealtime();menu("刷新榜单");await("更新于",false,45);boardMs=android.os.SystemClock.elapsedRealtime()-boardStart;
             sourceCheckpoint(report,names[n]+": PROGRESS boardMs="+boardMs+"; board ready, before screenshot");
             screenshot("source-"+n+"-board");
             String cardNeedle=fixedTieba&&sourceFilter.equals("TIEBA")?"假期打分大会,奥特曼客串锐评":wallstreetOriginal&&sourceFilter.equals("WALLSTREET")?"通胀数据难挡美债压力，标普、道指三连跌":"，进入阅读";
@@ -610,6 +610,11 @@ runOnMainSync(()->{if(!pointerActive.get()){done.countDown();return;}WebView w=f
             org.json.JSONObject body=revealReadableContent(sourceKeys[n]);articleMs=android.os.SystemClock.elapsedRealtime()-articleStart;
             sourceCheckpoint(report,names[n]+": PROGRESS selected-section body verified; section="+body.optString("verifiedSection")+"; role="+body.optString("role")+"; substantiveParagraphs="+body.optInt("substantiveParagraphs")+"; paragraphs="+body.optInt("paragraphs")+"; decodedNonEmojiImages="+body.optInt("loadedContentImages")+"; before screenshot");
             screenshot("source-"+n+"-expanded");if(names[n].equals("知乎")){stage="second-actual-answer";body.put("zhihuActualAnswers",verifySecondZhihuAnswer());sourceCheckpoint(report,names[n]+": PROGRESS second actual answer body verified; before screenshot");screenshot("source-"+n+"-second-answer");}
+            if(sourceKeys[n].equals("CLS")||sourceKeys[n].equals("GEEKPARK")){
+                check(body.optInt("substantiveParagraphs")>0,"New platform exposes actual text paragraphs");
+                tap("返回");await("News",true,10);await(names[n],true,5);
+                sourceCheckpoint(report,names[n]+": reader Back returned to the platform board");
+            }
             if(fixedTieba&&sourceKeys[n].equals("TIEBA")){
                 check(body.optString("sourceHref").equals("https://tieba.baidu.com/p/11061609054"),"Fixed Tieba article URL must match before second-floor inspection");
                 stage="second-tieba-floor";body.put("tiebaSecondFloor",verifyFixedTiebaSecondFloor());
@@ -667,7 +672,7 @@ String expression="(function(){var exact=location.protocol==='https:'&&location.
     private void paginationChecks(Activity home)throws Exception {
         String first="https://bbs.hupu.com/642690580.html",second="https://bbs.hupu.com/642690580-2.html";
         runOnMainSync(()->home.startActivityForResult(new Intent().setClassName("app.quietreader","app.quietreader.LoginActivity").putExtra("source","HUPU").putExtra("url",first),100));
-        await("豆包这么厉害了吗",false,40);tap("读取到静读");await("内容来自原作者",false,15);
+        await("豆包这么厉害了吗",false,40);tap("读取到 News");await("内容来自原作者",false,15);
         if(mode.equals("reader-state")) {
             int[] position={0};
             runOnMainSync(()->{WebView web=findWeb(home.getWindow().getDecorView());check(web!=null&&!web.getSettings().getJavaScriptEnabled(),"Own reader must keep scripts off");web.scrollTo(0,900);position[0]=web.getScrollY();});
@@ -765,22 +770,64 @@ String expression="(function(){var exact=location.protocol==='https:'&&location.
     private void verifyReaderAfterFont(Activity home)throws Exception {
         java.util.concurrent.CountDownLatch done=new java.util.concurrent.CountDownLatch(1);String[] value={null};
         runOnMainSync(()->{
-            WebView web=findWeb(home.getWindow().getDecorView());check(web!=null&&!web.getSettings().getJavaScriptEnabled(),"Own reader scripts must remain disabled");
+            WebView web=findOwnReader(home.getWindow().getDecorView());check(web!=null&&!web.getSettings().getJavaScriptEnabled(),"Own reader scripts must remain disabled");
             check(web.getSettings().getTextZoom()==Math.round(25*100f/19),"Selected font is not applied to reader");
             // Read our escaped document through the public WebView API, not app-private reflection.
             // WebView 69's accessibility subtree can remain stale after the native font dialog closes.
             web.getSettings().setJavaScriptEnabled(true);
-            web.evaluateJavascript("document.body.innerText",raw->{web.getSettings().setJavaScriptEnabled(false);value[0]=raw;done.countDown();});
+            web.evaluateJavascript("!!document.querySelector('meta[name=quiet-reader-source]') && Array.from(document.querySelectorAll('.part p:not(.preview)')).some(function(p){return p.textContent.trim().length>0;})",raw->{web.getSettings().setJavaScriptEnabled(false);value[0]=raw;done.countDown();});
         });
         check(done.await(5,java.util.concurrent.TimeUnit.SECONDS),"Reader DOM inspection timed out");
-        check(value[0]!=null&&value[0].contains("内容来自原作者"),"Rendered own-reader document disappeared after font change");
+        check("true".equals(value[0]),"Rendered own-reader actual body disappeared after font change");
+    }
+    private void brandingChecks(Activity home)throws Exception {
+        android.content.pm.PackageManager pm=getTargetContext().getPackageManager();
+        android.content.pm.ApplicationInfo info=pm.getApplicationInfo("app.quietreader",0);
+        check("News".contentEquals(pm.getApplicationLabel(info)),"Installed app label is News");
+        android.content.pm.PackageInfo version=pm.getPackageInfo(info.packageName,0);
+        check("0.3.24".equals(version.versionName)&&version.versionCode==35,"Exact renamed release version");
+        android.graphics.drawable.Drawable icon=pm.getApplicationIcon(info);
+        check(icon instanceof android.graphics.drawable.AdaptiveIconDrawable,"Launcher icon supports system masks");
+        android.graphics.drawable.AdaptiveIconDrawable adaptive=(android.graphics.drawable.AdaptiveIconDrawable)icon;
+        Bitmap background=Bitmap.createBitmap(108,108,Bitmap.Config.ARGB_8888);
+        adaptive.getBackground().setBounds(0,0,108,108);adaptive.getBackground().draw(new android.graphics.Canvas(background));
+        check(background.getPixel(54,54)==android.graphics.Color.rgb(184,0,0),"Launcher background is requested red");background.recycle();
+        Bitmap rendered=Bitmap.createBitmap(432,432,Bitmap.Config.ARGB_8888);
+        icon.setBounds(0,0,432,432);icon.draw(new android.graphics.Canvas(rendered));
+        int whites=0,greens=0;for(int y=0;y<432;y++)for(int x=0;x<432;x++){int c=rendered.getPixel(x,y);if(android.graphics.Color.alpha(c)<240)continue;int r=android.graphics.Color.red(c),g=android.graphics.Color.green(c),b=android.graphics.Color.blue(c);if(r>240&&g>240&&b>240)whites++;if(g>r+20&&g>b)greens++;}
+        check(whites>1500&&greens==0,"White wordmark visible; old green artwork absent");
+        File dir=new File(getTargetContext().getExternalFilesDir(null),outputDirectory);dir.mkdirs();
+        try(FileOutputStream out=new FileOutputStream(new File(dir,"icon.png"))){rendered.compress(Bitmap.CompressFormat.PNG,100,out);}rendered.recycle();
+        runOnMainSync(()->{check(nativeView(home.getWindow().getDecorView(),"News",true)!=null,"Visible home brand is News");check(nativeView(home.getWindow().getDecorView(),"静读",true)==null,"Old home brand removed");});
+        runOnMainSync(()->{
+            check(nativeView(home.getWindow().getDecorView(),"设置",true)==null,"No duplicate standalone settings button");
+            check(nativeView(home.getWindow().getDecorView(),"搜索当前榜单",true)==null,"No temporary title-filter search box");
+            View first=nativeView(home.getWindow().getDecorView(),"知乎",true);check(first!=null&&first.isSelected(),"Fresh launch selects Zhihu, the first platform");
+        });
+        screenshot("01-brand-home");menu("阅读设置");await("返回 · 阅读设置",true,10);tap("返回 · 阅读设置");await("News",true,10);
+        runOnMainSync(()->{
+            View root=home.getWindow().getDecorView();int right=-1;
+            for(String source:new String[]{"综合","知乎","爱范儿","财联社","什么值得买","虎扑","微博"}){
+                View tab=nativeView(root,source,true);android.graphics.Rect bounds=new android.graphics.Rect();
+                check(tab!=null&&tab.getGlobalVisibleRect(bounds)&&bounds.left>=right,"Requested platform order: "+source);right=bounds.right;
+            }
+            check(nativeView(root,"贴吧",true)==null&&nativeView(root,"华尔街见闻",true)==null&&nativeView(root,"极客公园",true)==null,"Retired platform entries absent");
+        });
+        for(String source:new String[]{"综合","知乎","爱范儿","财联社","什么值得买","虎扑","微博"}){
+            tap(source);Thread.sleep(250);
+            runOnMainSync(()->{View tab=nativeView(foreground.getWindow().getDecorView(),source,true);check(tab!=null&&tab.isSelected(),"Platform switching remains available: "+source);});
+            if(source.equals("综合")){Thread.sleep(800);screenshot("02-brand-aggregate");runOnMainSync(()->check(nativeView(foreground.getWindow().getDecorView(),"综合推荐 Top100",false)!=null,"Released aggregate uses Top100 disclosure"));}
+        }
+        Bundle result=new Bundle();result.putString("stream","PASS "+assertions+" release UI assertions. News label/icon, compact header without search/duplicate settings, overflow settings return and aggregate plus six platform switches. No account data cleared.");finish(Activity.RESULT_OK,result);
     }
     @Override public void onStart(){
         Bundle result=new Bundle();
         try {
             if(mode.equals("sources")){sourceChecks();return;}
             Activity home=startActivitySync(new Intent().setClassName("app.quietreader","app.quietreader.MainActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            await("搜索当前榜单",true,15);check(true,"Home");
+            await("News",true,15);check(true,"Home");
+            if(mode.equals("branding")){brandingChecks(home);return;}
+            if(mode.equals("event-search-probe")){EventSearchProbe.run(this,home,sourceFilter);return;}
             if(mode.equals("pagination")||mode.equals("reader-state")){paginationChecks(home);return;}
             if(offline){offlineChecks();result.putString("stream","PASS "+assertions+" offline/restart assertions. Dated cache, legacy preference preservation, font and synthetic WebView cookie persistence; not real account login certification.");finish(Activity.RESULT_OK,result);return;}
             rememberSaved();check(search(snapshot(),"收藏",false)==null,"Home has no favorites entry");
@@ -793,15 +840,17 @@ String expression="(function(){var exact=location.protocol==='https:'&&location.
                 screenshot("01-live-board");setBoardQuery(title);await(description,true,10);tap(description);
                 boolean filtered=false;long deadline=android.os.SystemClock.elapsedRealtime()+45000;
                 while(android.os.SystemClock.elapsedRealtime()<deadline){AccessibilityNodeInfo currentTree=snapshot();
-                    if(search(currentTree,"已过滤视频主题",true)!=null){filtered=true;break;}
-                    if(search(currentTree,"内容来自原作者",false)!=null){readable=true;break;}Thread.sleep(250);
+                    if(search(currentTree,"搜索当前榜单",true)!=null&&search(currentTree,description,true)==null){filtered=true;break;}
+                    boolean[] own={false};runOnMainSync(()->{WebView web=findOwnReader(foreground.getWindow().getDecorView());own[0]=web!=null&&web.isShown();});
+                    if(own[0]){readable=true;break;}Thread.sleep(250);
                 }
                 if(!filtered)break; // Assistance, network failure or unreadable text must still fail.
-                screenshot("video-filtered-"+candidate);tap("返回图文列表");await("搜索当前榜单",true,10);
+                screenshot("video-filtered-"+candidate);await("搜索当前榜单",true,10);
                 check(search(snapshot(),description,true)==null,"Confirmed video topic must disappear from its original filtered board");
                 setBoardQuery("");check(search(snapshot(),description,true)==null,"Clearing search must not resurrect the confirmed video topic");
             }
             check(readable,"No own-reader text candidate within five entries; filtered videos are not counted as article-readable passes");await(title,false,10);
+            org.json.JSONObject liveBody=revealReadableContent("HUPU");check(meaningfulBody(liveBody,true),"Real selected main post has substantive text, not only a reader shell");
             screenshot("02-live-reader");
             menu("阅读字号");tap("特大 · 25");verifyReaderAfterFont(home);
             screenshot("03-large-font");check(search(snapshot(),"收藏",false)==null,"Reader has no favorites entry");tap("返回");

@@ -1,4 +1,4 @@
-param([switch]$KeepData,[ValidateSet('emulator-5556','emulator-5558')][string]$Serial='emulator-5556',[ValidateSet('normal','sources')][string]$Mode='normal',[ValidateSet('all','WEIBO','ZHIHU','TIEBA','HUPU','WALLSTREET','HACKERNEWS','SMZDM')][string]$Source='all',[switch]$WallstreetOriginal,[switch]$FixedTieba,[switch]$WeiboProbe,[switch]$WeiboFulltextProbe,[switch]$WeiboReaderJourney,[switch]$SmzdmImageProbe,[switch]$SmzdmImageJourney)
+param([switch]$KeepData,[ValidateSet('emulator-5556','emulator-5558')][string]$Serial='emulator-5556',[ValidateSet('normal','sources','branding')][string]$Mode='normal',[ValidateSet('all','WEIBO','ZHIHU','TIEBA','HUPU','WALLSTREET','HACKERNEWS','SMZDM','CLS','GEEKPARK')][string]$Source='all',[switch]$WallstreetOriginal,[switch]$FixedTieba,[switch]$WeiboProbe,[switch]$WeiboFulltextProbe,[switch]$WeiboReaderJourney,[switch]$SmzdmImageProbe,[switch]$SmzdmImageJourney)
 $ErrorActionPreference='Stop'
 if($SmzdmImageJourney -and ($Mode -ne 'sources' -or $Source -ne 'SMZDM' -or $SmzdmImageProbe)){throw 'SmzdmImageJourney is restricted to the fixed public SMZDM source journey, separate from the probe.'}
 if($SmzdmImageProbe -and ($Mode -ne 'sources' -or $Source -ne 'SMZDM')){throw 'SmzdmImageProbe is restricted to the fixed public SMZDM source observation.'}
@@ -103,7 +103,7 @@ New-Item -ItemType Directory -Path $runDirectory | Out-Null
 $report | Out-File (Join-Path $runDirectory 'instrumentation.txt') -Encoding utf8
 Get-FileHash -LiteralPath (Join-Path $projectRoot 'artifacts/静读.apk') -Algorithm SHA256 | Format-List | Out-File (Join-Path $runDirectory 'tested-release-apk.txt') -Encoding utf8
 $passed=$exitCode -eq 0 -and ($report -match '^PASS \d+ release UI assertions')
-$screenshots=if($passed){@('01-live-board','02-live-reader','03-large-font','04-home-overflow','04b-search-retained')}else{@('failure')}
+$screenshots=if($passed -and $Mode -eq 'branding'){@('icon','01-brand-home','02-brand-aggregate')}elseif($passed){@('01-live-board','02-live-reader','03-large-font','04-home-overflow','04b-search-retained')}else{@('failure')}
 $normalRemote="/sdcard/Android/data/app.quietreader/files/release-qa/normal-$normalRunId"
 foreach($name in $screenshots){& $adb -s $serial pull "$normalRemote/$name.png" $runDirectory}
 $filterShots=& $adb -s $serial shell ls $normalRemote

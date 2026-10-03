@@ -8,7 +8,10 @@ import android.webkit.WebSettings;
 final class Theme {
     static int mode(Context c){return c.getSharedPreferences("appearance",0).getInt("mode",0);}
     static boolean dark(Context c){int m=mode(c);return m==2||(m==0&&(c.getResources().getConfiguration().uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES);}
-    static int background(Context c){return dark(c)?0xff1f2025:0xfffafafa;}
+    static ReaderStyle style(Context c){android.content.SharedPreferences p=c.getSharedPreferences("appearance",0);return new ReaderStyle(p.getInt("palette",0),p.getInt("accent",0),p.getInt("spacing",1),p.getInt("face",0));}
+    static int background(Context c){return android.graphics.Color.parseColor(style(c).background(dark(c)));}
+    static int ink(Context c){return android.graphics.Color.parseColor(style(c).ink(dark(c)));}
+    static int accent(Context c){return android.graphics.Color.parseColor(style(c).accent(dark(c)));}
     static void apply(Activity a){boolean d=dark(a);a.setTheme(d?android.R.style.Theme_Material_NoActionBar:android.R.style.Theme_Material_Light_NoActionBar);a.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(background(a)));a.getWindow().setStatusBarColor(background(a));a.getWindow().setNavigationBarColor(background(a));a.getWindow().getDecorView().setSystemUiVisibility(d?0:View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);}
     /** Own HTML has an explicit palette; only third-party pages need algorithmic darkening. */
     @SuppressWarnings("deprecation")

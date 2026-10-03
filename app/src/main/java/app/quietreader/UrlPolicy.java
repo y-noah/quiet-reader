@@ -20,18 +20,28 @@ public final class UrlPolicy {
             case WEIBO: return domain(h,"weibo.com")||domain(h,"weibo.cn");
             case ZHIHU: return domain(h,"zhihu.com");
             case TOUTIAO: return domain(h,"toutiao.com");
-            case TIEBA: return h.equals("tieba.baidu.com")||h.equals("passport.baidu.com");
+            case TIEBA: return h.equals("tieba.baidu.com");
             case HUPU: return domain(h,"hupu.com");
             case WALLSTREET: return domain(h,"wallstreetcn.com")||h.equals("api-one-wscn.awtmt.com");
             case HACKERNEWS: return h.equals("news.ycombinator.com");
             case SMZDM: return domain(h,"smzdm.com");
+            case CLS: return domain(h,"cls.cn");
+            case GEEKPARK: return domain(h,"geekpark.net");
+            case GUOKR: return domain(h,"guokr.com");
+            case DOUBAN: return domain(h,"douban.com");
+            case ITHOME: return domain(h,"ithome.com");
+            case IFANR: return domain(h,"ifanr.com");
+            case JUEJIN: return domain(h,"juejin.cn");
+            case SSPAI: return domain(h,"sspai.com");
             default: return false;
         }
     }
     public static boolean loginAllowed(Models.Source source,String url) {
         if(belongs(source,url))return true;
-        if(!https(url)||source!=Models.Source.WEIBO)return false;
+        if(!https(url))return false;
         String h=host(url);
+        if(source==Models.Source.TIEBA)return h.equals("passport.baidu.com")||h.equals("wappass.baidu.com");
+        if(source!=Models.Source.WEIBO)return false;
         return h.equals("login.sina.com.cn")||h.equals("passport.sina.cn")||h.equals("passport.sina.com.cn")||h.equals("passport.sinaimg.cn");
     }
     /** Upgrade only ordinary HTTP platform links, never custom schemes or authentication exceptions.

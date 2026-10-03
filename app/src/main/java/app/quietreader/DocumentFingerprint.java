@@ -15,6 +15,7 @@ final class DocumentFingerprint {
         DocumentFingerprint f=new DocumentFingerprint();
         f.text(document.title);f.text(document.byline);f.text(document.url);f.text(document.notice);
         f.number(document.unsupportedVideo?1:0);
+        f.number(document.loginRequired?1:0);
         f.number(document.filteredVideo?1:0);f.number(document.filteredVideos);
         for(String id:new java.util.TreeSet<>(document.filteredSectionIds))f.text(id);
         f.text(document.nextUrl);f.text(document.moreStatus);f.blocks(document.blocks);

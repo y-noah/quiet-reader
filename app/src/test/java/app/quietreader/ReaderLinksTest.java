@@ -26,7 +26,7 @@ public class ReaderLinksTest {
     }
     @Test public void shoppingRedirectsAndUnadaptedPagesGoToBrowser(){
         assertEquals(Source.SMZDM,ReaderLinks.readerSource("https://www.smzdm.com/p/1832826816/"));
-        assertEquals(Source.TIEBA,ReaderLinks.readerSource("https://tieba.baidu.com/p/123"));
+        assertNull(ReaderLinks.readerSource("https://tieba.baidu.com/p/123"));
         assertNull(ReaderLinks.readerSource("https://go.smzdm.com/abc/"));
         assertNull(ReaderLinks.readerSource("https://link.zhihu.com/?target=https%3A%2F%2Fexample.com"));
         assertNull(ReaderLinks.readerSource("https://item.jd.com/100291533956.html"));

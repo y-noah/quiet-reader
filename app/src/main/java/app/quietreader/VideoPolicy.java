@@ -29,6 +29,7 @@ final class VideoPolicy {
                 case TIEBA:return path.startsWith("/video/");
                 case TOUTIAO:return path.matches("/(video|short-video)/.*");
                 case WALLSTREET:return path.startsWith("/videos/");
+                case CLS:return path.startsWith("/share/videoChannel/");
                 default:return false;
             }
         }catch(Exception ignored){return false;}
@@ -91,6 +92,7 @@ final class VideoPolicy {
         if(source==Source.WEIBO&&weiboTopic(url))return false;
         Element type=page.selectFirst("head meta[property=og:type]");
         if(type!=null&&type.attr("content").startsWith("video"))return true;
+        if(source==Source.GEEKPARK&&!page.select("#play-room.video-player,#article-body .pure-video-wrpper").isEmpty())return true;
         if(source==Source.HUPU){
             for(Element main:page.select("[class*='post-content_main-post-info']"))
                 if(main.closest(EXCLUDED)==null&&mainMedia(main))return true;
