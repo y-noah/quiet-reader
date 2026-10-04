@@ -24,7 +24,7 @@ public final class Repository {
         @Override protected int sizeOf(String key,Document d){return DocumentSize.estimate(d);}
     };
     private static final android.util.LruCache<String,Long> articleTimes=new android.util.LruCache<>(60);
-    public Document cachedArticle(Item i){Long at=articleTimes.get(i.url);return at!=null&&(offline()||System.currentTimeMillis()-at<10*60*1000)?articles.get(i.url):null;}
+    public Document cachedArticle(Item i){if(!i.source.readable())return null;Long at=articleTimes.get(i.url);return at!=null&&(offline()||System.currentTimeMillis()-at<10*60*1000)?articles.get(i.url):null;}
     public boolean offline(){android.net.ConnectivityManager cm=(android.net.ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);return cm!=null&&cm.getActiveNetwork()==null;}
     public void cacheArticle(Document d){
         if(d.filteredVideo||d.loginRequired||d.sourceUnavailable){articles.remove(d.url);articleTimes.remove(d.url);return;}
@@ -35,7 +35,7 @@ public final class Repository {
     public boolean hiddenVideo(Item item){
         return item.video||VideoPolicy.url(item.source,item.url)||(!(item.source==Source.WEIBO&&VideoPolicy.weiboTopic(item.url))&&System.currentTimeMillis()-context.getSharedPreferences("video-filter",0).getLong(VideoPolicy.key(item),0)<7L*24*60*60*1000);
     }
-    public List<Item> visibleItems(List<Item> items){List<Item> result=new java.util.ArrayList<>();for(Item item:items)if(!hiddenVideo(item))result.add(item);return result;}
+    public List<Item> visibleItems(List<Item> items){List<Item> result=new java.util.ArrayList<>();for(Item item:items)if(item.source.readable()&&!hiddenVideo(item))result.add(item);return result;}
     public void rememberVideo(Item item){
         // A dynamic topic may gain text posts later; never persist a card's type as its topic.
         if(item.source==Source.WEIBO&&VideoPolicy.weiboTopic(item.url))return;
@@ -50,20 +50,36 @@ public final class Repository {
         try{List<Item> rows=Models.fromJson(new JSONArray(boards.getString(item.source.name(),"[]")));rows.removeIf(row->VideoPolicy.key(row).equals(VideoPolicy.key(item)));boards.edit().putString(item.source.name(),Models.toJson(rows).toString()).apply();}catch(Exception ignored){}
     }
     public void invalidateArticles(){articles.evictAll();articleTimes.evictAll();}
-    public Repository(Context context) { this.context=context.getApplicationContext(); }
+    public Repository(Context context) { this.context=context.getApplicationContext(); clearRetiredSources(); }
+    private void clearRetiredSources() {
+        android.content.SharedPreferences boards=context.getSharedPreferences("boards",0);
+        android.content.SharedPreferences videos=context.getSharedPreferences("video-filter",0);
+        android.content.SharedPreferences.Editor boardEdit=boards.edit(),videoEdit=videos.edit();
+        for(Source source:Source.values())if(!source.readable()){
+            String name=source.name();
+            for(String key:boards.getAll().keySet())if(key.equals(name)||key.startsWith(name+"_"))boardEdit.remove(key);
+            for(String key:videos.getAll().keySet())if(key.startsWith(name+"|"))videoEdit.remove(key);
+        }
+        boardEdit.apply();videoEdit.apply();
+        context.getSharedPreferences("source-session",0).edit().remove("tieba-desktop").apply();
+        android.content.SharedPreferences prefs=context.getSharedPreferences("MainActivity",0);
+        try {
+            List<Item> saved=Models.fromJson(new JSONArray(prefs.getString("saved","[]")));
+            if(saved.removeIf(item->!item.source.readable()))prefs.edit().putString("saved",Models.toJson(saved).toString()).apply();
+        }catch(Exception ignored){}
+    }
     private boolean validBoardCache(Source s) {
-        if(s==Source.DOUBAN&&context.getSharedPreferences("boards",0).getInt("DOUBAN_schema",0)!=2)return false;
-        // Only invalidate the replaced SMZDM feed; preserve other boards, bookmarks and login sessions.
-        return s!=Source.SMZDM||s.endpoint.equals(context.getSharedPreferences("boards",0).getString(s.name()+"_endpoint",""));
+        return s.readable();
     }
     public long cachedAt(Source s) { return validBoardCache(s)?context.getSharedPreferences("boards",0).getLong(s.name()+"_time",0):0; }
-    public void cache(Source s,List<Item> items) {android.content.SharedPreferences.Editor edit=context.getSharedPreferences("boards",0).edit().putString(s.name(),Models.toJson(items).toString()).putString(s.name()+"_endpoint",s.endpoint).putLong(s.name()+"_time",System.currentTimeMillis());if(s==Source.DOUBAN)edit.putInt("DOUBAN_schema",2);edit.apply();}
+    public void cache(Source s,List<Item> items) {if(!s.readable())return;android.content.SharedPreferences.Editor edit=context.getSharedPreferences("boards",0).edit().putString(s.name(),Models.toJson(visibleItems(items)).toString()).putString(s.name()+"_endpoint",s.endpoint).putLong(s.name()+"_time",System.currentTimeMillis());edit.apply();}
     public List<Item> cached(Source s) {
         if(!validBoardCache(s))return java.util.Collections.emptyList();
         try { return visibleItems(Models.fromJson(new JSONArray(context.getSharedPreferences("boards",0).getString(s.name(),"[]")))); }
         catch(Exception e) { return java.util.Collections.emptyList(); }
     }
     public void board(Source s,Result<List<Item>> cb) {
+        if(!s.readable()){cb.failure("此平台已移除");return;}
         String cookie=CookieManager.getInstance().getCookie(s.endpoint);
         requests.submit(ticket->{
             try {
@@ -75,6 +91,7 @@ public final class Repository {
         });
     }
     public void article(Item item,Result<Document> cb) {
+        if(!item.source.readable()){cb.failure("此平台已移除");return;}
         String cookie=CookieManager.getInstance().getCookie(item.url);
         String doubanCookie=item.source==Source.DOUBAN?CookieManager.getInstance().getCookie("https://m.douban.com/"):null;
         requests.submit(ticket->{

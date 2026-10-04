@@ -785,7 +785,7 @@ String expression="(function(){var exact=location.protocol==='https:'&&location.
         android.content.pm.ApplicationInfo info=pm.getApplicationInfo("app.quietreader",0);
         check("News".contentEquals(pm.getApplicationLabel(info)),"Installed app label is News");
         android.content.pm.PackageInfo version=pm.getPackageInfo(info.packageName,0);
-        check("0.3.25".equals(version.versionName)&&version.versionCode==36,"Exact renamed release version");
+        check("0.3.26".equals(version.versionName)&&version.versionCode==37,"Exact five-platform release version");
         android.graphics.drawable.Drawable icon=pm.getApplicationIcon(info);
         check(icon instanceof android.graphics.drawable.AdaptiveIconDrawable,"Launcher icon supports system masks");
         android.graphics.drawable.AdaptiveIconDrawable adaptive=(android.graphics.drawable.AdaptiveIconDrawable)icon;
@@ -816,7 +816,7 @@ String expression="(function(){var exact=location.protocol==='https:'&&location.
         for(String source:new String[]{"总榜","知乎","微博","虎扑","财联社","爱范儿"}){
             tap(source);Thread.sleep(250);
             runOnMainSync(()->{View tab=nativeView(foreground.getWindow().getDecorView(),source,true);check(tab!=null&&tab.isSelected(),"Platform switching remains available: "+source);});
-            if(source.equals("总榜")){Thread.sleep(800);screenshot("02-brand-aggregate");runOnMainSync(()->check(nativeView(foreground.getWindow().getDecorView(),"综合推荐 Top100",false)!=null,"Released aggregate uses Top100 disclosure"));}
+            if(source.equals("总榜")){Thread.sleep(800);screenshot("02-brand-aggregate");runOnMainSync(()->check(nativeView(foreground.getWindow().getDecorView(),"综合推荐 Top50",false)!=null,"Released aggregate uses Top50 disclosure"));}
         }
         Bundle result=new Bundle();result.putString("stream","PASS "+assertions+" release UI assertions. News label/icon, compact header without search/duplicate settings, overflow settings return and aggregate plus five platform switches. No account data cleared.");finish(Activity.RESULT_OK,result);
     }

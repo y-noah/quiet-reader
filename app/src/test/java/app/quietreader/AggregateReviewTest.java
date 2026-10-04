@@ -34,7 +34,7 @@ public class AggregateReviewTest {
     @Test public void emptyInputAndEmptyBoardsDoNotInventRows() {
         assertTrue(rank().isEmpty());assertTrue(rank(feed(Source.ZHIHU),feed(Source.WEIBO)).isEmpty());
     }
-    @Test public void hundredIsAnUpperBoundAndEachPlatformRespectsItsQuota() {
+    @Test public void fiftyIsAnUpperBoundAndEachPlatformRespectsItsQuota() {
         List<AggregateRanker.Feed> feeds=new ArrayList<>();
         for(Source source:Source.aggregateSources()) {
             List<Item> items=new ArrayList<>();
@@ -42,12 +42,12 @@ public class AggregateReviewTest {
             feeds.add(new AggregateRanker.Feed(source,items,NOW));
         }
         List<AggregateRanker.Entry> entries=AggregateRanker.rank(feeds,NOW);
-        assertEquals(100,entries.size());
+        assertEquals(50,entries.size());
         Map<Source,Integer> counts=new EnumMap<>(Source.class);
         for(AggregateRanker.Entry e:entries)counts.put(e.primary.source,counts.getOrDefault(e.primary.source,0)+1);
         for(Map.Entry<Source,Integer> count:counts.entrySet())assertTrue("A single source may not crowd out the list",count.getValue()<=AggregateRanker.sourceLimit(count.getKey()));
     }
-    @Test public void scarceSourcesDoNotRelaxTheirHardQuotaToFillOneHundred() {
+    @Test public void scarceSourcesDoNotRelaxTheirHardQuotaToFillFifty() {
         List<Item> items=new ArrayList<>();
         for(int n=1;n<=60;n++)items.add(item(Source.ZHIHU,"独立事件编号"+n+"发布最新进展",n));
         assertEquals(20,rank(new AggregateRanker.Feed(Source.ZHIHU,items,NOW)).size());

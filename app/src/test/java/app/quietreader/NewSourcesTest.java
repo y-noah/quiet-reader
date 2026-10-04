@@ -5,11 +5,11 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.*;
 
 public class NewSourcesTest {
-    @Test public void orderedSixAndRetiredPlatformsStayHidden(){
+    @Test public void orderedFiveAndRetiredPlatformsStayHidden(){
         assertArrayEquals(new Source[]{Source.ZHIHU,Source.WEIBO,Source.HUPU,Source.CLS,Source.IFANR},Source.displayOrder());
-        assertTrue(Source.IFANR.visible());assertFalse(Source.GEEKPARK.visible());assertTrue(Source.GEEKPARK.readable());
+        assertTrue(Source.IFANR.visible());assertFalse(Source.GEEKPARK.visible());assertFalse(Source.GEEKPARK.readable());
         assertFalse(Source.TIEBA.visible());assertFalse(Source.WALLSTREET.visible());
-        assertEquals(Source.WALLSTREET,ReaderLinks.readerSource("https://wallstreetcn.com/articles/123")); // Aggregate-only reader, not a standalone tab.
+        assertNull(ReaderLinks.readerSource("https://wallstreetcn.com/articles/123"));
     }
     @Test public void clsPreservesOfficialOrderNotReadCountAndSkipsVideo()throws Exception{
         String raw="{\"errno\":0,\"data\":[{\"id\":12,\"title\":\"第一\",\"readNum\":5},{\"id\":13,\"title\":\"视频\",\"article_schema\":\"cailianshe://normal_video_detail?video_id=13\"},{\"id\":14,\"title\":\"第二\",\"readNum\":500},{\"id\":12,\"title\":\"重复\"},{\"id\":\"../invalid\",\"title\":\"错误\"}]}";
@@ -39,7 +39,7 @@ public class NewSourcesTest {
     }
     @Test public void newSourceLinksRequireRealHosts(){
         assertEquals(Source.CLS,ReaderLinks.readerSource("https://api3.cls.cn/share/article/12"));
-        assertEquals(Source.GEEKPARK,ReaderLinks.readerSource("https://www.geekpark.net/news/1"));
+        assertNull(ReaderLinks.readerSource("https://www.geekpark.net/news/1"));
         assertFalse(UrlPolicy.belongs(Source.CLS,"https://cls.cn.evil.test/detail/1"));
         assertFalse(UrlPolicy.belongs(Source.GEEKPARK,"https://geekpark.net.evil.test/news/1"));
     }

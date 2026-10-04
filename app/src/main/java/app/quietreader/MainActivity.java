@@ -77,7 +77,7 @@ public final class MainActivity extends Activity {
         if(state!=null) {
             try { selected=Source.valueOf(state.getString("source",Source.AGGREGATE.name())); } catch(Exception ignored) {}
             Bundle boards=state.getBundle("boardMarks");
-            if(boards!=null)for(Source source:Source.values()){
+            if(boards!=null)for(Source source:Source.navigationOrder()){
                 Bundle value=boards.getBundle(source.name());if(value==null)continue;
                 BoardMark mark=new BoardMark();mark.anchor=value.getString("anchor","");
                 mark.position=value.getInt("position");mark.offset=value.getInt("offset");boardMarks.put(source,mark);
@@ -98,6 +98,7 @@ public final class MainActivity extends Activity {
         if(retained!=null&&retained.current!=null&&retained.current.source.readable()&&retained.document!=null) {
             if(retained.expanded!=null)expanded.addAll(retained.expanded);
             current=retained.current;history.clear();history.addAll(retained.history);
+            history.removeIf(item->!item.source.readable());
             frame(current.source.label+" / 阅读","news");scroller();readerFooter();render(retained.document);
             restorePosition(retained.position);
         } else if(current!=null) open(current,false);
@@ -273,7 +274,7 @@ public final class MainActivity extends Activity {
         restoringBoard=true;
         int revision=++boardRevision,request=generation;
         content.removeAllViews();space(content,14);
-        String name=selected==Source.AGGREGATE?"综合推荐 Top100":selected.label+" "+selected.category;
+        String name=selected==Source.AGGREGATE?"综合推荐 Top50":selected.label+" "+selected.category;
         android.text.SpannableString headingText=new android.text.SpannableString(name+(boardLabel.isEmpty()?"":"  （"+boardLabel+"）"));
         if(headingText.length()>name.length()){
             headingText.setSpan(new android.text.style.RelativeSizeSpan(.65f),name.length(),headingText.length(),0);
@@ -356,6 +357,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("选择阅读来源").setItems(alternatives.stream().map(i->i.source.label+" · "+i.title).toArray(String[]::new),(d,n)->open(alternatives.get(n),true)).show();
     }
     private void open(Item item,boolean push) {
+        if(!item.source.readable()){toast("此平台已移除");return;}
         rememberReading();openPosition=-1;pendingAnchor=-1;
         closeAnswers();expanded.clear();
         if(!UrlPolicy.belongs(item.source,item.url)) { toast("来源地址不受支持"); return; }
@@ -490,7 +492,7 @@ public final class MainActivity extends Activity {
         imagePreview=new ImagePreview(this,previewUrl,dark,()->imageResponse(previewUrl,referer),()->images.remove(previewUrl));imagePreview.show();
     }
     private void login(Item item) {
-        if(item==null)return;
+        if(item==null||!item.source.readable())return;
         // A pre-login read must not finish late and restore an anonymous snapshot.
         generation++;preloadHandler.removeCallbacks(predict);preloader.pause();repo.cancelPending();aggregateLoader.cancel();closeAnswers();
         if(dynamic!=null){dynamic.close();dynamic=null;}
@@ -508,7 +510,10 @@ public final class MainActivity extends Activity {
         if(request==100&&result==RESULT_OK&&data!=null&&LoginActivity.pendingDocument!=null) {
             Document doc=LoginActivity.pendingDocument; LoginActivity.pendingDocument=null;
             rememberBoard();
-            Source source=Source.valueOf(data.getStringExtra("source")); current=new Item(source,doc.title,doc.url,"");
+            Source source;
+            try{source=Source.valueOf(data.getStringExtra("source"));}catch(Exception ignored){home(false);return;}
+            if(!source.readable()||!UrlPolicy.belongs(source,doc.url)){home(false);return;}
+            current=new Item(source,doc.title,doc.url,"");
             generation++;primaryPending=true; frame(source.label+" / 阅读","news"); scroller(); readerFooter(); render(doc);
         } else if(request==100){
             LoginActivity.pendingDocument=null;

@@ -81,7 +81,7 @@ final class PlatformMarkView extends TextView {
         canvas.save();canvas.translate((getWidth()-size)/2,(getHeight()-size)/2-2*density);
         canvas.scale(size/32,size/32);
         ink.setColor(getCurrentTextColor());ink.setAlpha(isPressed()?170:255);
-        ink.setStrokeWidth(isSelected()?2.15f:1.9f);canvas.drawPath(mark,ink);canvas.restore();
+        ink.setStrokeWidth(isSelected()?2.7f:2.4f);canvas.drawPath(mark,ink);canvas.restore();
         if(isSelected()) {
             ink.setStrokeWidth(2*density);
             canvas.drawLine(getWidth()/2f-5*density,getHeight()-4*density,

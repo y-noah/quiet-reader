@@ -25,12 +25,12 @@ public class ReadingRepairTest {
         List<Item> rows=SourceParser.list(Source.DOUBAN,"{\"items\":[{\"id\":1,\"type\":\"search_term\",\"title\":\"搜索词\"},{\"id\":2,\"type\":\"gallery_topic\",\"title\":\"真实话题\"}]}");
         assertEquals(1,rows.size());assertTrue(rows.get(0).url.endsWith("/2/"));
     }
-    @Test public void doubanGroupPostsSurviveTopicExtraction()throws Exception{
+    @Test public void retiredDoubanGroupPostsStayOutsideReader()throws Exception{
         Item topic=new Item(Source.DOUBAN,"话题","https://www.douban.com/gallery/topic/2/","");
         Document doc=AdditionalSources.doubanTopic(topic,"{\"items\":[{\"target\":{\"title\":\"小组帖子\",\"url\":\"https://www.douban.com/group/topic/123/?x=1\"}}]}");
-        assertEquals(1,doc.related.size());assertEquals(Source.DOUBAN,ReaderLinks.readerSource(doc.related.get(0).url));
+        assertTrue(doc.related.isEmpty());assertNull(ReaderLinks.readerSource("https://www.douban.com/group/topic/123/"));
         Document empty=AdditionalSources.doubanTopic(topic,"{\"items\":[]}");assertTrue(empty.canPresent());assertTrue(empty.sourceUnavailable);assertTrue(empty.notice.contains("未返回"));
-        Document gate=SourceParser.article(Source.DOUBAN,"<h1>你没有权限访问这个页面。</h1><p>请登录后重试。</p>",doc.related.get(0).url);assertTrue(gate.loginRequired);assertTrue(gate.canPresent());assertFalse(gate.hasContent());
+        Document gate=SourceParser.article(Source.DOUBAN,"<h1>你没有权限访问这个页面。</h1><p>请登录后重试。</p>","https://www.douban.com/group/topic/123/");assertTrue(gate.loginRequired);assertTrue(gate.canPresent());assertFalse(gate.hasContent());
     }
     @Test public void continuationFailureIsVisibleAtBottom(){
         Document d=new Document();d.url=question.url;d.moreStatus="login";d.notice="登录后重试，已读回答保留";

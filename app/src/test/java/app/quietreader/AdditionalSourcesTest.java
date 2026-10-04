@@ -7,14 +7,14 @@ import static app.quietreader.Models.*;
 
 public class AdditionalSourcesTest {
     @Test public void aggregateAddsOneEntryAndKeepsSixTabs(){
-        assertEquals(12,Source.aggregateSources().length);assertEquals(12,new HashSet<>(Arrays.asList(Source.aggregateSources())).size());
+        assertArrayEquals(Source.displayOrder(),Source.aggregateSources());assertEquals(5,new HashSet<>(Arrays.asList(Source.aggregateSources())).size());
         assertEquals(6,Source.navigationOrder().length);assertEquals(Source.AGGREGATE,Source.navigationOrder()[0]);
         assertEquals(Source.ZHIHU,Source.navigationOrder()[1]);assertFalse(Source.AGGREGATE.readable());
         for(Source source:Source.aggregateSources())assertTrue(source.readable());assertFalse(Source.TIEBA.readable());
     }
-    @Test public void ithomeOnlyUsesDayListAndOwnedArticleLinks()throws Exception{
+    @Test(expected=IllegalStateException.class) public void retiredIthomeBoardCannotCreateReaderEntries()throws Exception{
         List<Item> rows=SourceParser.list(Source.ITHOME,"<ul id=d-1><li><a href='https://www.ithome.com/1/009/232.htm'>日榜</a><a href='https://evil.test/1/009/233.htm'>外部</a></li></ul><ul id=d-2><li><a href='https://www.ithome.com/1/009/234.htm'>周榜</a></li></ul>");
-        assertEquals(1,rows.size());assertEquals("日榜",rows.get(0).title);
+
     }
     @Test public void doubanOmitsAdsAndUsesWebTopicRatherThanAppUri()throws Exception{
         List<Item> rows=SourceParser.list(Source.DOUBAN,"{\"items\":[{\"id\":12,\"title\":\"话题\",\"uri\":\"douban://x\"},{\"id\":13,\"title\":\"广告\",\"is_ad\":true},{\"id\":14,\"title\":\"非公开\",\"is_public\":false}]}");
@@ -43,13 +43,13 @@ public class AdditionalSourcesTest {
             String[] values=sample.getValue();String raw="<h1>标题</h1>"+String.format(values[1],"<p>文章正文 <a href='"+values[0]+"'>相关原文</a></p>")+"<aside>推荐污染</aside><button>下载App</button>";
             Document doc=SourceParser.article(sample.getKey(),raw,values[0]);String html=ReaderHtml.render(doc,sample.getKey(),19);
             assertTrue(sample.getKey().name(),doc.hasContent());assertTrue(html.contains("文章正文"));assertTrue(html.contains(values[0]));assertFalse(html.contains("推荐污染"));assertFalse(html.contains("下载App"));
-            assertEquals(sample.getKey(),ReaderLinks.readerSource(values[0]));assertFalse(UrlPolicy.belongs(sample.getKey(),values[0].replace(".com/",".com.evil.test/").replace(".cn/",".cn.evil.test/")));
+            assertEquals(sample.getKey().visible()?sample.getKey():null,ReaderLinks.readerSource(values[0]));assertFalse(UrlPolicy.belongs(sample.getKey(),values[0].replace(".com/",".com.evil.test/").replace(".cn/",".cn.evil.test/")));
         }
     }
     @Test public void doubanTopicListsOnlySafeNonVideoPublicDestinations()throws Exception{
         Item topic=new Item(Source.DOUBAN,"话题","https://www.douban.com/gallery/topic/12/","");
         Document doc=AdditionalSources.doubanTopic(topic,"{\"items\":[{\"target\":{\"title\":\"原帖\",\"url\":\"https://www.douban.com/topic/1/\"}},{\"target\":{\"title\":\"视频\",\"url\":\"https://www.douban.com/topic/2/\",\"video_info\":{}}},{\"target\":{\"title\":\"外部\",\"url\":\"https://evil.test/topic/3/\"}}]}");
-        assertEquals(1,doc.related.size());assertEquals(1,doc.filteredVideos);assertTrue(doc.notice.contains("不是全部"));assertEquals("12",AdditionalSources.doubanTopicId(topic.url));
+        assertTrue(doc.related.isEmpty());assertEquals(1,doc.filteredVideos);assertTrue(doc.sourceUnavailable);assertEquals("12",AdditionalSources.doubanTopicId(topic.url));
         assertEquals("",AdditionalSources.doubanTopicId("https://evil.test/gallery/topic/12/"));
     }
 }

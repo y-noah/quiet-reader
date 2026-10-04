@@ -25,7 +25,7 @@ public class ReaderLinksTest {
         assertFalse(Source.HACKERNEWS.visible());assertFalse(Source.TOUTIAO.visible());
     }
     @Test public void shoppingRedirectsAndUnadaptedPagesGoToBrowser(){
-        assertEquals(Source.SMZDM,ReaderLinks.readerSource("https://www.smzdm.com/p/1832826816/"));
+        assertNull(ReaderLinks.readerSource("https://www.smzdm.com/p/1832826816/"));
         assertNull(ReaderLinks.readerSource("https://tieba.baidu.com/p/123"));
         assertNull(ReaderLinks.readerSource("https://go.smzdm.com/abc/"));
         assertNull(ReaderLinks.readerSource("https://link.zhihu.com/?target=https%3A%2F%2Fexample.com"));

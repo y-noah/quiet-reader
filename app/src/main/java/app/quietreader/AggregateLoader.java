@@ -49,13 +49,13 @@ final class AggregateLoader implements AutoCloseable {
         long now=System.currentTimeMillis();List<AggregateRanker.Entry> entries=AggregateRanker.rank(new ArrayList<>(feeds.values()),now);
         boolean hasCached=feeds.keySet().stream().anyMatch(s->states.getOrDefault(s,"").contains("缓存"));
         String summary=feeds.size()+"/"+Source.aggregateSources().length+" 来源"+(hasCached?" · 含缓存":"")+(pending.isEmpty()?"":" · "+pending.size()+"个获取中");
-        StringBuilder detail=new StringBuilder("这是按个人阅读偏好编排的综合 Top100，不是精确的全网热度排行榜。综合热点优先，垂直内容补充。权重是推荐优先级，不是平台用户量或真实热度的测量值。\n\n");
+        StringBuilder detail=new StringBuilder("这是按个人阅读偏好编排的五平台总榜 Top50，不是精确的全网热度排行榜。综合热点优先，垂直内容补充。权重是推荐优先级，不是平台用户量或真实热度的测量值。\n\n");
         for(Source source:Source.aggregateSources()){
             detail.append(source.label).append(" · ").append(source.category).append("\n").append(states.get(source));
             AggregateRanker.Feed feed=feeds.get(source);if(feed!=null)detail.append(" · 快照 ").append(new java.text.SimpleDateFormat("MM-dd HH:mm",Locale.CHINA).format(new Date(feed.fetchedAt)));
             detail.append("\n推荐权重 ").append(AggregateRanker.weight(source)).append(" · 最多主导 ").append(AggregateRanker.sourceLimit(source)).append("条\n\n");
         }
-        detail.append("排序：1100 / (10 + 榜内名次) × 推荐权重 × 缓存新鲜度。同完整标题跨平台出现，取最高分加其他各平台分值的40%。最多100条；不足时显示实际数量，不放宽单源上限凑数。知乎/微博优先，豆瓣/虎扑及财经随后，科技、精选作补充；垂直平台高位仍可能超过综合平台的低位或旧缓存，并非全部固定排在末尾。果壳首页精选和爱范儿最新文章不是热榜。\n\n仅合并忽略普通标点、空格、大小写后相同的完整标题，保留小数与数值符号区别；相近措辞可能仍重复，不作语义事件聚类。\n\n缓存年龄按15分钟一档，每12小时分值减半，超过24小时不参与。快照时间是获取时间，不是文章发表时间；不把请求早晚几秒作为同档内容的排序依据。来源失败会标出缓存或未参与，不编造。刷新在右上角菜单。");
+        detail.append("排序：1100 / (10 + 榜内名次) × 推荐权重 × 缓存新鲜度。同完整标题跨平台出现，取最高分加其他各平台分值的40%。最多50条；不足时显示实际数量，不放宽单源上限凑数。仅汇总知乎、微博、虎扑、财联社、爱范儿，与底栏五个平台一致。知乎/微博优先，虎扑和财经随后，爱范儿最新文章作补充；垂直平台高位仍可能超过综合平台的低位或旧缓存，并非全部固定排在末尾。爱范儿最新文章不是热榜。\n\n仅合并忽略普通标点、空格、大小写后相同的完整标题，保留小数与数值符号区别；相近措辞可能仍重复，不作语义事件聚类。\n\n缓存年龄按15分钟一档，每12小时分值减半，超过24小时不参与。快照时间是获取时间，不是文章发表时间；不把请求早晚几秒作为同档内容的排序依据。来源失败会标出缓存或未参与，不编造。刷新在右上角菜单。");
         if(listener!=null)listener.changed(entries,summary,detail.toString());
     }
     void cancel(){generation++;if(deadline!=null)main.removeCallbacks(deadline);requests.cancelPending();listener=null;pending.clear();}

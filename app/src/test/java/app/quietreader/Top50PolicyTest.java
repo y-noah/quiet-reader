@@ -6,7 +6,7 @@ import static app.quietreader.Models.*;
 import static org.junit.Assert.*;
 
 /** Independent policy regression; artificial rows do not prove real-world popularity. */
-public class Top100PolicyTest {
+public class Top50PolicyTest {
     private static final long NOW=1_800_000_000_000L;
     private static final long MINUTE=60_000L;
     private static final long HOUR=60*MINUTE;
@@ -30,16 +30,16 @@ public class Top100PolicyTest {
     }
     private int expectedCap(Source source) {
         if(source==Source.ZHIHU||source==Source.WEIBO)return 20;
-        if(source==Source.DOUBAN||source==Source.HUPU||source==Source.CLS||source==Source.WALLSTREET)return 12;
-        return 8;
+        if(source==Source.HUPU||source==Source.CLS)return 12;
+        return source==Source.IFANR?8:0;
     }
 
-    @Test public void enoughDistinctEligibleNewsYieldsExactlyOneHundred() {
+    @Test public void enoughDistinctEligibleNewsYieldsExactlyFifty() {
         List<AggregateRanker.Feed> feeds=new ArrayList<>();
         for(Source source:Source.aggregateSources())feeds.add(feed(source,50,0));
         List<AggregateRanker.Entry> result=AggregateRanker.rank(feeds,NOW);
-        assertEquals(100,result.size());
-        assertEquals(100,new HashSet<>(urls(result)).size());
+        assertEquals(50,result.size());
+        assertEquals(50,new HashSet<>(urls(result)).size());
         for(int i=1;i<result.size();i++)assertTrue(result.get(i-1).score>=result.get(i).score);
     }
 
@@ -47,7 +47,7 @@ public class Top100PolicyTest {
         assertTrue(rank().isEmpty());
         assertEquals(3,rank(feed(Source.ZHIHU,3,0)).size());
         assertEquals(20,rank(feed(Source.ZHIHU,50,0)).size());
-        assertEquals(8,rank(feed(Source.JUEJIN,50,0)).size());
+        assertEquals(8,rank(feed(Source.IFANR,50,0)).size());
     }
 
     @Test public void eachSourceAloneHonorsItsOwnHardCap() {
@@ -56,32 +56,32 @@ public class Top100PolicyTest {
     }
 
     @Test public void equalRankTechnologyAndShoppingDoNotEqualBroadSocialTopics() {
-        List<AggregateRanker.Entry> result=rank(feed(Source.JUEJIN,1,0),feed(Source.SMZDM,1,0),
+        List<AggregateRanker.Entry> result=rank(feed(Source.IFANR,1,0),feed(Source.SMZDM,1,0),
                 feed(Source.ZHIHU,1,0),feed(Source.WEIBO,1,0));
         assertEquals(Source.ZHIHU,result.get(0).primary.source);
         assertEquals(Source.WEIBO,result.get(1).primary.source);
         assertTrue(result.get(1).score>2*result.get(2).score);
-        assertEquals(Source.JUEJIN,result.get(2).primary.source);
+        assertEquals(Source.IFANR,result.get(2).primary.source);
     }
 
     @Test public void changedRawHeatStringsCannotOverrideEditorialWeights() {
-        Item original=item(Source.JUEJIN,"技术文章",1);
+        Item original=item(Source.IFANR,"技术文章",1);
         Item inflated=new Item(original.source,original.title,original.url,"999999999999亿热度");
         AggregateRanker.Feed broad=feed(Source.ZHIHU,1,0);
-        List<AggregateRanker.Entry> a=rank(broad,feed(Source.JUEJIN,NOW,original));
-        List<AggregateRanker.Entry> b=rank(broad,feed(Source.JUEJIN,NOW,inflated));
+        List<AggregateRanker.Entry> a=rank(broad,feed(Source.IFANR,NOW,original));
+        List<AggregateRanker.Entry> b=rank(broad,feed(Source.IFANR,NOW,inflated));
         assertEquals(urls(a),urls(b));assertEquals(a.get(1).score,b.get(1).score,0.000001);
     }
 
     @Test public void matchingCrossPlatformHeadlineKeepsRealDestinationsAndAddsOnlyOneVoteEach() {
         String title="同一公共事件的完整标题";
-        Item z=item(Source.ZHIHU,title,1),w=item(Source.WEIBO,title,2),j=item(Source.JUEJIN,title,3);
+        Item z=item(Source.ZHIHU,title,1),w=item(Source.WEIBO,title,2),j=item(Source.IFANR,title,3);
         AggregateRanker.Feed zf=feed(Source.ZHIHU,NOW,z,z);
-        List<AggregateRanker.Entry> rows=rank(zf,zf,feed(Source.WEIBO,NOW,w),feed(Source.JUEJIN,NOW,j));
+        List<AggregateRanker.Entry> rows=rank(zf,zf,feed(Source.WEIBO,NOW,w),feed(Source.IFANR,NOW,j));
         assertEquals(1,rows.size());
         AggregateRanker.Entry row=rows.get(0);
         assertSame(z,row.primary);assertEquals(3,row.alternatives.size());
-        assertEquals(100+0.4*100+0.4*35,row.score,0.000001);
+        assertEquals(100+0.4*100+0.4*20,row.score,0.000001);
         assertEquals(new HashSet<>(Arrays.asList(z.url,w.url,j.url)),new HashSet<>(Arrays.asList(
                 row.alternatives.get(0).url,row.alternatives.get(1).url,row.alternatives.get(2).url)));
     }
@@ -95,7 +95,7 @@ public class Top100PolicyTest {
 
     @Test public void clockTicksInsideSameAgeBucketDoNotChangeScoresOrOrder() {
         List<AggregateRanker.Feed> feeds=Arrays.asList(feed(Source.ZHIHU,3,2*MINUTE),
-                feed(Source.WEIBO,3,4*MINUTE),feed(Source.JUEJIN,3,6*MINUTE));
+                feed(Source.WEIBO,3,4*MINUTE),feed(Source.IFANR,3,6*MINUTE));
         List<AggregateRanker.Entry> a=AggregateRanker.rank(feeds,NOW);
         List<AggregateRanker.Entry> b=AggregateRanker.rank(feeds,NOW+MINUTE);
         assertEquals(urls(a),urls(b));
@@ -125,10 +125,26 @@ public class Top100PolicyTest {
         assertEquals(expected,urls(AggregateRanker.rank(feeds,NOW)));
     }
 
-    @Test public void ifanrReplacesOnlyTheIndividualGeekparkTab() {
+    @Test public void totalRankingUsesExactlyTheFiveVisiblePlatforms() {
         assertArrayEquals(new Source[]{Source.ZHIHU,Source.WEIBO,Source.HUPU,Source.CLS,Source.IFANR},Source.displayOrder());
+        assertArrayEquals(Source.displayOrder(),Source.aggregateSources());
+        assertEquals("Top50",Source.AGGREGATE.category);
         assertFalse(Source.GEEKPARK.visible());assertTrue(Source.IFANR.visible());
-        assertTrue(Arrays.asList(Source.aggregateSources()).contains(Source.GEEKPARK));
+        assertFalse(Arrays.asList(Source.aggregateSources()).contains(Source.GEEKPARK));
         assertTrue(Arrays.asList(Source.aggregateSources()).contains(Source.IFANR));
+    }
+
+    @Test public void everyRetiredSourceIsExcludedEvenWithFreshCachedRowsAndSharedTitles() {
+        Item original=item(Source.ZHIHU,"同一标题",1);
+        AggregateRanker.Entry baseline=rank(feed(Source.ZHIHU,NOW,original)).get(0);
+        for(Source source:Source.values())if(!source.visible()){
+            assertFalse(source.readable());
+            assertEquals(0,AggregateRanker.weight(source),0);
+            assertEquals(0,AggregateRanker.sourceLimit(source));
+            assertTrue(rank(feed(source,50,0)).isEmpty());
+            List<AggregateRanker.Entry> rows=rank(feed(Source.ZHIHU,NOW,original),feed(source,NOW,item(source,"同一标题",2)));
+            assertEquals(1,rows.size());assertEquals(1,rows.get(0).alternatives.size());
+            assertEquals(baseline.score,rows.get(0).score,0);
+        }
     }
 }

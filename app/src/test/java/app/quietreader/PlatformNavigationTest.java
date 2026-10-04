@@ -5,6 +5,11 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.Source;
 
 public class PlatformNavigationTest {
+    @Test public void onlyFiveVisibleSourcesCanBeReopenedAsReaderEntries(){
+        for(Source source:Source.values())assertEquals(source.visible(),source.readable());
+        for(String url:new String[]{"https://www.douban.com/gallery/topic/1/","https://www.douban.com/group/topic/1/","https://www.guokr.com/article/1/","https://www.ithome.com/1/009/232.htm","https://juejin.cn/post/1","https://sspai.com/post/1","https://wallstreetcn.com/articles/1","https://www.geekpark.net/news/1"})
+            assertNull(ReaderLinks.readerSource(url));
+    }
     @Test public void observedMobileSearchUpgradesWithoutChangingEncodedSearch(){
         String suffix="/search?containerid=100103type%3D1%26q%3D%23test%23&q=a%2Fb+%2520#part%2F1";
         assertEquals("https://m.weibo.cn"+suffix,UrlPolicy.upgradePlatformNavigation(Source.WEIBO,"http://m.weibo.cn"+suffix));

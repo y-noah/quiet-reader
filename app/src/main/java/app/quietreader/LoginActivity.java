@@ -22,6 +22,7 @@ public final class LoginActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         Theme.apply(this);super.onCreate(state);
         try { source=Source.valueOf(getIntent().getStringExtra("source")); } catch(Exception e) { finish(); return; }
+        if(!source.readable()){pendingDocument=null;finish();return;}
         final boolean board=getIntent().getBooleanExtra("board",false);
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Theme.background(this)); root.setFitsSystemWindows(true);
         LinearLayout bar=new LinearLayout(this);

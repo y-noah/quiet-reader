@@ -25,13 +25,13 @@ public final class Models {
         IFANR("爱范儿", "最新文章·非热榜", "https://www.ifanr.com/", "https://www.ifanr.com/"),
         JUEJIN("掘金", "热榜", "https://api.juejin.cn/content_api/v1/content/article_rank?category_id=1&type=hot", "https://juejin.cn/hot/articles"),
         SSPAI("少数派", "热门选文", "https://sspai.com/api/v1/article/tag/page/get?limit=30&offset=0&tag=%E7%83%AD%E9%97%A8%E6%96%87%E7%AB%A0", "https://sspai.com/"),
-        AGGREGATE("总榜", "Top100", "", "");
+        AGGREGATE("总榜", "Top50", "", "");
         public boolean visible() { return this==ZHIHU||this==IFANR||this==CLS||this==HUPU||this==WEIBO; }
-        public boolean readable(){return this!=AGGREGATE&&this!=TOUTIAO&&this!=HACKERNEWS&&this!=TIEBA;}
+        public boolean readable(){return visible();}
         public boolean navigable(){return this==AGGREGATE||visible();}
         public static Source[] displayOrder(){return new Source[]{ZHIHU,WEIBO,HUPU,CLS,IFANR};}
         public static Source[] navigationOrder(){return new Source[]{AGGREGATE,ZHIHU,WEIBO,HUPU,CLS,IFANR};}
-        public static Source[] aggregateSources(){return new Source[]{ZHIHU,WEIBO,HUPU,GUOKR,GEEKPARK,DOUBAN,ITHOME,IFANR,JUEJIN,WALLSTREET,CLS,SSPAI};}
+        public static Source[] aggregateSources(){return displayOrder();}
         public String referer(){return this==DOUBAN?login:endpoint;}
         public final String label, category, endpoint, login;
         Source(String label, String category, String endpoint, String login) {
