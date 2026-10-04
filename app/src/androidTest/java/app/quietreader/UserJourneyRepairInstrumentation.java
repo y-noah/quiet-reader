@@ -67,17 +67,9 @@ public final class UserJourneyRepairInstrumentation extends Instrumentation {
         ui(()->call("appendAtReadingPosition",new Class<?>[]{Document.class,int.class,Set.class},login,(int)field("generation"),AnswerStream.answerIds(last)));Thread.sleep(500);JSONObject denied=dom();check(denied.optInt("parts")==3&&denied.optString("body").contains("需先登录来源"),"login-restricted retry retains all read answers");shot("03-login-retry-keeps-answers");
         ui(()->{find(activity.getWindow().getDecorView(),"返回").performClick();quiet();check(field("current")==null&&field("selected")==Source.AGGREGATE,"reader back returns to total ranking");});
     }
-    private void douban()throws Exception{
-        String url="https://www.douban.com/gallery/topic/999999991/";Item item=new Item(Source.DOUBAN,"合成豆瓣仅视频话题",url,"");Document empty=AdditionalSources.doubanTopic(item,"{\"items\":[{\"target\":{\"title\":\"合成视频\",\"url\":\"https://www.douban.com/topic/999999993/\",\"video_info\":{}}}]}");check(empty.filteredVideos==1&&empty.sourceUnavailable,"all-video fixture has no readable public content");show(item,empty);
-        ui(()->{String text=nativeText(activity.getWindow().getDecorView());check(text.contains("当前未返回")&&!text.contains("正在加载动态内容"),"empty Douban topic explains result instead of endless spinner");View retry=find(activity.getWindow().getDecorView(),"重试");check(retry!=null&&retry.isClickable(),"Douban native retry entry exists");check(find(activity.getWindow().getDecorView(),"来源页 / 登录后重新读取")!=null,"Douban source/login recovery entry exists");check(((Repository)field("repo")).cachedArticle(item)==null,"empty topic is not cached as a successful article");});shot("04-douban-empty-recovery");
-        Document recovered=new Document();recovered.url=url;recovered.title="合成豆瓣恢复话题";recovered.notice="合成恢复结果，不是实网请求";recovered.related.add(new Item(Source.DOUBAN,"合成讨论入口","https://www.douban.com/group/topic/999999992/","合成"));
-        // Cache a synthetic recovery result so the real retry click can deterministically render it.
-        ui(()->{((Repository)field("repo")).cacheArticle(recovered);find(activity.getWindow().getDecorView(),"重试").performClick();});
-        ui(()->{String text=nativeText(activity.getWindow().getDecorView());check(text.contains("合成讨论入口")&&text.contains("选择一篇内容继续阅读"),"real retry click reaches synthetic recovered discussion list");check(field("dynamic")==null,"topic recovery does not fall through to dynamic spinner");});shot("05-douban-recovered-list");
-    }
     @Override public void onStart(){Bundle result=new Bundle();try{
         output=new File(getTargetContext().getExternalFilesDir(null),"user-journey-repair/run-"+System.currentTimeMillis());output.mkdirs();report.append("SYNTHETIC PRESENTATION TEST. Real activity/WebView/native handlers, documents injected; no live API success claim.\n");
         activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));Thread.sleep(900);
-        navigation();continuation();douban();
+        navigation();continuation();
     }catch(Throwable error){failures++;report.append("ERROR ").append(error).append('\n');}finally{try{if(activity!=null)ui(()->{quiet();((Repository)field("repo")).invalidateArticles();activity.finish();});report.append("checks=").append(checks).append(" failures=").append(failures).append('\n');try(FileOutputStream out=new FileOutputStream(new File(output,"report.txt"))){out.write(report.toString().getBytes(StandardCharsets.UTF_8));}}catch(Exception e){failures++;}result.putString("stream",report+"\nOutput: "+output);finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);}}
 }

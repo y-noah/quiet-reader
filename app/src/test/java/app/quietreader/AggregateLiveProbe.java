@@ -23,14 +23,8 @@ public final class AggregateLiveProbe {
                 String summary=source+" board="+items.size();if(items.isEmpty())return summary;
                 Item item=items.get(0);Document doc;
                 try{
-                    String topic=AdditionalSources.doubanTopicId(item.url);
-                    if(source==Source.DOUBAN&&!topic.isEmpty())doc=AdditionalSources.doubanTopic(item,get("https://m.douban.com/rexxar/api/v2/gallery/topic/"+topic+"/items?from_web=1&sort=hot&start=0&count=20&status_full_text=1&guest_only=0",item.url));
-                    else if(source==Source.WALLSTREET){String id=item.url.substring(item.url.lastIndexOf('/')+1);JSONObject data=new JSONObject(get("https://api-one-wscn.awtmt.com/apiv1/content/articles/"+id+"?extract=0",item.url)).getJSONObject("data");doc=SourceParser.article(source,"<article>"+data.optString("content")+"</article>",item.url);}
-                    else doc=SourceParser.article(source,get(item.url,item.url),item.url);
+                    doc=SourceParser.article(source,get(item.url,item.url),item.url);
                     summary+=" first="+item.url+" blocks="+doc.blocks.size()+" related="+doc.related.size()+" filteredVideo="+doc.filteredVideo;
-                    if(source==Source.DOUBAN&&!doc.related.isEmpty()){
-                        Item post=doc.related.get(0);Document body=SourceParser.article(source,get(post.url,post.url),post.url);summary+=" nested="+post.url+" nestedBlocks="+body.blocks.size();
-                    }
                 }catch(Exception e){summary+=" readerUnavailable="+e.getMessage();}
                 return summary;
             }catch(Exception e){return source+" unavailable="+e.getMessage();}

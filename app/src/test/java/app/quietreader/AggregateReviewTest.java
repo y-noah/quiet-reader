@@ -12,8 +12,8 @@ public class AggregateReviewTest {
 
     private Item item(Source source,String title,int id) {
         String host=source==Source.ZHIHU?"www.zhihu.com":source==Source.WEIBO?"weibo.com":
-                source==Source.HUPU?"bbs.hupu.com":source==Source.SMZDM?"www.smzdm.com":
-                source==Source.CLS?"www.cls.cn":"www.geekpark.net";
+                source==Source.HUPU?"bbs.hupu.com":
+                source==Source.CLS?"www.cls.cn":"www.ifanr.com";
         return new Item(source,title,"https://"+host+"/"+id,"");
     }
     private AggregateRanker.Feed feed(Source source,Item... items) {

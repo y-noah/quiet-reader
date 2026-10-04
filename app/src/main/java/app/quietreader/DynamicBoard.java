@@ -32,7 +32,7 @@ public final class DynamicBoard {
     }
     private void inspect(){
         if(ended)return;tries++;
-        String js=source==Source.WEIBO||source==Source.HUPU||source==Source.HACKERNEWS||source==Source.SMZDM?"document.documentElement.outerHTML":"document.body.innerText";
+        String js=source==Source.WEIBO||source==Source.HUPU?"document.documentElement.outerHTML":"document.body.innerText";
         web.evaluateJavascript(js,encoded->{
             if(ended)return;
             try {Object raw=new JSONTokener(encoded).nextValue();if(raw instanceof String){List<Item> list=SourceParser.list(source,(String)raw);close();callback.success(list);return;}}catch(Exception ignored){}

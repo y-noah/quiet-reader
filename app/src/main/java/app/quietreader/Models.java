@@ -10,21 +10,10 @@ public final class Models {
     public enum Source {
         WEIBO("微博", "热搜", "https://weibo.com/ajax/side/hotSearch", "https://passport.weibo.com/sso/signin?entry=wapsso&source=wapssowb&url=https%3A%2F%2Fm.weibo.cn%2F"),
         ZHIHU("知乎", "热榜", "https://www.zhihu.com/api/v3/feed/topstory/hot-list-web?limit=30&desktop=true", "https://www.zhihu.com/signin"),
-        TOUTIAO("头条", "热榜", "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc", "https://www.toutiao.com/"),
-        TIEBA("贴吧", "热议", "https://tieba.baidu.com/hottopic/browse/topicList", "https://tieba.baidu.com/"),
         HUPU("虎扑", "热帖", "https://bbs.hupu.com/topic-daily-hot", "https://bbs.hupu.com/"),
-        WALLSTREET("华尔街见闻", "日间最热", "https://api-one-wscn.awtmt.com/apiv1/content/articles/hot?period=all", "https://wallstreetcn.com/"),
-        HACKERNEWS("Hacker News", "热门讨论", "https://news.ycombinator.com/", "https://news.ycombinator.com/login"),
-        SMZDM("什么值得买", "3小时最热·公开榜", "https://faxian.smzdm.com/h2s0t0f0c0p1/", "https://faxian.smzdm.com/h2s0t0f0c0p1/"),
         // Public web request checksum: MD5(SHA1("app=cailianpress&os=android&sv=835")); no account secret.
         CLS("财联社", "资讯热榜", "https://api3.cls.cn/v1/hot_list?app=cailianpress&os=android&sv=835&sign=e89e141e1391c13c7d2b99d8c142848c", "https://api3.cls.cn/quote/toplist?app=cailianpress&os=android&sv=835&tab=1"),
-        GEEKPARK("极客公园", "七日热门", "https://mainssl.geekpark.net/api/v1/posts/hot_in_week?per=7", "https://www.geekpark.net/tags/AI"),
-        GUOKR("果壳", "首页精选·非热榜", "https://www.guokr.com/", "https://www.guokr.com/"),
-        DOUBAN("豆瓣", "热门话题", "https://m.douban.com/rexxar/api/v2/gallery/web_hot_topics", "https://www.douban.com/gallery/"),
-        ITHOME("IT之家", "日榜", "https://www.ithome.com/block/rank.html", "https://www.ithome.com/"),
         IFANR("爱范儿", "最新文章·非热榜", "https://www.ifanr.com/", "https://www.ifanr.com/"),
-        JUEJIN("掘金", "热榜", "https://api.juejin.cn/content_api/v1/content/article_rank?category_id=1&type=hot", "https://juejin.cn/hot/articles"),
-        SSPAI("少数派", "热门选文", "https://sspai.com/api/v1/article/tag/page/get?limit=30&offset=0&tag=%E7%83%AD%E9%97%A8%E6%96%87%E7%AB%A0", "https://sspai.com/"),
         AGGREGATE("总榜", "Top50", "", "");
         public boolean visible() { return this==ZHIHU||this==IFANR||this==CLS||this==HUPU||this==WEIBO; }
         public boolean readable(){return visible();}
@@ -32,7 +21,7 @@ public final class Models {
         public static Source[] displayOrder(){return new Source[]{ZHIHU,WEIBO,HUPU,CLS,IFANR};}
         public static Source[] navigationOrder(){return new Source[]{AGGREGATE,ZHIHU,WEIBO,HUPU,CLS,IFANR};}
         public static Source[] aggregateSources(){return displayOrder();}
-        public String referer(){return this==DOUBAN?login:endpoint;}
+        public String referer(){return endpoint;}
         public final String label, category, endpoint, login;
         Source(String label, String category, String endpoint, String login) {
             this.label=label; this.category=category; this.endpoint=endpoint; this.login=login;

@@ -6,9 +6,9 @@ android {
         applicationId 'app.quietreader'
         minSdk 26
         targetSdk 35
-        versionCode 37
-        versionName '0.3.26'
-        testInstrumentationRunner project.hasProperty('aggregateUi') ? 'app.quietreader.AggregateInstrumentation' : project.hasProperty('weiboReadingProbeUi') ? 'app.quietreader.WeiboReadingProbeInstrumentation' : project.hasProperty('navigationRecoveryUi') ? 'app.quietreader.NavigationRecoveryInstrumentation' : project.hasProperty('identityUi') ? 'app.quietreader.IdentityInstrumentation' : project.hasProperty('tiebaDomProbeUi') ? 'app.quietreader.TiebaDomProbeInstrumentation' : project.hasProperty('sessionReuseUi') ? 'app.quietreader.SessionReuseInstrumentation' : project.hasProperty('dynamicReadingUi') ? 'app.quietreader.DynamicReadingInstrumentation' : project.hasProperty('latencyUi') ? 'app.quietreader.LatencyInstrumentation' : project.hasProperty('exploratoryUi') ? 'app.quietreader.ExploratoryInstrumentation' : project.hasProperty('releaseUi') ? 'app.quietreader.ReleaseInstrumentation' : 'app.quietreader.SmokeInstrumentation'
+        versionCode 38
+        versionName '0.3.27'
+        testInstrumentationRunner 'app.quietreader.FiveSourceInstrumentation'
     }
     signingConfigs {
         personal {
@@ -30,11 +30,15 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
 }
+if (project.hasProperty('releaseUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.ReleaseInstrumentation'
+if (project.hasProperty('dynamicReadingUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.DynamicReadingInstrumentation'
+if (project.hasProperty('sessionReuseUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.SessionReuseInstrumentation'
+if (project.hasProperty('navigationRecoveryUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.NavigationRecoveryInstrumentation'
+if (project.hasProperty('weiboReadingProbeUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.WeiboReadingProbeInstrumentation'
+if (project.hasProperty('aggregateUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.AggregateInstrumentation'
 if (project.hasProperty('aggregateReadingUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.AggregateReadingInstrumentation'
-if (project.hasProperty('navigationImageUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.NavigationImageInstrumentation'
 if (project.hasProperty('userJourneyRepairUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.UserJourneyRepairInstrumentation'
 if (project.hasProperty('answerPagingUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.AnswerPagingInstrumentation'
-if (project.hasProperty('liveReadingRepairUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.LiveReadingRepairInstrumentation'
 if (project.hasProperty('fiveSourceUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.FiveSourceInstrumentation'
 tasks.register('liveProbe', JavaExec) {
     dependsOn 'compileDebugUnitTestJavaWithJavac'

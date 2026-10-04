@@ -29,8 +29,8 @@ public class PlatformNavigationTest {
             assertEquals("",UrlPolicy.upgradePlatformNavigation(Source.WEIBO,url));
     }
     @Test public void otherPlatformsKeepTheirOwnAllowlist(){
-        assertEquals("https://tieba.baidu.com/p/123?pn=2",UrlPolicy.upgradePlatformNavigation(Source.TIEBA,"http://tieba.baidu.com/p/123?pn=2"));
-        assertEquals("",UrlPolicy.upgradePlatformNavigation(Source.TIEBA,"http://m.weibo.cn/search"));
-        assertEquals("",UrlPolicy.upgradePlatformNavigation(Source.HACKERNEWS,"http://evil.ycombinator.com/"));
+        assertEquals("https://bbs.hupu.com/123-2.html",UrlPolicy.upgradePlatformNavigation(Source.HUPU,"http://bbs.hupu.com/123-2.html"));
+        assertEquals("",UrlPolicy.upgradePlatformNavigation(Source.HUPU,"http://m.weibo.cn/search"));
+        assertEquals("",UrlPolicy.upgradePlatformNavigation(Source.HUPU,"http://evil.ycombinator.com/"));
     }
 }

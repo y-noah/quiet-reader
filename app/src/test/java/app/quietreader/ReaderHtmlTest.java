@@ -4,10 +4,10 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.*;
 public class ReaderHtmlTest {
     @Test public void imageCaptionIsAnIndependentRetryEntryWithoutPageScripts(){
-        Document d=new Document();d.title="Image";d.url="https://wallstreetcn.com/articles/1";
+        Document d=new Document();d.title="Image";d.url="https://www.cls.cn/detail/1";
         String image="https://example.com/photo.png?a=1&b=2";d.blocks.add(new Block("image",image));
         for(boolean dark:new boolean[]{false,true}){
-            String html=ReaderHtml.render(d,Source.WALLSTREET,19,dark,java.util.Collections.emptySet(),false);
+            String html=ReaderHtml.render(d,Source.CLS,19,dark,java.util.Collections.emptySet(),false);
             assertTrue(html.contains("<figcaption><a href='https://example.com/photo.png?a=1&amp;b=2'>查看大图</a>"));
             assertTrue(html.contains("图片可能稍后显示，点开可重试"));
             assertFalse(html.contains("轻点图片放大"));assertFalse(html.contains("<script"));assertFalse(html.contains("onload="));
@@ -27,9 +27,9 @@ public class ReaderHtmlTest {
         first.blocks.add(new Block("text","new"));assertTrue(ReaderHtml.render(d,Source.ZHIHU,19,false,expanded,false).contains(anchor));
     }
     @Test public void remoteMarkupIsEscapedNotExecuted() {
-        Document d=new Document();d.title="<script>evil()</script>";d.url="https://www.toutiao.com/article/1/";
+        Document d=new Document();d.title="<script>evil()</script>";d.url="https://www.ifanr.com/1";
         d.blocks.add(new Block("text","<img src=x onerror=evil()>"));d.blocks.add(new Block("image","javascript:evil()"));
-        String html=ReaderHtml.render(d,Source.TOUTIAO,19);
+        String html=ReaderHtml.render(d,Source.IFANR,19);
         assertFalse(html.contains("<script>"));assertFalse(html.contains("src='javascript:"));assertTrue(html.contains("&lt;img"));assertTrue(html.contains("default-src 'none'"));
     }
     @Test public void preservesPartialContentWarning() {

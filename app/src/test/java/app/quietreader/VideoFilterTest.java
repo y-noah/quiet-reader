@@ -9,7 +9,7 @@ import static app.quietreader.Models.*;
 /** Synthetic metadata/DOM contracts, not claims of every platform's current markup. */
 public class VideoFilterTest {
     private static final String Z="https://www.zhihu.com/question/123";
-    private static final String T="https://tieba.baidu.com/p/123";
+    private static final String H="https://bbs.hupu.com/123.html";
     private static String answer(String id,String body,String extra){return "<div class='AnswerItem "+extra+"' data-zop='{\"itemId\":\""+id+"\"}'><div class='RichContent-inner'><div class='RichText'>"+body+"</div></div></div>";}
     @Test public void titlesAndThumbnailsAreNotMediaTypes()throws Exception{
         assertFalse(VideoPolicy.metadata(new JSONObject("{\"title\":\"视频行业的文字讨论\",\"thumbnail\":\"x\",\"attachment\":{\"type\":\"video\"}}")));
@@ -18,9 +18,9 @@ public class VideoFilterTest {
         assertFalse(VideoPolicy.metadata(new JSONObject("{\"is_video\":0}")));
     }
     @Test public void videoMetadataRoundTripsAndLegacyItemsRemainReadable()throws Exception{
-        Item video=new Item(Source.TIEBA,"视频","https://tieba.baidu.com/p/1","",true);
+        Item video=new Item(Source.HUPU,"视频","https://bbs.hupu.com/1.html","",true);
         assertTrue(Item.from(video.json()).video);
-        assertFalse(Item.from(new JSONObject("{\"source\":\"TIEBA\",\"title\":\"旧文字帖\",\"url\":\"https://tieba.baidu.com/p/2\"}")).video);
+        assertFalse(Item.from(new JSONObject("{\"source\":\"HUPU\",\"title\":\"旧文字帖\",\"url\":\"https://bbs.hupu.com/2.html\"}")).video);
         assertTrue(VideoPolicy.filter(Collections.singletonList(video)).isEmpty());
     }
     @Test public void filtersZhihuVideoUrlWithoutDeletingVideoDiscussion()throws Exception{
@@ -29,23 +29,10 @@ public class VideoFilterTest {
     }
     @Test public void jsonBoardsFilterKnownTypesAndAllVideoIsValidEmpty()throws Exception{
         assertTrue(SourceParser.list(Source.WEIBO,"{\"data\":{\"realtime\":[{\"word\":\"合成视频\",\"is_video\":1}]}}").isEmpty());
-        String raw="{\"data\":{\"bang_topic\":{\"topic_list\":[{\"topic_name\":\"合成视频\",\"topic_url\":\""+T+"\",\"media_type\":\"video\"}]}}}";
-        assertTrue(SourceParser.list(Source.TIEBA,raw).isEmpty());
     }
     @Test public void hupuBoardUsesOwnRowPlayerNotOtherRow()throws Exception{
         String html="<ul><li><a class='p-title' href='/1.html'>视频卡片</a><video></video></li><li><a class='p-title' href='/2.html'>视频行业文字讨论</a></li></ul>";
         List<Item> list=SourceParser.list(Source.HUPU,html);assertEquals(1,list.size());assertTrue(list.get(0).url.endsWith("/2.html"));
-    }
-    @Test public void tiebaMainVideoFiltersRepliesButReplyVideoDoesNotDeleteMain(){
-        Document main=SourceParser.article(Source.TIEBA,"<div class='pb-content-wrap'><p>主视频配文</p><video></video></div><div class='comment-content'>文字回复</div>",T);
-        assertTrue(main.filteredVideo);assertFalse(main.hasContent());
-        Document reply=SourceParser.article(Source.TIEBA,"<div class='pb-content-wrap'><p>纯文字主帖</p></div><div class='comment-content'><div class='pb-rich-text'>视频回复配文</div><video></video></div>",T);
-        assertFalse(reply.filteredVideo);assertEquals(1,reply.filteredVideos);assertEquals(1,reply.sections.size());assertEquals("纯文字主帖",reply.blocks.get(0).value);
-    }
-    @Test public void desktopTiebaUsesExplicitFirstFloorNotFirstVisibleReply(){
-        String template="<div class='l_post' data-field='{\"content\":{\"post_no\":%d}}'><div class='d_post_content'>配文</div><video></video></div>";
-        assertTrue(SourceParser.article(Source.TIEBA,String.format(template,1),T).filteredVideo);
-        Document later=SourceParser.article(Source.TIEBA,String.format(template,20),T+"?pn=2");assertFalse(later.filteredVideo);assertEquals(1,later.filteredVideos);
     }
     @Test public void weiboFeedDropsOnlyVideoCardIncludingCaption(){
         String html="<div class='card-wrap'><p class='txt'>纯文字微博讨论</p></div><div class='card-wrap'><p class='txt'>视频配文不当正文</p><div class='WB_video'><video></video></div></div>";
@@ -77,10 +64,10 @@ public class VideoFilterTest {
     }
     @Test public void differentTopicsDoNotSharePersistedVideoIdentity(){
         assertNotEquals(VideoPolicy.key(new Item(Source.WEIBO,"a","https://s.weibo.com/weibo?q=a","")),VideoPolicy.key(new Item(Source.WEIBO,"b","https://s.weibo.com/weibo?q=b","")));
-        assertEquals(VideoPolicy.key(new Item(Source.TIEBA,"a",T,"")),VideoPolicy.key(new Item(Source.TIEBA,"a",T+"?pn=2","")));
+        assertEquals(VideoPolicy.key(new Item(Source.HUPU,"a",H,"")),VideoPolicy.key(new Item(Source.HUPU,"a","https://bbs.hupu.com/123-2.html","")));
     }
     @Test public void ordinaryArticlesWithVideoAttachmentsAreNotVideoFeeds(){
-        Document d=SourceParser.article(Source.SMZDM,"<div class='txt-detail'><p>商品优惠说明</p><video></video></div>","https://www.smzdm.com/p/123/");
+        Document d=SourceParser.article(Source.IFANR,"<article class='c-article-content'><p>技术文章说明</p><video></video></article>","https://www.ifanr.com/123");
         assertFalse(d.filteredVideo);assertTrue(d.hasContent());assertTrue(d.unsupportedVideo);
     }
     @Test public void nestedVideoReplyDoesNotRemoveHupuTextMain(){

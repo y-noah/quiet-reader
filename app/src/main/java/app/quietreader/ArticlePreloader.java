@@ -47,7 +47,7 @@ final class ArticlePreloader implements AutoCloseable {
                 public void success(Document doc){if(valid(request))complete(item,doc);}
                 public void failure(String why){if(valid(request)){Repository.Result<Document> cb=foreground;foreground=null;active=null;if(cb!=null)cb.failure(why);else main.post(pump);}}
             });
-            else if(item.source==Source.ZHIHU||(item.source==Source.TIEBA&&item.url.contains("/p/")))loadDynamic(item,request);
+            else if(item.source==Source.ZHIHU)loadDynamic(item,request);
             else repo.article(item,new Repository.Result<Document>(){
                 public void success(Document doc){if(valid(request)){if(doc.canPresent())complete(item,doc);else loadDynamic(item,request);}}
                 public void failure(String why){if(valid(request))loadDynamic(item,request);}

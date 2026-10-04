@@ -9,7 +9,7 @@ import static app.quietreader.Models.*;
 final class VideoPolicy {
     static final String EXCLUDED="aside,nav,.recommend,.recommend-list,.related-recommend,.advertisement,.ad,.feed-ad-container,.quote-content,blockquote,.WB_feed_expand";
     // Mobile Weibo renders its unplayed video as a poster/button without a <video> tag.
-    static final String PLAYERS="video,.VideoCard,.VideoAnswer,.ZVideo,.video-player,.video_player,.WB_video,.card-video.type-video,.mwb-video,.tb-video,.j_video,[data-video-src],[data-video-id]";
+    static final String PLAYERS="video,.VideoCard,.VideoAnswer,.ZVideo,.video-player,.video_player,.WB_video,.card-video.type-video,.mwb-video,[data-video-src],[data-video-id]";
     private VideoPolicy(){}
     static boolean metadata(JSONObject item){
         if(item==null)return false;
@@ -26,9 +26,6 @@ final class VideoPolicy {
             switch(source){
                 case ZHIHU:return path.matches("/zvideo/[^/]+/?");
                 case WEIBO:return path.startsWith("/tv/show/")||path.startsWith("/tv/v/")||path.startsWith("/s/video/");
-                case TIEBA:return path.startsWith("/video/");
-                case TOUTIAO:return path.matches("/(video|short-video)/.*");
-                case WALLSTREET:return path.startsWith("/videos/");
                 case CLS:return path.startsWith("/share/videoChannel/");
                 default:return false;
             }
@@ -61,23 +58,17 @@ final class VideoPolicy {
     }
     static Element owner(Source source,Element root){
         String selector=source==Source.WEIBO?".card-wrap,.card,.WB_feed_type,[class*=detail_wbtext]":
-                source==Source.ZHIHU?".AnswerItem":source==Source.TIEBA?".l_post,.comment-content,.pb-content-wrap":
+                source==Source.ZHIHU?".AnswerItem":
                 source==Source.HUPU?".reply-list-item,[class*='post-content_main-post-info']":"article";
         Element owner=root.closest(selector);return owner==null?root:owner;
     }
     static boolean videoSection(Source source,Element root){
         Element owner=owner(source,root);
         if(source==Source.HUPU&&owner.is("[class*='post-content_main-post-info']"))return mainMedia(owner);
-        if(source==Source.TIEBA&&owner.is(".pb-content-wrap"))return mainMedia(owner);
-        if(source==Source.TIEBA){
-            // A floor owns its content, not a video posted in a nested reply.
-            Element direct=owned(owner);direct.select(".lzl-wrapper,.pb-lzl-item").remove();
-            return row(direct);
-        }
         if(typed(owner))return true;
         if(source==Source.ZHIHU&&root.closest(".AnswerItem")!=null&&!owned(owner).select(".VideoAnswer,.ZVideo").isEmpty())return true;
         if(!player(owner))return false;
-        if(source==Source.WEIBO||source==Source.TIEBA||source==Source.HUPU)return true;
+        if(source==Source.WEIBO||source==Source.HUPU)return true;
         if(source==Source.ZHIHU&&root.closest(".AnswerItem")!=null){
             // Keep prose answers with an embedded clip; remove dedicated/empty video answers.
             Element prose=owned(root);prose.select(PLAYERS+",script,style").remove();
@@ -92,19 +83,9 @@ final class VideoPolicy {
         if(source==Source.WEIBO&&weiboTopic(url))return false;
         Element type=page.selectFirst("head meta[property=og:type]");
         if(type!=null&&type.attr("content").startsWith("video"))return true;
-        if(source==Source.GEEKPARK&&!page.select("#play-room.video-player,#article-body .pure-video-wrpper").isEmpty())return true;
         if(source==Source.HUPU){
             for(Element main:page.select("[class*='post-content_main-post-info']"))
                 if(main.closest(EXCLUDED)==null&&mainMedia(main))return true;
-        }else if(source==Source.TIEBA){
-            for(Element main:page.select(".pb-content-wrap"))
-                if(main.closest(EXCLUDED+",.comment-content,.reply-list-wrapper,.l_post") == null&&mainMedia(main))return true;
-            for(Element post:page.select(".l_post[data-field]")){
-                if(post.closest(EXCLUDED)!=null)continue;
-                try{JSONObject content=new JSONObject(post.attr("data-field")).optJSONObject("content");
-                    if(content!=null&&content.optInt("post_no")==1&&mainMedia(post))return true;
-                }catch(Exception ignored){}
-            }
         }else if(source==Source.WEIBO){
             for(Element main:page.select(".weibo-text,[class*=detail_wbtext]"))if(main.closest(EXCLUDED)==null&&videoSection(source,main))return true;
         }
@@ -115,7 +96,7 @@ final class VideoPolicy {
         try{
             java.net.URI uri=java.net.URI.create(item.url);String path=uri.getPath();
             if(item.source==Source.HUPU&&path.matches("/\\d+(?:-\\d+)?\\.html"))path=path.replaceFirst("-\\d+(?=\\.html$)","");
-            else if(!(item.source==Source.TIEBA&&path.matches("/p/\\d+")))return item.source.name()+"|"+item.url;
+            else return item.source.name()+"|"+item.url;
             return item.source.name()+"|"+uri.getHost()+path;
         }catch(Exception ignored){return item.source.name()+"|"+item.url;}
     }

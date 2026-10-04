@@ -30,8 +30,4 @@ public class ReadingImprovementsTest {
         assertTrue(DocumentSize.estimate(d)>empty+2000);int sections=DocumentSize.estimate(d);d.blocks.addAll(section.blocks);
         assertTrue(DocumentSize.estimate(d)<sections+100);d.notice=String.join("",Collections.nCopies(1000,"n"));assertTrue(DocumentSize.estimate(d)>sections+2000);
     }
-    @Test public void tiebaFirstFloorIsMainPost(){
-        Document d=SourceParser.article(Source.TIEBA,"<div class='l_post' data-field='{\"content\":{\"post_no\":1}}'><div class='d_post_content'>这里是一楼正文，应该优先展示。</div></div><div class='l_post' data-field='{\"content\":{\"post_no\":2}}'><div class='d_post_content'>这是二楼回复，应当独立折叠。</div></div>","https://tieba.baidu.com/p/123");
-        assertFalse(d.sections.isEmpty());assertEquals("主帖",d.sections.get(0).label);
-    }
 }

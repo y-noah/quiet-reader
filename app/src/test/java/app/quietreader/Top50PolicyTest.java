@@ -55,8 +55,8 @@ public class Top50PolicyTest {
             assertEquals(source.name(),expectedCap(source),rank(feed(source,50,0)).size());
     }
 
-    @Test public void equalRankTechnologyAndShoppingDoNotEqualBroadSocialTopics() {
-        List<AggregateRanker.Entry> result=rank(feed(Source.IFANR,1,0),feed(Source.SMZDM,1,0),
+    @Test public void equalRankTechnologyDoesNotEqualBroadSocialTopics() {
+        List<AggregateRanker.Entry> result=rank(feed(Source.IFANR,1,0),
                 feed(Source.ZHIHU,1,0),feed(Source.WEIBO,1,0));
         assertEquals(Source.ZHIHU,result.get(0).primary.source);
         assertEquals(Source.WEIBO,result.get(1).primary.source);
@@ -129,8 +129,8 @@ public class Top50PolicyTest {
         assertArrayEquals(new Source[]{Source.ZHIHU,Source.WEIBO,Source.HUPU,Source.CLS,Source.IFANR},Source.displayOrder());
         assertArrayEquals(Source.displayOrder(),Source.aggregateSources());
         assertEquals("Top50",Source.AGGREGATE.category);
-        assertFalse(Source.GEEKPARK.visible());assertTrue(Source.IFANR.visible());
-        assertFalse(Arrays.asList(Source.aggregateSources()).contains(Source.GEEKPARK));
+        assertFalse(Source.AGGREGATE.visible());assertTrue(Source.IFANR.visible());
+        assertFalse(Arrays.asList(Source.aggregateSources()).contains(Source.AGGREGATE));
         assertTrue(Arrays.asList(Source.aggregateSources()).contains(Source.IFANR));
     }
 

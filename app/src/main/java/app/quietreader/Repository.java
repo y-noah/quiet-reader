@@ -55,17 +55,25 @@ public final class Repository {
         android.content.SharedPreferences boards=context.getSharedPreferences("boards",0);
         android.content.SharedPreferences videos=context.getSharedPreferences("video-filter",0);
         android.content.SharedPreferences.Editor boardEdit=boards.edit(),videoEdit=videos.edit();
-        for(Source source:Source.values())if(!source.readable()){
-            String name=source.name();
-            for(String key:boards.getAll().keySet())if(key.equals(name)||key.startsWith(name+"_"))boardEdit.remove(key);
-            for(String key:videos.getAll().keySet())if(key.startsWith(name+"|"))videoEdit.remove(key);
+        // Only the five current source namespaces survive, including data from older enums.
+        java.util.Set<String> names=new java.util.HashSet<>();
+        for(Source source:Source.displayOrder())names.add(source.name());
+        for(String key:boards.getAll().keySet()){
+            String name=key.contains("_")?key.substring(0,key.indexOf('_')):key;
+            if(!names.contains(name))boardEdit.remove(key);
+        }
+        for(String key:videos.getAll().keySet()){
+            String name=key.contains("|")?key.substring(0,key.indexOf('|')):key;
+            if(!names.contains(name))videoEdit.remove(key);
         }
         boardEdit.apply();videoEdit.apply();
         context.getSharedPreferences("source-session",0).edit().remove("tieba-desktop").apply();
         android.content.SharedPreferences prefs=context.getSharedPreferences("MainActivity",0);
         try {
             List<Item> saved=Models.fromJson(new JSONArray(prefs.getString("saved","[]")));
-            if(saved.removeIf(item->!item.source.readable()))prefs.edit().putString("saved",Models.toJson(saved).toString()).apply();
+            saved.removeIf(item->!item.source.readable());
+            String cleaned=Models.toJson(saved).toString();
+            if(!cleaned.equals(prefs.getString("saved","[]")))prefs.edit().putString("saved",cleaned).apply();
         }catch(Exception ignored){}
     }
     private boolean validBoardCache(Source s) {
@@ -93,22 +101,9 @@ public final class Repository {
     public void article(Item item,Result<Document> cb) {
         if(!item.source.readable()){cb.failure("此平台已移除");return;}
         String cookie=CookieManager.getInstance().getCookie(item.url);
-        String doubanCookie=item.source==Source.DOUBAN?CookieManager.getInstance().getCookie("https://m.douban.com/"):null;
         requests.submit(ticket->{
             try {
-                Document doc;
-                String topicId=item.source==Source.DOUBAN?AdditionalSources.doubanTopicId(item.url):"";
-                if(!topicId.isEmpty()){
-                    String api="https://m.douban.com/rexxar/api/v2/gallery/topic/"+topicId+"/items?from_web=1&sort=hot&start=0&count=20&status_full_text=1&guest_only=0";
-                    try {doc=AdditionalSources.doubanTopic(item,fetch(api,doubanCookie,item.url,ticket));}
-                    catch(Exception failure){ticket.check();doc=new Document();doc.url=item.url;doc.title=item.title;doc.sourceUnavailable=true;doc.loginRequired=failure instanceof HttpFailure&&(((HttpFailure)failure).status==401||((HttpFailure)failure).status==403);doc.notice="豆瓣话题暂未加载成功。"+explain(failure)+"；可重试或打开来源页确认。";}
-                }else if(item.source==Source.WALLSTREET&&item.url.matches("https://wallstreetcn.com/articles/\\d+")){
-                    String id=item.url.substring(item.url.lastIndexOf('/')+1);
-                    org.json.JSONObject data=new org.json.JSONObject(fetch("https://api-one-wscn.awtmt.com/apiv1/content/articles/"+id+"?extract=0",null,item.url,ticket)).getJSONObject("data");
-                    doc=SourceParser.article(item.source,"<h1>"+ReaderHtml.escape(data.optString("title"))+"</h1><article>"+data.optString("content")+"</article>",item.url);
-                    doc.byline=data.optString("source_name");
-                    if(data.optBoolean("is_need_pay")||data.optBoolean("is_trial"))doc.notice="此文有付费或试读限制，仅展示接口实际返回的内容。请在来源页登录查看权限。";
-                } else doc=SourceParser.article(item.source,fetch(item.url,cookie,item.url,ticket),item.url);
+                Document doc=SourceParser.article(item.source,fetch(item.url,cookie,item.url,ticket),item.url);
                 ticket.check();cacheArticle(doc);Document result=doc;main.post(()->{if(!ticket.cancelled())cb.success(result);});
             }
             catch(Exception e) { main.post(()->{if(!ticket.cancelled())cb.failure(explain(e));}); }

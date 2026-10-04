@@ -29,7 +29,7 @@ public final class LoginActivity extends Activity {
         Button back=new Button(this); back.setText("返回"); back.setOnClickListener(v->returnToReader()); bar.addView(back);
         Button read=new Button(this); read.setText(board?"返回热榜":"读取到 News"); read.setOnClickListener(v->{if(board)finish();else extract();}); bar.addView(read);
         desktopMode=state==null?SourceSession.desktop(this,source):state.getBoolean("desktop",SourceSession.desktop(this,source));
-        Button desktop=new Button(this); desktop.setText(desktopMode?"手机版":"桌面版"); desktop.setOnClickListener(v->{ desktopMode=!desktopMode;SourceSession.remember(this,source,desktopMode);desktop.setText(desktopMode?"手机版":"桌面版");web.getSettings().setUserAgentString(desktopMode?Repository.DESKTOP_UA:WebSettings.getDefaultUserAgent(this)); reloadSource(); }); bar.addView(desktop);
+        Button desktop=new Button(this); desktop.setText(desktopMode?"手机版":"桌面版"); desktop.setOnClickListener(v->{ desktopMode=!desktopMode;desktop.setText(desktopMode?"手机版":"桌面版");web.getSettings().setUserAgentString(desktopMode?Repository.DESKTOP_UA:WebSettings.getDefaultUserAgent(this)); reloadSource(); }); bar.addView(desktop);
         root.addView(bar);
         status=new TextView(this); status.setText("来源页 · "+source.label+"｜登录仅保存在本机"); status.setPadding(16,8,16,8); root.addView(status);
         status.setMaxLines(2);status.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -80,37 +80,29 @@ public final class LoginActivity extends Activity {
         if(UrlPolicy.loginAllowed(source,web.getUrl())){starting(web.getUrl());web.reload();}
         else {starting(initialUrl);web.loadUrl(initialUrl);}
     }
-    private void extract() {
-        extract(false);
-    }
     private void returnToReader(){
         CookieManager.getInstance().flush();
-        // Preserve the already-unlocked page, including its in-page/sessionStorage state.
-        // Other threads and authentication pages must never be imported as this post.
-        if(source==Source.TIEBA&&web!=null&&UrlPolicy.sameForumPost(source,initialUrl,web.getUrl()))extract(true);
-        else finish();
+        finish();
     }
-    private void extract(boolean returning) {
+    private void extract() {
         String url=web.getUrl();
-        if(!UrlPolicy.belongs(source,url)) { if(returning)finish();else status.setText("仅允许读取当前平台内容"); return; }
-        java.util.concurrent.atomic.AtomicBoolean completed=new java.util.concurrent.atomic.AtomicBoolean();
-        if(returning)web.postDelayed(()->{if(completed.compareAndSet(false,true)&&!isFinishing())finish();},2000);
+        if(!UrlPolicy.belongs(source,url)) { status.setText("仅允许读取当前平台内容"); return; }
         web.evaluateJavascript(SourceSnapshot.script(source),encoded->{
-            if(!completed.compareAndSet(false,true)||isFinishing())return;
+            if(isFinishing())return;
             try {
                 Object value=new JSONTokener(encoded).nextValue();
                 if(!(value instanceof String))throw new IllegalStateException("No snapshot");
                 org.json.JSONObject snapshot=new org.json.JSONObject((String)value);
                 String actual=snapshot.optString("url");
-                if(!url.equals(actual)||snapshot.isNull("html")||snapshot.optString("html").length()>4*1024*1024){if(returning)finish();else status.setText("页面已跳转、过大或尚未加载");return;}
+                if(!url.equals(actual)||snapshot.isNull("html")||snapshot.optString("html").length()>4*1024*1024){status.setText("页面已跳转、过大或尚未加载");return;}
                 Document doc=SourceParser.article(source,snapshot.getString("html"),actual);
-                if(!doc.canPresent()||(returning&&doc.loginRequired)) { if(returning)finish();else status.setText(doc.notice); return; }
+                if(!doc.canPresent()) { status.setText(doc.notice); return; }
                 pendingDocument=doc;
                 setResult(RESULT_OK,new Intent().putExtra("source",source.name())); finish();
-            } catch(Exception e) { if(returning)finish();else status.setText("读取失败，请等待页面加载后重试"); }
+            } catch(Exception e) { status.setText("读取失败，请等待页面加载后重试"); }
         });
     }
-    @Override public void onBackPressed() { if(source==Source.TIEBA&&web!=null&&UrlPolicy.sameForumPost(source,initialUrl,web.getUrl()))returnToReader();else if(web!=null&&web.canGoBack()) {pageIssue="";upgradedUrls.clear();status.setText("正在返回上一来源页…");web.goBack();} else super.onBackPressed(); }
+    @Override public void onBackPressed() { if(web!=null&&web.canGoBack()) {pageIssue="";upgradedUrls.clear();status.setText("正在返回上一来源页…");web.goBack();} else super.onBackPressed(); }
     @Override protected void onSaveInstanceState(Bundle state) {state.putBoolean("desktop",desktopMode);if(web!=null)web.saveState(state);super.onSaveInstanceState(state);}
     @Override protected void onPause() { if(web!=null) { web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
     @Override protected void onResume() { super.onResume(); if(web!=null) web.onResume(); }

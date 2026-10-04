@@ -26,24 +26,12 @@ public final class LiveProbe {
                 System.out.println("unsupportedVideo="+parsed.unsupportedVideo+" notice="+parsed.notice);
                 for(Section section:parsed.sections)System.out.println("section="+section.label+" blocks="+section.blocks.size());
             }
-            if(args[0].equals(Source.SMZDM.endpoint)) {
-                System.out.println("observedAt="+java.time.Instant.now()+" source=official-public-three-hour");
-                for(Item item:SourceParser.list(Source.SMZDM,raw))System.out.println(item.title+" | "+item.detail+" | "+item.url);
-            }
-            if(args[0].contains("tieba.baidu.com")) {
-                for(org.jsoup.nodes.Element a:d.select("a[href]"))if(a.absUrl("href").matches("https://tieba.baidu.com/p/\\d+.*")){
-                    String post=a.absUrl("href");System.out.println("post="+post);
-                    String body=get(post);org.jsoup.nodes.Document page=Jsoup.parse(body,post);
-                    System.out.println("postTitle="+page.title());System.out.println("text="+page.body().text().substring(0,Math.min(1800,page.body().text().length())));
-                    Path snapshot=Paths.get("build/reports/anonymous-tieba-post.html");Files.createDirectories(snapshot.getParent());Files.write(snapshot,body.getBytes(StandardCharsets.UTF_8));break;
-                }
-            }
             for(org.jsoup.nodes.Element e:d.select(".thread-content-detail img,.thread-content img,article img"))System.out.println(e.outerHtml());
             return;
         }
         List<String> report=new ArrayList<>();
         report.add("Anonymous live probe "+java.time.Instant.now());
-        for(Source s:Source.values()) {
+        for(Source s:Source.aggregateSources()) {
             try {
                 List<Item> items=SourceParser.list(s,get(s.endpoint));
                 String line=s.name()+": board="+items.size();report.add(line);System.out.println(line);

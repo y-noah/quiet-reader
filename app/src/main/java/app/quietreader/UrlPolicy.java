@@ -19,20 +19,9 @@ public final class UrlPolicy {
         switch(source) {
             case WEIBO: return domain(h,"weibo.com")||domain(h,"weibo.cn");
             case ZHIHU: return domain(h,"zhihu.com");
-            case TOUTIAO: return domain(h,"toutiao.com");
-            case TIEBA: return h.equals("tieba.baidu.com");
             case HUPU: return domain(h,"hupu.com");
-            case WALLSTREET: return domain(h,"wallstreetcn.com")||h.equals("api-one-wscn.awtmt.com");
-            case HACKERNEWS: return h.equals("news.ycombinator.com");
-            case SMZDM: return domain(h,"smzdm.com");
             case CLS: return domain(h,"cls.cn");
-            case GEEKPARK: return domain(h,"geekpark.net");
-            case GUOKR: return domain(h,"guokr.com");
-            case DOUBAN: return domain(h,"douban.com");
-            case ITHOME: return domain(h,"ithome.com");
             case IFANR: return domain(h,"ifanr.com");
-            case JUEJIN: return domain(h,"juejin.cn");
-            case SSPAI: return domain(h,"sspai.com");
             default: return false;
         }
     }
@@ -40,7 +29,6 @@ public final class UrlPolicy {
         if(belongs(source,url))return true;
         if(!https(url))return false;
         String h=host(url);
-        if(source==Models.Source.TIEBA)return h.equals("passport.baidu.com")||h.equals("wappass.baidu.com");
         if(source!=Models.Source.WEIBO)return false;
         return h.equals("login.sina.com.cn")||h.equals("passport.sina.cn")||h.equals("passport.sina.com.cn")||h.equals("passport.sinaimg.cn");
     }
@@ -73,9 +61,7 @@ public final class UrlPolicy {
     /** Known forum post identity, allowing canonical query/pagination changes but not another post. */
     public static boolean sameForumPost(Models.Source source,String current,String next) {
         if(!belongs(source,current)||!belongs(source,next))return false;
-        // A permitted authentication host is not a forum content host.
-        if(source==Models.Source.TIEBA&&(!host(current).equals("tieba.baidu.com")||!host(next).equals("tieba.baidu.com")))return false;
-        String pattern=source==Models.Source.HUPU?"^/(\\d+)(?:-\\d+)?\\.html$":source==Models.Source.TIEBA?"^/p/(\\d+)$":"";
+        String pattern=source==Models.Source.HUPU?"^/(\\d+)(?:-\\d+)?\\.html$":"";
         if(pattern.isEmpty())return false;
         try {
             java.util.regex.Pattern regex=java.util.regex.Pattern.compile(pattern);

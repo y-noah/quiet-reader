@@ -30,7 +30,7 @@ public class SessionReuseTest {
         for(String url:new String[]{"https://www.zhihu.com.evil.test/question/123","http://www.zhihu.com/question/123","https://user@www.zhihu.com/question/123","https://www.zhihu.com:444/question/123","https://zhuanlan.zhihu.com/p/123"}) {
             assertFalse(AnswerStream.sameQuestion(item,url));assertFalse(AnswerStream.canReuse(item,url));
         }
-        assertFalse(AnswerStream.canReuse(new Item(Source.TIEBA,"","https://tieba.baidu.com/p/123",""),"https://www.zhihu.com/question/123"));
+        assertFalse(AnswerStream.canReuse(new Item(Source.HUPU,"","https://bbs.hupu.com/123.html",""),"https://www.zhihu.com/question/123"));
         assertFalse(AnswerStream.sameQuestion(question("https://zhuanlan.zhihu.com/p/123"),"https://zhuanlan.zhihu.com/p/123"));
     }
 }

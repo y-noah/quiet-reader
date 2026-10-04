@@ -1,3 +1,4 @@
+param([string]$GradleInit='')
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 $signingRoot=Join-Path $projectRoot '.tools/signing'
@@ -23,7 +24,9 @@ try {
         & "$jdkRoot/bin/keytool.exe" -genkeypair -keystore $keyFile -storetype JKS -alias quiet-reader -keyalg RSA -keysize 3072 -validity 10000 -dname 'CN=Quiet Reader Personal, O=Personal, C=CN' -storepass:env QR_STORE_PASSWORD -keypass:env QR_STORE_PASSWORD
         if($LASTEXITCODE -ne 0){throw 'Signing key generation failed'}
     }
-    & "$PSScriptRoot/build.ps1" -Tasks testDebugUnitTest,assembleDebug,assembleDebugAndroidTest,assembleRelease,lintRelease
+    $tasks=@('testDebugUnitTest','assembleDebug','assembleDebugAndroidTest','assembleRelease','lintRelease')
+    if($GradleInit){$tasks=@('-I',$GradleInit)+$tasks}
+    & "$PSScriptRoot/build.ps1" -Tasks $tasks
     if($LASTEXITCODE -ne 0){throw 'Release build failed'}
     $apk=Join-Path $projectRoot 'app/build/outputs/apk/release/app-release.apk'
     & "$projectRoot/.tools/android-sdk/build-tools/35.0.0/apksigner.bat" verify --verbose $apk

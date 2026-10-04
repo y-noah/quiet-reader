@@ -21,23 +21,8 @@ public class ReadingRepairTest {
         assertEquals(2,AnswerStream.answers(before));assertTrue(AnswerStream.hasNewAnswers(before,ids));
         String html=ReaderHtml.render(before,Source.ZHIHU,19);assertTrue(html.contains("真正新增"));assertFalse(html.contains("alert(1)"));assertFalse(html.contains("其他问题"));
     }
-    @Test public void doubanSearchTermsAreNotInventedTopicUrls()throws Exception{
-        List<Item> rows=SourceParser.list(Source.DOUBAN,"{\"items\":[{\"id\":1,\"type\":\"search_term\",\"title\":\"搜索词\"},{\"id\":2,\"type\":\"gallery_topic\",\"title\":\"真实话题\"}]}");
-        assertEquals(1,rows.size());assertTrue(rows.get(0).url.endsWith("/2/"));
-    }
-    @Test public void retiredDoubanGroupPostsStayOutsideReader()throws Exception{
-        Item topic=new Item(Source.DOUBAN,"话题","https://www.douban.com/gallery/topic/2/","");
-        Document doc=AdditionalSources.doubanTopic(topic,"{\"items\":[{\"target\":{\"title\":\"小组帖子\",\"url\":\"https://www.douban.com/group/topic/123/?x=1\"}}]}");
-        assertTrue(doc.related.isEmpty());assertNull(ReaderLinks.readerSource("https://www.douban.com/group/topic/123/"));
-        Document empty=AdditionalSources.doubanTopic(topic,"{\"items\":[]}");assertTrue(empty.canPresent());assertTrue(empty.sourceUnavailable);assertTrue(empty.notice.contains("未返回"));
-        Document gate=SourceParser.article(Source.DOUBAN,"<h1>你没有权限访问这个页面。</h1><p>请登录后重试。</p>","https://www.douban.com/group/topic/123/");assertTrue(gate.loginRequired);assertTrue(gate.canPresent());assertFalse(gate.hasContent());
-    }
     @Test public void continuationFailureIsVisibleAtBottom(){
         Document d=new Document();d.url=question.url;d.moreStatus="login";d.notice="登录后重试，已读回答保留";
         String html=ReaderHtml.render(d,Source.ZHIHU,19);assertTrue(html.contains("continuation-status"));assertTrue(html.contains("需先登录来源"));
-    }
-    @Test public void shoppingIsAbsentFromEveryHomeEntry(){
-        assertFalse(Source.SMZDM.navigable());assertFalse(Arrays.asList(Source.aggregateSources()).contains(Source.SMZDM));
-        assertArrayEquals(new Source[]{Source.AGGREGATE,Source.ZHIHU,Source.WEIBO,Source.HUPU,Source.CLS,Source.IFANR},Source.navigationOrder());
     }
 }

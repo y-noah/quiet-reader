@@ -184,7 +184,7 @@ public final class MainActivity extends Activity {
         scroller();
         LinearLayout row=new LinearLayout(this);row.setBaselineAligned(false);row.setContentDescription("平台选择");
         for(Source s:Source.navigationOrder()) {
-            String shortName=s==Source.AGGREGATE?"总":s==Source.SMZDM?"值":s.label.substring(0,1);
+            String shortName=s==Source.AGGREGATE?"总":s.label.substring(0,1);
             int brand=platformColor(s);
             TextView t=new PlatformMarkView(this,s,shortName,dark?blend(brand,Color.WHITE,.38f):brand);
             t.setSelected(s==selected);
@@ -234,7 +234,6 @@ public final class MainActivity extends Activity {
             case ZHIHU:return 0xff256dcc;
             case IFANR:return 0xff16816f;
             case CLS:return 0xff147f9e;
-            case SMZDM:return 0xffc34e64;
             case WEIBO:return 0xffab650d;
             case HUPU:return 0xff8455ba;
             default:return 0xff147f9e;
@@ -333,7 +332,6 @@ public final class MainActivity extends Activity {
         boolean aggregateCard=rank>0&&current==null&&selected==Source.AGGREGATE;
         if(aggregateCard){TextView source=text(item.detail.isEmpty()?item.source.label:item.detail,12,MUTED);source.setLineSpacing(dp(2),1);body.addView(source);space(body,4);}
         TextView title=text(item.title,14,INK);title.setLineSpacing(0,1);
-        if(rank==0&&current!=null&&current.source==Source.DOUBAN){title.setMaxLines(3);title.setEllipsize(android.text.TextUtils.TruncateAt.END);}
         body.addView(title);
         String metric=item.source==Source.ZHIHU?item.detail.replaceFirst("\\s*热度$",""):item.detail;
         TextView measured=text(metric,12,MUTED);
@@ -377,7 +375,7 @@ public final class MainActivity extends Activity {
         if(cached!=null){render(cached);return;}
         if(promoted)return;
         if(repo.offline()){status("当前没有网络","此篇正文尚未缓存在本机。连接网络后可重试。");content.addView(button("重试",()->open(item,false)));return;}
-        if(item.source==Source.ZHIHU||(item.source==Source.TIEBA&&item.url.contains("/p/"))){dynamic(item,request);return;}
+        if(item.source==Source.ZHIHU){dynamic(item,request);return;}
         repo.article(item,new Repository.Result<Document>() {
             public void success(Document doc) { if(request!=generation)return; if(doc.title.trim().isEmpty()) doc.title=item.title; if(doc.canPresent())render(doc);else dynamic(item,request); }
             public void failure(String reason) { if(request==generation)dynamic(item,request); }
@@ -472,7 +470,6 @@ public final class MainActivity extends Activity {
         if(doc.sourceUnavailable||doc.filteredVideos==0||doc.hasContent()||!doc.related.isEmpty())content.addView(button("来源页 / 登录后重新读取",()->login(current)));
     }
     private WebResourceResponse imageResponse(String url,String referer)throws Exception {
-        if(SourceParser.isImagePlaceholder(url))throw new java.io.IOException("Placeholder is not article content");
         byte[] data=images.get(url);if(data==null){data=Repository.bytes(url,null,referer,8*1024*1024);if(ImageType.detect(data)!=null)images.put(url,data);}
         String mime=ImageType.detect(data);
         if(mime==null)throw new java.io.IOException("Not a supported image");

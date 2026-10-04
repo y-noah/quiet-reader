@@ -36,13 +36,4 @@ public class ContinuationBoundaryTest {
         for(String bad:new String[]{"", "/api/v4/questions/123/answers?offset=10", "https://www.zhihu.com.evil.test/api/v4/questions/123/answers", "https://www.zhihu.com/api/v4/questions/123/answers/../456/answers", "https://www.zhihu.com/api/v4/questions/123/answers%2fextra"})
             assertEquals("",ZhihuAnswers.next(item,bad));
     }
-    @Test public void retiredDoubanRejectsAllReaderEntries()throws Exception {
-        Item topic=new Item(Source.DOUBAN,"话题","https://www.douban.com/gallery/topic/1/","");
-        JSONObject post=new JSONObject().put("title","帖子").put("url","https://www.douban.com/group/topic/42/");
-        JSONArray rows=new JSONArray().put(new JSONObject().put("target",post)).put(new JSONObject().put("target",post))
-            .put(new JSONObject().put("is_ad",true).put("target",post))
-            .put(new JSONObject().put("target",new JSONObject().put("title","外站").put("url","https://evil.test/group/topic/42/")));
-        Document result=AdditionalSources.doubanTopic(topic,new JSONObject().put("items",rows).toString());
-        assertTrue(result.related.isEmpty());assertTrue(result.sourceUnavailable);
-    }
 }
