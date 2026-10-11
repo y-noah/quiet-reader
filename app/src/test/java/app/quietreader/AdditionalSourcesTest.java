@@ -6,13 +6,10 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.*;
 
 public class AdditionalSourcesTest {
-    @Test public void aggregateAddsOneEntryAndKeepsSixTabs(){
-        assertArrayEquals(Source.displayOrder(),Source.aggregateSources());
-        assertEquals(5,new HashSet<>(Arrays.asList(Source.aggregateSources())).size());
-        assertEquals(6,Source.navigationOrder().length);
-        assertEquals(Source.AGGREGATE,Source.navigationOrder()[0]);
-        assertFalse(Source.AGGREGATE.readable());
-        for(Source source:Source.aggregateSources())assertTrue(source.readable());
+    @Test public void fiveTabsKeepAllTwelvePlatformsAvailable(){
+        assertEquals(12,Source.values().length);
+        assertArrayEquals(new Source[]{Source.ZHIHU,Source.WEIBO,Source.HUPU,Source.CLS,Source.V2EX},Source.navigationOrder());
+        for(Source source:Source.values())assertTrue(source.readable());
     }
     @Test public void ifanrListUsesObservedArticleContainersAndSkipsForeignDuplicates()throws Exception{
         List<Item> rows=SourceParser.list(Source.IFANR,"<div class='article-info'><h3><a href='/123'>新文章</a><a href='/123'>重复文章</a><a href='https://evil.test/124'>外站</a></h3></div><nav><a href='/125'>导航</a></nav><a class='js-title-transform' href='/126' title='第二篇'>摘要</a>");

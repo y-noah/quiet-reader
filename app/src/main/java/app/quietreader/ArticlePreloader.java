@@ -41,13 +41,13 @@ final class ArticlePreloader implements AutoCloseable {
         if(closed||active!=null||foreground!=null||repo.offline())return;
         while(!queue.isEmpty()){
             Item item=queue.removeFirst();Long at=attempted.get(item.url);
-            if(!item.source.readable()||!UrlPolicy.belongs(item.source,item.url)||item.url.equals(item.source.login)||item.url.equals(item.source.endpoint)||repo.hiddenVideo(item)||repo.cachedArticle(item)!=null||(at!=null&&System.currentTimeMillis()-at<5*60*1000))continue;
+            if(!item.source.readable()||item.source.webReading()||!UrlPolicy.belongs(item.source,item.url)||item.url.equals(item.source.login)||item.url.equals(item.source.endpoint)||repo.hiddenVideo(item)||repo.cachedArticle(item)!=null||(at!=null&&System.currentTimeMillis()-at<5*60*1000))continue;
             active=item;attempted.put(item.url,System.currentTimeMillis());int request=++revision;
             if(loader!=null)loader.load(item,new Repository.Result<Document>(){
                 public void success(Document doc){if(valid(request))complete(item,doc);}
                 public void failure(String why){if(valid(request)){Repository.Result<Document> cb=foreground;foreground=null;active=null;if(cb!=null)cb.failure(why);else main.post(pump);}}
             });
-            else if(item.source==Source.ZHIHU)loadDynamic(item,request);
+            else if(SourceSession.usesWeb(activity,item.source))loadDynamic(item,request);
             else repo.article(item,new Repository.Result<Document>(){
                 public void success(Document doc){if(valid(request)){if(doc.canPresent())complete(item,doc);else loadDynamic(item,request);}}
                 public void failure(String why){if(valid(request))loadDynamic(item,request);}

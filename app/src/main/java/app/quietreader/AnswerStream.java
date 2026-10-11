@@ -18,6 +18,7 @@ final class AnswerStream {
     private int attempts;
     private int batch,apiPages;
     private boolean apiTried;
+    private boolean apiRestricted;
     private String nextApi="";
     private Set<String> previousAnswerIds=Collections.emptySet();
     private String lastSnapshot="";
@@ -28,7 +29,9 @@ final class AnswerStream {
     AnswerStream(Activity activity,Item item){this(activity,item,null);}
     AnswerStream(Activity activity,Item item,WebView loadedSource){
         this.item=item;web=loadedSource==null?new WebView(activity):loadedSource;started=loadedSource!=null;
-        WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setUserAgentString(Repository.DESKTOP_UA);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setMediaPlaybackRequiresUserGesture(true);
+        // A retained page must keep the UA/session with which it was loaded.
+        if(loadedSource==null)SourceSession.configure(activity,item.source,web);
+        WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setMediaPlaybackRequiresUserGesture(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
         web.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView w,WebResourceRequest r){return !UrlPolicy.belongs(Source.ZHIHU,r.getUrl().toString());}@Override public void onPageFinished(WebView w,String u){if(busy&&attempts==0)inspect();}@Override public void onReceivedSslError(WebView w,SslErrorHandler h,android.net.http.SslError e){h.cancel();stopStatus="unavailable";stopReason="来源证书异常，已停止续读，已读回答保留。";finish();}});
         web.setDownloadListener((u,a,c,m,n)->{});SourceSurface.attach(activity,web);
@@ -53,23 +56,24 @@ final class AnswerStream {
         } catch(Exception invalid) { return false; }
     }
     void more(Document previous,Repository.Result<Document> cb){
-        if(closed||busy)return;busy=true;batch++;apiPages=0;apiTried=false;callback=cb;attempts=0;stopReason="";stopStatus="";lastSnapshot="";accumulated=copy(previous);previousAnswerIds=answerIds(previous);
+        if(closed||busy)return;busy=true;batch++;apiPages=0;apiTried=false;apiRestricted=false;callback=cb;attempts=0;stopReason="";stopStatus="";lastSnapshot="";accumulated=copy(previous);previousAnswerIds=answerIds(previous);
         main.postDelayed(this::finish,20000);
         if(!started){started=true;String url=item.url.replaceAll("(/question/\\d+).*","$1");main.post(()->{if(!closed&&busy)web.loadUrl(url);});}else inspect();
     }
     private void inspect(){
         if(closed||!busy)return;attempts++;final int run=batch;
         if(!sameQuestion(item,web.getUrl())){leftQuestion();return;}
-        web.evaluateJavascript("JSON.stringify({url:location.href,html:document.documentElement.outerHTML,login:[...document.querySelectorAll('.Modal-wrapper .SignFlow,.Modal .SignFlow,.SignContainer-content')].some(e=>e.getClientRects().length>0)})",raw->{
+        web.evaluateJavascript(SourceSnapshot.script(Source.ZHIHU),raw->{
             if(closed||!busy||run!=batch)return;
             parser.execute(()->{
-                Document parsed=null;boolean auth=false,wrongPage=false;
-                try{Object value=new JSONTokener(raw).nextValue();if(value instanceof String&&((String)value).length()<4*1024*1024){org.json.JSONObject payload=new org.json.JSONObject((String)value);wrongPage=!sameQuestion(item,payload.optString("url"));auth=payload.optBoolean("login");if(!wrongPage)parsed=SourceParser.article(Source.ZHIHU,payload.optString("html"),item.url);}}catch(Exception ignored){}
-                Document result=parsed;String snapshot=result==null?"":DocumentFingerprint.of(result);boolean needsLogin=auth,wrongSource=wrongPage;main.post(()->{
+                Document parsed=null;boolean auth=false,wrongPage=false,expanding=false;
+                try{Object value=new JSONTokener(raw).nextValue();if(value instanceof String&&((String)value).length()<4*1024*1024){org.json.JSONObject payload=new org.json.JSONObject((String)value);wrongPage=!sameQuestion(item,payload.optString("url"));auth=payload.optBoolean("login");expanding=payload.optBoolean("expanding");if(!wrongPage&&!payload.isNull("html"))parsed=SourceParser.article(Source.ZHIHU,payload.optString("html"),item.url);}}catch(Exception ignored){}
+                Document result=parsed;String snapshot=result==null?"":DocumentFingerprint.of(result);boolean needsLogin=auth,wrongSource=wrongPage,waiting=expanding;main.post(()->{
                     if(closed||!busy||run!=batch)return;
                     if(wrongSource||!sameQuestion(item,web.getUrl())){leftQuestion();return;}
                     if(result!=null)merge(accumulated,result);
                     if(needsLogin){stopStatus="login";stopReason="知乎要求登录才能继续。请在来源页登录后重新读取，已读回答已保留。";finish();return;}
+                    if(waiting){lastSnapshot="";main.postDelayed(this::inspect,1100);return;}
                     // Make even one new answer available once its extracted content settles.
                     // Two equal counts alone cannot distinguish a preview from a growing answer.
                     boolean settled=result!=null&&result.hasContent()&&snapshot.equals(lastSnapshot);
@@ -102,8 +106,10 @@ final class AnswerStream {
                 org.json.JSONObject payload=envelope.optJSONObject("page");
                 if(payload==null&&polls<28){main.postDelayed(()->pollApi(run,polls+1),250);return;}
                 if(payload==null||payload.optInt("status")!=200){
-                    if(payload!=null&&(payload.optInt("status")==401||payload.optInt("status")==403)){stopStatus="login";stopReason="知乎要求登录或限制了续读请求，未取得下一批。请在来源页确认后重新读取，已读回答保留。";finish();}
-                    else inspect();return;
+                    // An unsigned fallback API can be rejected even in a logged-in page.
+                    // Let the site's own UI continue loading instead of declaring logout.
+                    if(payload!=null&&(payload.optInt("status")==401||payload.optInt("status")==403))apiRestricted=true;
+                    inspect();return;
                 }
                 String body=payload.optString("body");
                 parser.execute(()->{
@@ -128,6 +134,9 @@ final class AnswerStream {
     private void leftQuestion(){stopStatus="unavailable";stopReason="来源页面已离开当前问题，已读回答保留。请重新读取后继续。";finish();}
     private void finish(){
         if(closed||!busy)return;busy=false;main.removeCallbacksAndMessages(null);
+        if(stopReason.isEmpty()&&apiRestricted&&!hasNewAnswers(accumulated,previousAnswerIds)){
+            stopStatus="restricted";stopReason="来源本轮未提供更多回答，已读回答保留。这不表示登录已失效，可稍后重试或打开来源页继续阅读。";
+        }
         accumulated.moreStatus=stopReason.isEmpty()?"loaded":stopStatus;int count=answers(accumulated);
         accumulated.notice=!stopReason.isEmpty()?stopReason:!hasNewAnswers(accumulated,previousAnswerIds)?"本次没有新增回答。已保留 "+count+" 条回答，请点「加载下一批回答」重试；未取得新内容不等于已读完全部回答。":"已加载 "+count+" 条回答。可继续下滑或点「加载下一批回答」；未取得新内容不等于已读完全部回答。";
         if(accumulated.unsupportedVideo)accumulated.notice+=" 原文包含视频；News 仅整理文字和图片，视频可在来源页观看。";

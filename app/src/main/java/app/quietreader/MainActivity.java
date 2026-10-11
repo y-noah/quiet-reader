@@ -21,7 +21,9 @@ public final class MainActivity extends Activity {
     private int INK=0xff30323a, MUTED=0xff696c76, GREEN=0xff247bc1, BG=0xfffafafa, CARD=0xfff1f2f4, BUTTON=0xffeceef2;
     private boolean dark,loadingMore=false,morePaused=false,primaryPending=false,wasStopped=false;
     private ArticlePreloader preloader;
-    private TextView jumpButton;
+    private ReadingHistory readingHistory;
+    private boolean forceSourceRead;
+    private Set<String> returningAnswers;
     private final android.os.Handler preloadHandler=new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable predict=this::predictArticles;
     private boolean scrollBackwards;
@@ -37,15 +39,12 @@ public final class MainActivity extends Activity {
     private static final android.util.LruCache<String,ReadingMark> marks=new android.util.LruCache<>(40);
     private static final android.util.LruCache<String,byte[]> images=new android.util.LruCache<String,byte[]>(2*1024*1024){@Override protected int sizeOf(String k,byte[] v){return v.length;}};
     private Repository repo;
-    private AggregateLoader aggregateLoader;
-    private final Map<String,AggregateRanker.Entry> aggregateEntries=new HashMap<>();
-    private String aggregateDetail="";
     private LinearLayout root, content;
     private LinearLayout platformNavigation;
     private final NavigationScroll navigationScroll=new NavigationScroll();
     private boolean restoringBoard;
     private ScrollView scroll;
-    private Source selected=Source.AGGREGATE;
+    private Source selected=Source.ZHIHU;
     private int generation=0, font=19;
     private Item current;
     private Document reading;
@@ -67,7 +66,7 @@ public final class MainActivity extends Activity {
         Item current; Document document; List<Item> history; int position; Set<String> expanded;
     }
     @Override public void onCreate(Bundle state) {
-        Theme.apply(this);super.onCreate(state); repo=new Repository(this);aggregateLoader=new AggregateLoader(repo);dark=Theme.dark(this);
+        Theme.apply(this);super.onCreate(state); repo=new Repository(this);readingHistory=new ReadingHistory(this);dark=Theme.dark(this);
         if(dark){INK=0xffcdcfd5;MUTED=0xff9b9da7;GREEN=0xff77b8eb;BG=0xff1f2025;CARD=0xff282a31;BUTTON=0xff2d3038;}
         BG=Theme.background(this);INK=Theme.ink(this);GREEN=Theme.accent(this);
         preloader=new ArticlePreloader(this,()->{if(current==null&&!savedPage){rememberBoard();boardItems=repo.visibleItems(boardItems);drawBoard(boardMarks.get(selected));}});
@@ -75,15 +74,14 @@ public final class MainActivity extends Activity {
         // A new launch opens the first tab; rotation/settings recreation restores current state below.
         try { saved=Models.fromJson(new JSONArray(getPreferences(0).getString("saved","[]"))); } catch(Exception ignored) {}
         if(state!=null) {
-            try { selected=Source.valueOf(state.getString("source",Source.AGGREGATE.name())); } catch(Exception ignored) {}
+            try { selected=Source.valueOf(state.getString("source",Source.ZHIHU.name())); } catch(Exception ignored) {}
             Bundle boards=state.getBundle("boardMarks");
-            if(boards!=null)for(Source source:Source.navigationOrder()){
+            if(boards!=null)for(Source source:Source.values()){
                 Bundle value=boards.getBundle(source.name());if(value==null)continue;
                 BoardMark mark=new BoardMark();mark.anchor=value.getString("anchor","");
                 mark.position=value.getInt("position");mark.offset=value.getInt("offset");boardMarks.put(source,mark);
             }
         }
-        if(!selected.navigable())selected=Source.AGGREGATE;
         if(state!=null) {
             savedPage=false; // Legacy saved links stay on disk, but no longer have an app entry point.
             try {
@@ -136,14 +134,14 @@ public final class MainActivity extends Activity {
     private void options(View anchor) {
         PopupMenu menu=new PopupMenu(this,anchor);
         if(current==null)menu.getMenu().add("刷新榜单").setOnMenuItemClickListener(i->{home(true);return true;});
-        else menu.getMenu().add("重新读取").setOnMenuItemClickListener(i->{repo.invalidateArticles();open(current,false);return true;});
-        menu.getMenu().add("来源 / 登录").setOnMenuItemClickListener(i->{if(current==null&&selected==Source.AGGREGATE)aggregateLogin();else login(current==null?new Item(selected,selected.label,selected.login,""):current);return true;});
+        else menu.getMenu().add("重新读取").setOnMenuItemClickListener(i->{repo.invalidateArticles();forceSourceRead=true;open(current,false);return true;});
+        menu.getMenu().add("来源 / 登录").setOnMenuItemClickListener(i->{login(current==null?new Item(selected,selected.label,selected.login,""):current);return true;});
         if(current!=null)menu.getMenu().add("阅读字号").setOnMenuItemClickListener(i->{fontMenu();return true;});
         menu.getMenu().add("外观").setOnMenuItemClickListener(i->{theme();return true;});
         menu.getMenu().add("阅读设置").setOnMenuItemClickListener(i->{settings();return true;});
         if(reading!=null&&ReaderHtml.sections(reading).size()>1)menu.getMenu().add("回答 / 楼层目录").setOnMenuItemClickListener(i->{sectionMenu();return true;});
-        if(current==null)menu.getMenu().add("全部平台").setOnMenuItemClickListener(i->{
-            Source[] sources=Source.navigationOrder();
+        if(current==null)menu.getMenu().add("全部来源").setOnMenuItemClickListener(i->{
+            Source[] sources=Source.values();
             new AlertDialog.Builder(this).setTitle("切换平台").setItems(Arrays.stream(sources).map(s->s.label).toArray(String[]::new),(d,n)->{selected=sources[n];home(false);}).show();return true;
         });
         menu.show();
@@ -152,11 +150,11 @@ public final class MainActivity extends Activity {
     private void frame(String eyebrow,String title) {
         if(platformNavigation!=null)platformNavigation.animate().cancel();
         platformNavigation=null;navigationScroll.reset();restoringBoard=false;
-        repo.cancelPending();aggregateLoader.cancel();streamAnchor="";
+        repo.cancelPending();streamAnchor="";
         if(readerWeb!=null) { readerWeb.stopLoading(); readerWeb.destroy(); readerWeb=null; }
         if(dynamic!=null) { dynamic.close(); dynamic=null; }
         if(dynamicBoard!=null) {dynamicBoard.close();dynamicBoard=null;}
-        readerStatus=null;jumpButton=null;root=column(); root.setBackgroundColor(BG); root.setFitsSystemWindows(true);root.setClipToPadding(false);
+        readerStatus=null;root=column(); root.setBackgroundColor(BG); root.setFitsSystemWindows(true);root.setClipToPadding(false);
         root.setPadding(dp(18),0,dp(18),0); setContentView(root);
         if(preloader!=null)preloader.reattach();
         root.setOnApplyWindowInsetsListener((v,insets)-> { root.setPadding(dp(18),insets.getSystemWindowInsetTop(),dp(18),insets.getSystemWindowInsetBottom()); return insets; });
@@ -184,7 +182,7 @@ public final class MainActivity extends Activity {
         scroller();
         LinearLayout row=new LinearLayout(this);row.setBaselineAligned(false);row.setContentDescription("平台选择");
         for(Source s:Source.navigationOrder()) {
-            String shortName=s==Source.AGGREGATE?"总":s.label.substring(0,1);
+            String shortName=s.label.substring(0,1);
             int brand=platformColor(s);
             TextView t=new PlatformMarkView(this,s,shortName,dark?blend(brand,Color.WHITE,.38f):brand);
             t.setSelected(s==selected);
@@ -201,15 +199,6 @@ public final class MainActivity extends Activity {
         content.setPadding(0,0,0,dp(56)); // Last row can scroll clear of the 48 dp touch targets.
         row.setBackgroundColor(BG);platformNavigation=row;
         board.addView(row,new FrameLayout.LayoutParams(-1,dp(48),Gravity.BOTTOM));
-        if(selected==Source.AGGREGATE){
-            aggregateEntries.clear();final int request=generation;
-            aggregateLoader.load(refresh,(entries,summary,detail)->{
-                if(request!=generation||current!=null||selected!=Source.AGGREGATE)return;
-                aggregateEntries.clear();aggregateDetail=detail;List<Item> items=new ArrayList<>();
-                for(AggregateRanker.Entry entry:entries){Item item=entry.primary;aggregateEntries.put(item.url,entry);items.add(new Item(item.source,item.title,item.url,entry.detail,item.video));}
-                showBoard(items,summary);
-            });return;
-        }
         List<Item> cache=repo.cached(selected); long age=System.currentTimeMillis()-repo.cachedAt(selected);
         boolean cachedBoard=repo.cachedAt(selected)>0;
         if(cachedBoard) showBoard(cache,"缓存 · "+time(repo.cachedAt(selected)));
@@ -232,7 +221,7 @@ public final class MainActivity extends Activity {
     private static int platformColor(Source source){
         switch(source){
             case ZHIHU:return 0xff256dcc;
-            case IFANR:return 0xff16816f;
+            case V2EX:return 0xff16816f;
             case CLS:return 0xff147f9e;
             case WEIBO:return 0xffab650d;
             case HUPU:return 0xff8455ba;
@@ -273,7 +262,7 @@ public final class MainActivity extends Activity {
         restoringBoard=true;
         int revision=++boardRevision,request=generation;
         content.removeAllViews();space(content,14);
-        String name=selected==Source.AGGREGATE?"综合推荐 Top50":selected.label+" "+selected.category;
+        String name=selected.label+" "+selected.category;
         android.text.SpannableString headingText=new android.text.SpannableString(name+(boardLabel.isEmpty()?"":"  （"+boardLabel+"）"));
         if(headingText.length()>name.length()){
             headingText.setSpan(new android.text.style.RelativeSizeSpan(.65f),name.length(),headingText.length(),0);
@@ -281,10 +270,8 @@ public final class MainActivity extends Activity {
             headingText.setSpan(new android.text.style.StyleSpan(Typeface.NORMAL),name.length(),headingText.length(),0);
         }
         TextView heading=text("",17,INK);heading.setTypeface(null,Typeface.BOLD);heading.setText(headingText);heading.setLineSpacing(dp(4),1);content.addView(heading);space(content,16);
-        if(selected==Source.AGGREGATE){TextView info=button("来源状态 · 排序说明",this::aggregateInfo);info.setBackgroundColor(Color.TRANSPARENT);info.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);info.setPadding(0,0,0,0);content.addView(info);}
-        if(selected==Source.AGGREGATE){content.addView(text("综合热点优先 · 垂直内容补充 · 非真实热度换算",12,MUTED));space(content,10);}
         int rank=0;for(Item item:boardItems)card(item,++rank);
-        if(boardItems.isEmpty()){TextView empty=text(selected==Source.AGGREGATE?(boardLabel.contains("获取中")?"正在汇集各平台，内容会陆续显示…":"暂未取得可用图文榜单，可查看来源状态或稍后刷新。") :"暂时没有可显示的图文条目，已开启视频过滤。可稍后刷新。",15,MUTED);empty.setPadding(0,dp(20),0,dp(20));content.addView(empty);}
+        if(boardItems.isEmpty()){TextView empty=text("暂时没有可显示的图文条目，已开启视频过滤。可稍后刷新。",15,MUTED);empty.setPadding(0,dp(20),0,dp(20));content.addView(empty);}
         // Restore after layout, using an item identity so fresh rankings do not shift the reader's place.
         // A newer filter/render or navigation invalidates this one-shot callback.
         ScrollView target=scroll;LinearLayout entries=content;
@@ -327,35 +314,28 @@ public final class MainActivity extends Activity {
     private void card(Item item,int rank) {
         LinearLayout card=new LinearLayout(this);card.setGravity(Gravity.TOP);card.setPadding(0,dp(5),0,dp(5));card.setMinimumHeight(dp(48));
         LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.bottomMargin=dp(2);content.addView(card,cp);
-        if(rank>0){int color=rank==1?(dark?0xffed827b:0xffb4423c):rank==2?(dark?0xffdfaa72:0xff995c24):rank==3?(dark?0xffcfba7b:0xff826b26):MUTED;TextView number=text(rank+".",13,color);number.setPadding(0,dp(2),0,0);card.addView(number,new LinearLayout.LayoutParams(dp(((selected==Source.AGGREGATE&&current==null)||rank>99?27:20)*getResources().getConfiguration().fontScale),-2));}
+        if(rank>0){int color=rank==1?(dark?0xffed827b:0xffb4423c):rank==2?(dark?0xffdfaa72:0xff995c24):rank==3?(dark?0xffcfba7b:0xff826b26):MUTED;TextView number=text(rank+".",13,color);number.setPadding(0,dp(2),0,0);card.addView(number,new LinearLayout.LayoutParams(dp((rank>99?27:20)*getResources().getConfiguration().fontScale),-2));}
         LinearLayout body=column();card.addView(body,new LinearLayout.LayoutParams(0,-2,1));
-        boolean aggregateCard=rank>0&&current==null&&selected==Source.AGGREGATE;
-        if(aggregateCard){TextView source=text(item.detail.isEmpty()?item.source.label:item.detail,12,MUTED);source.setLineSpacing(dp(2),1);body.addView(source);space(body,4);}
-        TextView title=text(item.title,14,INK);title.setLineSpacing(0,1);
+        boolean seen=readingHistory.seen(item.url);
+        TextView title=text(item.title+(seen?" · 已读":""),14,seen?MUTED:INK);title.setLineSpacing(0,1);
         body.addView(title);
         String metric=item.source==Source.ZHIHU?item.detail.replaceFirst("\\s*热度$",""):item.detail;
         TextView measured=text(metric,12,MUTED);
         boolean sideMetric=rank>0&&item.detail.length()<=14&&!item.detail.contains("·")&&!item.detail.contains("元")&&getResources().getConfiguration().fontScale<=1.3f&&measured.getPaint().measureText(metric)<=dp(46);
-        if(!aggregateCard&&!item.detail.trim().isEmpty()){
+        if(!item.detail.trim().isEmpty()){
             TextView meta=text(sideMetric?metric:item.detail,12,MUTED);
             if(sideMetric){meta.setGravity(Gravity.RIGHT);meta.setPadding(dp(8),dp(3),0,0);card.addView(meta,new LinearLayout.LayoutParams(dp(54),-2));}
             else{space(body,5);meta.setLineSpacing(dp(2),1);body.addView(meta);}
         }
-        card.setTag(item.url);card.setOnClickListener(v->{if(current==null&&selected==Source.AGGREGATE)openAggregate(item);else open(item,true);}); card.setContentDescription(item.title+"，"+item.detail+"，进入阅读");
+        card.setTag(item.url);card.setOnClickListener(v->open(item,true)); card.setContentDescription(item.title+"，"+item.detail+"，进入阅读");
         if(savedPage&&current==null)card.setOnLongClickListener(v->{
             new AlertDialog.Builder(this).setTitle("移除收藏？").setMessage(item.title).setNegativeButton("取消",null).setPositiveButton("移除",(dialog,which)->{saved.removeIf(entry->entry.url.equals(item.url));persistSaved();bookmarks();}).show();return true;
         });
     }
-    private void aggregateInfo(){new AlertDialog.Builder(this).setTitle(Source.aggregateSources().length+"个平台 · 来源与排序").setMessage(aggregateDetail).setPositiveButton("知道了",null).show();}
-    private void aggregateLogin(){Source[] sources=Source.aggregateSources();new AlertDialog.Builder(this).setTitle("选择来源 / 登录").setItems(Arrays.stream(sources).map(s->s.label).toArray(String[]::new),(d,n)->{Source s=sources[n];login(new Item(s,s.label,s.login,""));}).show();}
-    private void openAggregate(Item item){
-        AggregateRanker.Entry entry=aggregateEntries.get(item.url);
-        if(entry==null||entry.alternatives.size()<2){open(entry==null?item:entry.primary,true);return;}
-        List<Item> alternatives=new ArrayList<>(entry.alternatives);
-        new AlertDialog.Builder(this).setTitle("选择阅读来源").setItems(alternatives.stream().map(i->i.source.label+" · "+i.title).toArray(String[]::new),(d,n)->open(alternatives.get(n),true)).show();
-    }
     private void open(Item item,boolean push) {
         if(!item.source.readable()){toast("此平台已移除");return;}
+        if(item.source.webReading()){rememberBoard();login(item);return;}
+        if(current==null||!current.url.equals(item.url))returningAnswers=null;
         rememberReading();openPosition=-1;pendingAnchor=-1;
         closeAnswers();expanded.clear();
         if(!UrlPolicy.belongs(item.source,item.url)) { toast("来源地址不受支持"); return; }
@@ -363,8 +343,15 @@ public final class MainActivity extends Activity {
         if(push&&current!=null) history.push(current);
         current=item; reading=null; generation++; final int request=generation;
         ReadingMark mark=marks.get(item.url);if(mark!=null){expanded.addAll(mark.expanded);openPosition=mark.position;}
+        Document resumed=null;org.json.JSONObject stored=readingHistory.get(item.url);
+        if(stored!=null){
+            try{
+                if(mark==null){mark=new ReadingMark();mark.expanded=new HashSet<>();JSONArray values=stored.getJSONArray("expanded");for(int n=0;n<values.length();n++)mark.expanded.add(values.getString(n));mark.position=stored.optInt("position");expanded.addAll(mark.expanded);openPosition=mark.position;}
+                if(!forceSourceRead&&stored.has("document")){Document snapshot=ReadingHistory.decode(stored.getJSONObject("document"));if(UrlPolicy.sameThread(item.source,item.url,snapshot.url)||item.url.equals(snapshot.url))resumed=snapshot;}
+            }catch(Exception ignored){}
+        }
         primaryPending=mark==null;preloadHandler.removeCallbacks(predict);
-        Document cached=repo.cachedArticle(item);if(cached!=null||repo.hiddenVideo(item))preloader.pause();
+        Document cached=forceSourceRead?null:resumed!=null?resumed:repo.cachedArticle(item);forceSourceRead=false;if(cached!=null||repo.hiddenVideo(item))preloader.pause();
         boolean promoted=cached==null&&!repo.hiddenVideo(item)&&preloader.promote(item,new Repository.Result<Document>(){
             public void success(Document doc){if(request==generation)render(doc);}
             public void failure(String why){if(request==generation){status("暂时没读到正文",why);content.addView(button("重试",()->open(item,false)));content.addView(button("来源 / 登录",()->login(item)));}}
@@ -375,7 +362,7 @@ public final class MainActivity extends Activity {
         if(cached!=null){render(cached);return;}
         if(promoted)return;
         if(repo.offline()){status("当前没有网络","此篇正文尚未缓存在本机。连接网络后可重试。");content.addView(button("重试",()->open(item,false)));return;}
-        if(item.source==Source.ZHIHU){dynamic(item,request);return;}
+        if(SourceSession.usesWeb(this,item.source)){dynamic(item,request);return;}
         repo.article(item,new Repository.Result<Document>() {
             public void success(Document doc) { if(request!=generation)return; if(doc.title.trim().isEmpty()) doc.title=item.title; if(doc.canPresent())render(doc);else dynamic(item,request); }
             public void failure(String reason) { if(request==generation)dynamic(item,request); }
@@ -404,6 +391,12 @@ public final class MainActivity extends Activity {
             repo.rememberVideo(current);reading=null;goBack();toast("已从列表移除视频主题");return;
         }
         if(primaryPending){ReaderHtml.expandPrimary(doc,expanded);primaryPending=false;}
+        morePaused=!doc.moreStatus.isEmpty()&&!doc.moreStatus.equals("loaded");
+        if(returningAnswers!=null&&doc.hasContent()){
+            Set<String> previous=returningAnswers;returningAnswers=null;
+            long added=AnswerStream.answerIds(doc).stream().filter(id->!previous.contains(id)).count();
+            toast(current.source==Source.ZHIHU?(added>0?"已重新读取，新增 "+added+" 条回答":"已重新读取，暂无新增回答"):"已重新读取来源内容");
+        }
         repo.cacheArticle(doc);
         // A question's video description is not an answer. Keep the answer reader and
         // continuation entry even when its first snapshot contains no textual blocks.
@@ -445,16 +438,12 @@ public final class MainActivity extends Activity {
                     catch(Exception e) { return new WebResourceResponse("text/plain","utf-8",404,"Unavailable",java.util.Collections.emptyMap(),new ByteArrayInputStream(new byte[0])); }
                 }
             });
-            FrameLayout readerArea=new FrameLayout(this);readerArea.addView(readerWeb,new FrameLayout.LayoutParams(-1,-1));
-            jumpButton=button("下一条 ↓",this::jumpNext);jumpButton.setTextSize(12);jumpButton.setVisibility(View.GONE);
-            FrameLayout.LayoutParams jumpSize=new FrameLayout.LayoutParams(-2,dp(44),Gravity.BOTTOM|Gravity.END);jumpSize.bottomMargin=dp(12);readerArea.addView(jumpButton,jumpSize);
-            root.addView(readerArea,new LinearLayout.LayoutParams(-1,0,1)); readerFooter();
+            root.addView(readerWeb,new LinearLayout.LayoutParams(-1,0,1)); readerFooter();
             readerWeb.setOnLongClickListener(v->{WebView.HitTestResult hit=readerWeb.getHitTestResult();String url=hit==null?null:hit.getExtra();if(url==null||!ReaderLinks.allowed(url)||reading.containsImage(url)||url.startsWith(ReaderHtml.ACTION))return false;
                 new AlertDialog.Builder(this).setTitle("链接地址").setMessage(url).setNegativeButton("取消",null).setNeutralButton("复制链接",(d,n)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("链接",url));toast("已复制链接");}).setPositiveButton("打开",(d,n)->openContentLink(url)).show();return true;});
             reloadReader(doc);
             readerWeb.setOnScrollChangeListener((v,x,y,ox,oy)->{
-                if(jumpButton!=null)jumpButton.setVisibility(y>dp(160)&&y<oy&&reading!=null&&ReaderHtml.sections(reading).size()>1?View.VISIBLE:View.GONE);
-                if(System.currentTimeMillis()>suppressAutoUntil&&current!=null&&current.source==Source.ZHIHU&&!loadingMore&&!morePaused&&y>oy&&y>dp(100)&&readerWeb!=null&&readerWeb.getContentHeight()*getResources().getDisplayMetrics().density-y-readerWeb.getHeight()<dp(80))loadMore();});
+                if(System.currentTimeMillis()>suppressAutoUntil&&current!=null&&current.source==Source.ZHIHU&&!loadingMore&&!morePaused&&y>oy&&y>dp(100)&&readerWeb!=null&&readerWeb.getContentHeight()*readerWeb.getScale()-y-readerWeb.getHeight()<readerWeb.getHeight()*1.25f)loadMore();});
             return;
         }
         reading=doc; content.removeAllViews(); scroll.scrollTo(0,0);
@@ -486,22 +475,29 @@ public final class MainActivity extends Activity {
         if(imagePreview!=null)imagePreview.dismiss();
         // Keep list/reader thumbnails light; request the observed larger rendition only on tap.
         String previewUrl=current==null?url:WeiboImage.preview(current.source,url);
-        imagePreview=new ImagePreview(this,previewUrl,dark,()->imageResponse(previewUrl,referer),()->images.remove(previewUrl));imagePreview.show();
+        List<String> gallery=new ArrayList<>();
+        if(reading!=null)for(Block block:reading.blocks)if(block.type.equals("image")&&UrlPolicy.https(block.value)){
+            String large=current==null?block.value:WeiboImage.preview(current.source,block.value);if(!gallery.contains(large))gallery.add(large);
+        }
+        if(!gallery.contains(previewUrl))gallery.add(previewUrl);
+        imagePreview=new ImagePreview(this,gallery,gallery.indexOf(previewUrl),dark,u->imageResponse(u,referer),u->images.remove(u));imagePreview.show();
     }
     private void login(Item item) {
         if(item==null||!item.source.readable())return;
         // A pre-login read must not finish late and restore an anonymous snapshot.
-        generation++;preloadHandler.removeCallbacks(predict);preloader.pause();repo.cancelPending();aggregateLoader.cancel();closeAnswers();
+        generation++;preloadHandler.removeCallbacks(predict);preloader.pause();repo.cancelPending();closeAnswers();
         if(dynamic!=null){dynamic.close();dynamic=null;}
         if(dynamicBoard!=null){dynamicBoard.close();dynamicBoard=null;}
         LoginActivity.pendingDocument=null;
-        Intent i=new Intent(this,LoginActivity.class); i.putExtra("source",item.source.name()); i.putExtra("url",item.url);i.putExtra("board",current==null&&!savedPage); startActivityForResult(i,100);
+        Intent i=new Intent(this,LoginActivity.class); i.putExtra("source",item.source.name()); i.putExtra("url",item.url);i.putExtra("board",current==null&&!savedPage);i.putExtra("browse",item.source.webReading()); startActivityForResult(i,100);
     }
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
         if(request==101){recreate();return;}
         if(request==100){
             wasStopped=false; // The result owns this refresh; onResume must not start a duplicate.
+            returningAnswers=current==null?null:reading==null?new HashSet<>():AnswerStream.answerIds(reading);
+            forceSourceRead=current!=null;
             CookieManager.getInstance().flush();preloader.pause();repo.invalidateArticles();closeAnswers();
         }
         if(request==100&&result==RESULT_OK&&data!=null&&LoginActivity.pendingDocument!=null) {
@@ -510,7 +506,8 @@ public final class MainActivity extends Activity {
             Source source;
             try{source=Source.valueOf(data.getStringExtra("source"));}catch(Exception ignored){home(false);return;}
             if(!source.readable()||!UrlPolicy.belongs(source,doc.url)){home(false);return;}
-            current=new Item(source,doc.title,doc.url,"");
+            rememberReading();expanded.clear();openPosition=-1;pendingAnchor=-1;
+            current=new Item(source,doc.title,doc.url,"");forceSourceRead=false;
             generation++;primaryPending=true; frame(source.label+" / 阅读","news"); scroller(); readerFooter(); render(doc);
         } else if(request==100){
             LoginActivity.pendingDocument=null;
@@ -550,15 +547,6 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("跳转到回答 / 楼层").setItems(labels,(d,n)->jumpTo(n)).show();
     }
     private void jumpTo(int index){if(reading==null)return;List<Section> parts=ReaderHtml.sections(reading);if(index<0||index>=parts.size())return;expanded.add(parts.get(index).id);streamAnchor="";openPosition=-1;pendingAnchor=index;reloadReader(reading);}
-    private void jumpNext(){
-        WebView web=readerWeb;if(web==null)return;int request=generation,revision=readerRevision;
-        if(!readerPageUrl.equals(web.getUrl()))return;
-        java.util.concurrent.atomic.AtomicBoolean done=new java.util.concurrent.atomic.AtomicBoolean();
-        java.util.function.Consumer<String> finish=value->{if(!done.compareAndSet(false,true)||web!=readerWeb)return;web.getSettings().setJavaScriptEnabled(false);if(request!=generation||revision!=readerRevision)return;try{int index=Integer.parseInt(value);if(index<0)return;if(index+1<ReaderHtml.sections(reading).size())jumpTo(index+1);else if(current.source==Source.ZHIHU)loadMore();else toast("已是最后一条");}catch(Exception ignored){}};
-        web.getSettings().setJavaScriptEnabled(true);
-        web.evaluateJavascript("(function(){var a=document.querySelectorAll('section.part');for(var i=0;i<a.length;i++)if(a[i].getBoundingClientRect().bottom>1)return i;return -1;})()",finish::accept);
-        web.postDelayed(()->finish.accept("-1"),500);
-    }
     private void changeFont(int next){
         int old=font;font=next;getPreferences(0).edit().putInt("font",font).apply();
         if(readerWeb!=null){
@@ -577,9 +565,7 @@ public final class MainActivity extends Activity {
         if(request!=generation)return;
         Runnable commit=()->{
             loadingMore=false;morePaused=!AnswerStream.hasNewAnswers(doc,previousAnswerIds)||!doc.moreStatus.equals("loaded");reading=doc;repo.cacheArticle(doc);
-            if(readerStatus!=null)readerStatus.setText(doc.moreStatus.equals("login")?"知乎要求登录。请用右上角菜单「来源 / 登录」后重新读取。":!doc.moreStatus.equals("loaded")?doc.notice:morePaused?"本次没有新回答，不能据此确认已读完。可点底部按钮重试。":"已追加回答 · 共 "+AnswerStream.answers(doc)+" 条");
             reloadReader(doc);
-            toast(doc.moreStatus.equals("login")?"知乎要求登录，未能加载下一批；已读回答保留":morePaused?doc.notice:"已追加 "+(AnswerStream.answerIds(doc).stream().filter(id->!previousAnswerIds.contains(id)).count())+" 条回答");
         };
         atReadingPosition(commit,()->{int pos=readerWeb==null?0:readerWeb.getScrollY();streamAnchor="";commit.run();restorePosition(pos);});
     }
@@ -603,22 +589,26 @@ public final class MainActivity extends Activity {
         web.evaluateJavascript("(function(){var a=document.querySelectorAll('[data-reading-anchor]');for(var i=0;i<a.length;i++){var r=a[i].getBoundingClientRect();if(r.bottom>0&&r.top<innerHeight)return {id:a[i].id,top:r.top};}return null;})()",finish::accept);
         web.postDelayed(()->finish.accept(""),500);
     }
-    private void rememberReading(){if(current!=null&&reading!=null&&readerWeb!=null){ReadingMark mark=new ReadingMark();mark.expanded=new HashSet<>(expanded);mark.position=readerWeb.getScrollY();marks.put(current.url,mark);}}
+    private void rememberReading(){if(current!=null&&reading!=null&&readerWeb!=null&&reading.hasContent()){ReadingMark mark=new ReadingMark();mark.expanded=new HashSet<>(expanded);mark.position=readerWeb.getScrollY();marks.put(current.url,mark);readingHistory.save(current.url,reading,expanded,mark.position);}}
     private void closeAnswers(){if(answers!=null){answers.close();answers=null;}loadingMore=false;morePaused=false;}
     private void loadMore(){
         if(loadingMore||reading==null||current==null||current.source!=Source.ZHIHU)return;
-        if(repo.offline()){morePaused=true;if(readerStatus!=null){readerStatus.setVisibility(View.VISIBLE);readerStatus.setText("当前没有网络，已读回答保留。联网后点「加载下一批回答」重试。");}return;}
+        if(repo.offline()){continuationFailure("当前没有网络，联网后可在这里重试。");return;}
         loadingMore=true;int request=generation;Document before=reading;Set<String> previousAnswerIds=AnswerStream.answerIds(before);
-        if(readerStatus!=null){readerStatus.setVisibility(View.VISIBLE);readerStatus.setText("正在加载下一批回答…你可以继续阅读已加载内容");}
-        toast("正在加载下一批回答，已读内容会保留");
+        atReadingPosition(()->reloadReader(before),()->{});
         if(answers==null)answers=new AnswerStream(this,current);
         answers.more(before,new Repository.Result<Document>(){
             public void success(Document doc){if(request!=generation)return;appendAtReadingPosition(doc,request,previousAnswerIds);}
-            public void failure(String why){if(request!=generation)return;loadingMore=false;morePaused=true;if(readerStatus!=null){readerStatus.setVisibility(View.VISIBLE);readerStatus.setText("续读失败，已读回答保留。"+why+" 可点底部按钮重试。");}toast(why);}
+            public void failure(String why){if(request!=generation)return;continuationFailure("续读失败，已读回答保留。"+why);}
         });
     }
-    @Override protected void onStop(){wasStopped=true;preloadHandler.removeCallbacks(predict);if(preloader!=null)preloader.pause();if(aggregateLoader!=null)aggregateLoader.cancel();super.onStop();}
+    private void continuationFailure(String reason){
+        if(reading==null)return;loadingMore=false;morePaused=true;reading.moreStatus="error";reading.notice=reason;
+        atReadingPosition(()->reloadReader(reading),()->{});
+    }
+    @Override protected void onPause(){rememberReading();super.onPause();}
+    @Override protected void onStop(){wasStopped=true;preloadHandler.removeCallbacks(predict);if(preloader!=null)preloader.pause();super.onStop();}
     @Override public void onTrimMemory(int level){super.onTrimMemory(level);if(level>=TRIM_MEMORY_RUNNING_LOW){images.evictAll();if(repo!=null)repo.invalidateArticles();if(preloader!=null)preloader.trim();}}
-    @Override protected void onResume(){super.onResume();boolean resume=wasStopped;wasStopped=false;if(current==null){if(resume&&selected==Source.AGGREGATE)home(false);else schedulePrediction();}else if(resume&&reading==null&&dynamic==null)open(current,false);}
-    @Override protected void onDestroy() { generation++;preloadHandler.removeCallbacksAndMessages(null);if(preloader!=null)preloader.close();closeAnswers(); if(imagePreview!=null)imagePreview.dismiss();if(dynamic!=null)dynamic.close();if(dynamicBoard!=null)dynamicBoard.close();if(readerWeb!=null)readerWeb.destroy();aggregateLoader.close();repo.close(); super.onDestroy(); }
+    @Override protected void onResume(){super.onResume();boolean resume=wasStopped;wasStopped=false;if(current==null){schedulePrediction();}else if(resume&&reading==null&&dynamic==null)open(current,false);}
+    @Override protected void onDestroy() { generation++;preloadHandler.removeCallbacksAndMessages(null);if(preloader!=null)preloader.close();closeAnswers(); if(imagePreview!=null)imagePreview.dismiss();if(dynamic!=null)dynamic.close();if(dynamicBoard!=null)dynamicBoard.close();if(readerWeb!=null)readerWeb.destroy();repo.close(); super.onDestroy(); }
 }

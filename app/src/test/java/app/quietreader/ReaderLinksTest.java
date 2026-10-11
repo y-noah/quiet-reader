@@ -22,11 +22,11 @@ public class ReaderLinksTest {
     }
     @Test public void exactlyFiveDomesticSourcesVisible(){
         assertEquals(5,java.util.Arrays.stream(Source.values()).filter(Source::visible).count());
-        assertFalse(Source.AGGREGATE.visible());assertEquals(6,Source.values().length);
+        assertEquals(12,Source.values().length);
     }
     @Test public void shoppingRedirectsAndUnadaptedPagesGoToBrowser(){
         assertNull(ReaderLinks.readerSource("https://www.smzdm.com/p/1832826816/"));
-        assertNull(ReaderLinks.readerSource("https://tieba.baidu.com/p/123"));
+        assertEquals(Source.TIEBA,ReaderLinks.readerSource("https://tieba.baidu.com/p/123"));
         assertNull(ReaderLinks.readerSource("https://go.smzdm.com/abc/"));
         assertNull(ReaderLinks.readerSource("https://link.zhihu.com/?target=https%3A%2F%2Fexample.com"));
         assertNull(ReaderLinks.readerSource("https://item.jd.com/100291533956.html"));

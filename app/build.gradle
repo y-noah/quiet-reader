@@ -6,8 +6,8 @@ android {
         applicationId 'app.quietreader'
         minSdk 26
         targetSdk 35
-        versionCode 38
-        versionName '0.3.27'
+        versionCode 45
+        versionName '0.3.34'
         testInstrumentationRunner 'app.quietreader.FiveSourceInstrumentation'
     }
     signingConfigs {
@@ -35,19 +35,26 @@ if (project.hasProperty('dynamicReadingUi')) android.defaultConfig.testInstrumen
 if (project.hasProperty('sessionReuseUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.SessionReuseInstrumentation'
 if (project.hasProperty('navigationRecoveryUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.NavigationRecoveryInstrumentation'
 if (project.hasProperty('weiboReadingProbeUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.WeiboReadingProbeInstrumentation'
-if (project.hasProperty('aggregateUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.AggregateInstrumentation'
-if (project.hasProperty('aggregateReadingUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.AggregateReadingInstrumentation'
 if (project.hasProperty('userJourneyRepairUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.UserJourneyRepairInstrumentation'
 if (project.hasProperty('answerPagingUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.AnswerPagingInstrumentation'
 if (project.hasProperty('fiveSourceUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.FiveSourceInstrumentation'
+if (project.hasProperty('loginSessionUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.LoginSessionInstrumentation'
+if (project.hasProperty('loginWindowUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.LoginWindowInstrumentation'
+if (project.hasProperty('browsingExperienceUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.BrowsingExperienceInstrumentation'
 tasks.register('liveProbe', JavaExec) {
     dependsOn 'compileDebugUnitTestJavaWithJavac'
     classpath = files("$buildDir/intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes", "$buildDir/intermediates/javac/debug/compileDebugJavaWithJavac/classes") + configurations.debugUnitTestRuntimeClasspath
     mainClass = 'app.quietreader.LiveProbe'
     if (project.hasProperty('probeUrl')) args project.property('probeUrl')
 }
-tasks.register('aggregateLiveProbe', JavaExec) {
+
+tasks.register('expandedCapturedProbe', JavaExec) {
     dependsOn 'compileDebugUnitTestJavaWithJavac'
     classpath = files("$buildDir/intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes", "$buildDir/intermediates/javac/debug/compileDebugJavaWithJavac/classes") + configurations.debugUnitTestRuntimeClasspath
-    mainClass = 'app.quietreader.AggregateLiveProbe'
+    mainClass = 'app.quietreader.ExpandedCapturedProbe'
+    args rootProject.file('artifacts/expanded-live').absolutePath
 }
+
+if (project.hasProperty('expandedBrowsingUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.ExpandedBrowsingInstrumentation'
+
+if (project.hasProperty('mobileLayoutUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.MobileLayoutInstrumentation'

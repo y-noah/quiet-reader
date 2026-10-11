@@ -33,6 +33,7 @@ public final class Repository {
         if(d.hasContent()||!d.related.isEmpty()||d.filteredVideos>0||!d.filteredSectionIds.isEmpty()){articles.put(d.url,d);articleTimes.put(d.url,System.currentTimeMillis());}
     }
     public boolean hiddenVideo(Item item){
+        if(item.source.webReading())return false;
         return item.video||VideoPolicy.url(item.source,item.url)||(!(item.source==Source.WEIBO&&VideoPolicy.weiboTopic(item.url))&&System.currentTimeMillis()-context.getSharedPreferences("video-filter",0).getLong(VideoPolicy.key(item),0)<7L*24*60*60*1000);
     }
     public List<Item> visibleItems(List<Item> items){List<Item> result=new java.util.ArrayList<>();for(Item item:items)if(item.source.readable()&&!hiddenVideo(item))result.add(item);return result;}
@@ -55,9 +56,9 @@ public final class Repository {
         android.content.SharedPreferences boards=context.getSharedPreferences("boards",0);
         android.content.SharedPreferences videos=context.getSharedPreferences("video-filter",0);
         android.content.SharedPreferences.Editor boardEdit=boards.edit(),videoEdit=videos.edit();
-        // Only the five current source namespaces survive, including data from older enums.
+        // Keep every supported source namespace, including platforms available through the source menu.
         java.util.Set<String> names=new java.util.HashSet<>();
-        for(Source source:Source.displayOrder())names.add(source.name());
+        for(Source source:Source.values())if(source.readable())names.add(source.name());
         for(String key:boards.getAll().keySet()){
             String name=key.contains("_")?key.substring(0,key.indexOf('_')):key;
             if(!names.contains(name))boardEdit.remove(key);
@@ -77,7 +78,7 @@ public final class Repository {
         }catch(Exception ignored){}
     }
     private boolean validBoardCache(Source s) {
-        return s.readable();
+        return s.readable()&&s.endpoint.equals(context.getSharedPreferences("boards",0).getString(s.name()+"_endpoint",""));
     }
     public long cachedAt(Source s) { return validBoardCache(s)?context.getSharedPreferences("boards",0).getLong(s.name()+"_time",0):0; }
     public void cache(Source s,List<Item> items) {if(!s.readable())return;android.content.SharedPreferences.Editor edit=context.getSharedPreferences("boards",0).edit().putString(s.name(),Models.toJson(visibleItems(items)).toString()).putString(s.name()+"_endpoint",s.endpoint).putLong(s.name()+"_time",System.currentTimeMillis());edit.apply();}
@@ -89,9 +90,10 @@ public final class Repository {
     public void board(Source s,Result<List<Item>> cb) {
         if(!s.readable()){cb.failure("此平台已移除");return;}
         String cookie=CookieManager.getInstance().getCookie(s.endpoint);
+        String userAgent=SourceSession.userAgent(context,s);
         requests.submit(ticket->{
             try {
-                List<Item> items=SourceParser.list(s,fetch(s.endpoint,cookie,s.endpoint,ticket));
+                List<Item> items=SourceParser.list(s,fetch(s.endpoint,cookie,s.endpoint,ticket,userAgent));
                 ticket.check();
                 cache(s,items);
                 main.post(()->{if(!ticket.cancelled())cb.success(items);});
@@ -101,9 +103,10 @@ public final class Repository {
     public void article(Item item,Result<Document> cb) {
         if(!item.source.readable()){cb.failure("此平台已移除");return;}
         String cookie=CookieManager.getInstance().getCookie(item.url);
+        String userAgent=SourceSession.userAgent(context,item.source);
         requests.submit(ticket->{
             try {
-                Document doc=SourceParser.article(item.source,fetch(item.url,cookie,item.url,ticket),item.url);
+                Document doc=SourceParser.article(item.source,fetch(item.url,cookie,item.url,ticket,userAgent),item.url);
                 ticket.check();cacheArticle(doc);Document result=doc;main.post(()->{if(!ticket.cancelled())cb.success(result);});
             }
             catch(Exception e) { main.post(()->{if(!ticket.cancelled())cb.failure(explain(e));}); }
@@ -123,18 +126,21 @@ public final class Repository {
         final int status;
         HttpFailure(int status){super("HTTP "+status);this.status=status;}
     }
-    static String fetch(String url,String cookie,String referer,RequestQueue.Ticket ticket)throws Exception{return new String(bytes(url,cookie,referer,4*1024*1024,ticket),StandardCharsets.UTF_8);}
+    static String fetch(String url,String cookie,String referer,RequestQueue.Ticket ticket,String userAgent)throws Exception{return new String(bytes(url,cookie,referer,4*1024*1024,ticket,userAgent),StandardCharsets.UTF_8);}
     public static byte[] bytes(String url,String cookie,String referer,int limit) throws Exception {
         return bytes(url,cookie,referer,limit,null);
     }
     private static byte[] bytes(String url,String cookie,String referer,int limit,RequestQueue.Ticket ticket) throws Exception {
+        return bytes(url,cookie,referer,limit,ticket,DESKTOP_UA);
+    }
+    private static byte[] bytes(String url,String cookie,String referer,int limit,RequestQueue.Ticket ticket,String userAgent) throws Exception {
         String current=url;
         for(int redirect=0;redirect<5;redirect++) {
             if(ticket!=null)ticket.check();
             UrlPolicy.requirePublicHost(current);
             HttpURLConnection c=(HttpURLConnection)new URL(current).openConnection();
             c.setInstanceFollowRedirects(false); c.setConnectTimeout(5000); c.setReadTimeout(7000);
-            c.setRequestProperty("User-Agent",DESKTOP_UA);
+            c.setRequestProperty("User-Agent",userAgent);
             c.setRequestProperty("Accept","text/html,application/json,image/*;q=0.8,*/*;q=0.5");
             if(referer!=null) c.setRequestProperty("Referer",referer);
             // Never forward a session cookie to a different host on a redirect.

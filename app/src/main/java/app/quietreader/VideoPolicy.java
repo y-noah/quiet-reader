@@ -32,7 +32,7 @@ final class VideoPolicy {
         }catch(Exception ignored){return false;}
     }
     static List<Item> filter(List<Item> items){
-        List<Item> out=new ArrayList<>();for(Item item:items)if(!item.video&&!url(item.source,item.url))out.add(item);return out;
+        List<Item> out=new ArrayList<>();for(Item item:items)if(item.source.webReading()||(!item.video&&!url(item.source,item.url)))out.add(item);return out;
     }
     /** Both observed search surfaces contain independent posts, not one main post. */
     static boolean weiboTopic(String url){

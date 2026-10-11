@@ -17,9 +17,9 @@ import static app.quietreader.Models.*;
  * Preference snapshots stay in memory and are restored; no account data is exported.
  */
 public final class FiveSourceInstrumentation extends Instrumentation {
-    private final Source[] allowed={Source.ZHIHU,Source.WEIBO,Source.HUPU,Source.CLS,Source.IFANR};
-    private final String[] retired={"TOUTIAO","TIEBA","WALLSTREET","HACKERNEWS","SMZDM","GEEKPARK","GUOKR","DOUBAN","ITHOME","JUEJIN","SSPAI"};
-    private final String[] retiredLabels={"头条","贴吧","华尔街见闻","Hacker News","什么值得买","极客公园","果壳","豆瓣","IT之家","掘金","少数派"};
+    private final Source[] allowed=Arrays.stream(Source.values()).filter(Source::readable).toArray(Source[]::new);
+    private final String[] retired={"AGGREGATE","TOUTIAO","WALLSTREET","HACKERNEWS","SMZDM","GEEKPARK","GUOKR","DOUBAN","ITHOME","JUEJIN"};
+    private final String[] retiredLabels={"总榜","头条","华尔街见闻","Hacker News","什么值得买","极客公园","果壳","豆瓣","IT之家","掘金"};
     private final Map<String,Map<String,?>> backups=new LinkedHashMap<>();
     private final StringBuilder report=new StringBuilder();private MainActivity activity;private Bundle restored;private volatile Activity rejectedLogin;
     private File output;private int checks,failures;private long fixtureTime;
@@ -38,11 +38,11 @@ public final class FiveSourceInstrumentation extends Instrumentation {
     private void seed()throws Exception{
         fixtureTime=System.currentTimeMillis();for(String name:new String[]{"boards","video-filter","MainActivity","appearance","source-session"})backups.put(name,new HashMap<>(prefs(name).getAll()));
         SharedPreferences.Editor boards=prefs("boards").edit().clear(),videos=prefs("video-filter").edit().clear();List<Item> saved=new ArrayList<>();
-        for(Source s:Source.values())if(s!=Source.AGGREGATE){boards.putString(s.name(),Models.toJson(rows(s)).toString()).putLong(s.name()+"_time",fixtureTime).putString(s.name()+"_endpoint",s.endpoint).putInt(s.name()+"_schema",2);videos.putLong(videoKey(s),fixtureTime);saved.add(rows(s).get(0));}
+        for(Source s:Source.values()){boards.putString(s.name(),Models.toJson(rows(s)).toString()).putLong(s.name()+"_time",fixtureTime).putString(s.name()+"_endpoint",s.endpoint).putInt(s.name()+"_schema",2);videos.putLong(videoKey(s),fixtureTime);saved.add(rows(s).get(0));}
         for(String name:retired){boards.putString(name,"[]").putLong(name+"_time",fixtureTime).putString(name+"_endpoint","https://retired.invalid/").putInt(name+"_schema",2);videos.putLong(name+"|https://retired.invalid/video",fixtureTime);}
         boards.commit();videos.commit();prefs("MainActivity").edit().clear().putString("saved",Models.toJson(saved).put(legacy("DOUBAN")).put(legacy("SMZDM")).toString()).putString("selected","DOUBAN").putInt("font",19).commit();prefs("appearance").edit().clear().putInt("mode",2).putInt("palette",0).putInt("spacing",1).putInt("synthetic-preserve",71).commit();
     }
-    private void quiet(MainActivity a)throws Exception{((Repository)field(a,"repo")).cancelPending();((AggregateLoader)field(a,"aggregateLoader")).cancel();((ArticlePreloader)field(a,"preloader")).pause();((Handler)field(a,"preloadHandler")).removeCallbacksAndMessages(null);}
+    private void quiet(MainActivity a)throws Exception{((Repository)field(a,"repo")).cancelPending();((ArticlePreloader)field(a,"preloader")).pause();((Handler)field(a,"preloadHandler")).removeCallbacksAndMessages(null);}
     @Override public void callActivityOnCreate(Activity a,Bundle state){Bundle use=a instanceof MainActivity&&restored!=null?restored:state;restored=null;super.callActivityOnCreate(a,use);if(a instanceof LoginActivity)rejectedLogin=a;if(a instanceof MainActivity){activity=(MainActivity)a;try{quiet(activity);}catch(Exception e){throw new RuntimeException(e);}}}
     private void launch()throws Exception{activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));Thread.sleep(450);}
     private void finishMain()throws Exception{if(activity!=null)ui(()->{quiet(activity);activity.finish();});Thread.sleep(200);}
@@ -58,19 +58,19 @@ public final class FiveSourceInstrumentation extends Instrumentation {
         }finally{ui(repo::close);}
     }
     private void home(String screenshot)throws Exception{
-        final int[][] markerChecks=new int[6][4];
+        final int[][] markerChecks=new int[5][4];
         ui(()->{
-            check(field(activity,"selected")==Source.AGGREGATE,"default/restored home is aggregate");String nativeText=text(activity.getWindow().getDecorView());check(nativeText.contains("Top50")&&!nativeText.contains("Top100"),"visible home Top50 label");List<Item> items=(List<Item>)field(activity,"boardItems");check(items.size()==50,"enough cached input produces exactly 50 rows");check(items.stream().allMatch(i->enabled(i.source)),"all ranked sources in enabled five");
-            LinearLayout nav=(LinearLayout)field(activity,"platformNavigation");check(nav.getChildCount()==6,"aggregate plus five navigation items");int baseline=-1;String[] glyphs={"总","知","微","虎","财","爱"};
+            check(field(activity,"selected")==Source.ZHIHU,"default/restored home is Zhihu");String nativeText=text(activity.getWindow().getDecorView());check(nativeText.contains("知乎 热榜")&&!nativeText.contains("总榜"),"only Zhihu board heading visible");List<Item> items=(List<Item>)field(activity,"boardItems");check(items.size()==30,"single platform keeps its 30 cached rows");check(items.stream().allMatch(i->i.source==Source.ZHIHU),"home contains only selected platform");
+            LinearLayout nav=(LinearLayout)field(activity,"platformNavigation");check(nav.getChildCount()==5,"five navigation items");int baseline=-1;String[] glyphs={"知","微","虎","财","V"};
             for(int i=0;i<nav.getChildCount();i++){
-                View child=nav.getChildAt(i);check(Math.abs(child.getWidth()-nav.getWidth()/6)<=2,"equal navigation width "+i);check(child instanceof TextView,"native TextView navigation glyph "+i);if(!(child instanceof TextView))continue;
+                View child=nav.getChildAt(i);check(Math.abs(child.getWidth()-nav.getWidth()/5)<=2,"equal navigation width "+i);check(child instanceof TextView,"native TextView navigation glyph "+i);if(!(child instanceof TextView))continue;
                 TextView label=(TextView)child;String glyph=label.getText().toString();check(i<glyphs.length&&glyph.equals(glyphs[i]),"expected real text glyph "+i);
                 int actualBaseline=label.getTop()+label.getBaseline();if(baseline<0)baseline=actualBaseline;check(label.getBaseline()>=0&&Math.abs(actualBaseline-baseline)<=1,"shared navigation text baseline "+i);
                 int width=label.getWidth()-label.getCompoundPaddingLeft()-label.getCompoundPaddingRight(),height=label.getHeight()-label.getCompoundPaddingTop()-label.getCompoundPaddingBottom();
                 check(label.getPaint().measureText(glyph)<=width,"navigation glyph width fits "+i);check(label.getLineHeight()<=height&&label.getLineCount()==1,"navigation line height fits "+i);
                 check(label.getTypeface()!=null&&label.getTypeface().getStyle()==android.graphics.Typeface.NORMAL&&!label.getPaint().isFakeBoldText(),"regular navigation font style "+i);
                 if(Build.VERSION.SDK_INT>=28)check(label.getTypeface().getWeight()==400,"regular navigation font weight "+i);
-                check(label.isSelected()==(i==0),"aggregate glyph selected and all others unselected "+i); int[] screenPosition=new int[2];label.getLocationOnScreen(screenPosition);markerChecks[i]=new int[]{screenPosition[0]+label.getWidth()/2,screenPosition[1]+Math.round(label.getHeight()-6*label.getResources().getDisplayMetrics().density),label.getCurrentTextColor(),i==0?1:0};
+                check(label.isSelected()==(i==0),"Zhihu glyph selected and all others unselected "+i); int[] screenPosition=new int[2];label.getLocationOnScreen(screenPosition);markerChecks[i]=new int[]{screenPosition[0]+label.getWidth()/2,screenPosition[1]+Math.round(label.getHeight()-6*label.getResources().getDisplayMetrics().density),label.getCurrentTextColor(),i==0?1:0};
                 report.append("GLYPH ").append(glyph).append(" scrollXY=").append(label.getScrollX()).append(",").append(label.getScrollY()).append(" baseline=").append(actualBaseline).append(" measuredWidth=").append(label.getPaint().measureText(glyph)).append(" availableWidth=").append(width).append(" lineHeight=").append(label.getLineHeight()).append(" availableHeight=").append(height).append('\n');
             }
             for(String old:retiredLabels)check(!nativeText.contains(old),"no obsolete platform text on home "+old);
@@ -78,18 +78,45 @@ public final class FiveSourceInstrumentation extends Instrumentation {
         Bitmap screen=getUiAutomation().takeScreenshot();try{for(int i=0;i<markerChecks.length;i++){int[] m=markerChecks[i];int actual=screen.getPixel(m[0],m[1]);check((actual==m[2])==(m[3]==1),"real screen selected underline pixel "+i);report.append("SCREEN_MARKER ").append(i).append(" xy=").append(m[0]).append(",").append(m[1]).append(" expectedColor=").append(Integer.toHexString(m[2])).append(" actual=").append(Integer.toHexString(actual)).append(" selectedExpected=").append(m[3]).append('\n');}}finally{screen.recycle();}
     }
     private void navigation()throws Exception{
-        for(Source source:allowed){ui(()->{View tab=find(activity.getWindow().getDecorView(),source.label);check(tab!=null&&tab.performClick(),"actual tab click "+source.label);quiet(activity);check(field(activity,"selected")==source,"correct selected source "+source.label);});}
-        ui(()->{find(activity.getWindow().getDecorView(),"总榜").performClick();quiet(activity);invoke("aggregateLogin",new Class<?>[0]);});Thread.sleep(200);
-        AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();check(root!=null&&!root.findAccessibilityNodeInfosByText("选择来源 / 登录").isEmpty(),"actual source login chooser opened");for(Source s:allowed)check(root!=null&&root.findAccessibilityNodeInfosByText(s.label).size()==1,"one login chooser row "+s.label);for(String old:retiredLabels)check(root!=null&&root.findAccessibilityNodeInfosByText(old).isEmpty(),"old source absent from login chooser "+old);shot("02-five-source-login-dialog");sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        for(Source source:Source.displayOrder()){ui(()->{View tab=find(activity.getWindow().getDecorView(),source.label);check(tab!=null&&tab.performClick(),"actual tab click "+source.label);quiet(activity);check(field(activity,"selected")==source,"correct selected source "+source.label);});}
+        ui(()->find(activity.getWindow().getDecorView(),"更多选项").performClick());
+        tapMenu("全部来源");
+        AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();
+        check(root!=null&&!root.findAccessibilityNodeInfosByText("切换平台").isEmpty(),"all sources chooser opened");
+        check(root!=null&&root.findAccessibilityNodeInfosByText("总榜").isEmpty(),"removed board absent from source chooser");
+        shot("02-all-sources-dialog");sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        for(Source source:Source.values()){
+            ui(()->find(activity.getWindow().getDecorView(),"更多选项").performClick());
+            tapMenu("全部来源");tapMenu(source.label);
+            ui(()->{quiet(activity);check(field(activity,"selected")==source,"source menu selects "+source);
+                List<Item> items=(List<Item>)field(activity,"boardItems");
+                check(items.size()==30&&items.stream().allMatch(i->i.source==source),"source menu shows its own cached rows "+source);});
+        }
+    }
+    private void tapMenu(String label)throws Exception{
+        long until=SystemClock.elapsedRealtime()+4000;
+        do{AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();
+            if(root!=null)for(AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByText(label)){
+                if(!label.contentEquals(node.getText()==null?"":node.getText()))continue;
+                while(node!=null&&!node.isClickable())node=node.getParent();
+                if(node!=null&&node.performAction(AccessibilityNodeInfo.ACTION_CLICK)){Thread.sleep(200);return;}
+            }
+            Thread.sleep(100);
+        }while(SystemClock.elapsedRealtime()<until);
+        throw new AssertionError("Menu item unavailable: "+label);
     }
     private void restoredOld()throws Exception{
-        List<Item> saved=Models.fromJson(new org.json.JSONArray(prefs("MainActivity").getString("saved","[]")));check(saved.size()==5&&saved.stream().allMatch(i->enabled(i.source)),"legacy bookmarks migrated to five platforms");
+        List<Item> saved=Models.fromJson(new org.json.JSONArray(prefs("MainActivity").getString("saved","[]")));check(saved.size()==12&&saved.stream().allMatch(i->enabled(i.source)),"legacy bookmarks migrated to supported platforms");
         finishMain();restored=new Bundle();restored.putString("source","DOUBAN");restored.putString("current",legacy("DOUBAN").toString());restored.putString("history",new org.json.JSONArray().put(legacy("SMZDM")).put(rows(Source.WEIBO).get(0).json()).toString());launch();ui(()->{check(field(activity,"current")==null,"old restored article does not reappear");Deque<Item> history=(Deque<Item>)field(activity,"history");check(history.stream().allMatch(i->enabled(i.source)),"restored history has no removed sources");});home("03-restored-old-source-home");
         rejectedLogin=null;ui(()->activity.startActivity(new Intent(activity,LoginActivity.class).putExtra("source","DOUBAN").putExtra("url","https://retired.invalid/")));long until=SystemClock.elapsedRealtime()+4000;while(rejectedLogin==null&&SystemClock.elapsedRealtime()<until)Thread.sleep(50);ui(()->{check(rejectedLogin!=null&&(rejectedLogin.isFinishing()||rejectedLogin.isDestroyed()),"removed-source LoginActivity rejects launch");if(rejectedLogin!=null&&!rejectedLogin.isFinishing())rejectedLogin.finish();});
-        finishMain();prefs("appearance").edit().putInt("mode",1).commit();launch();home("04-light-total50");
+        finishMain();restored=new Bundle();restored.putString("source","AGGREGATE");launch();home("04-restored-removed-board");
+        finishMain();restored=new Bundle();restored.putString("source","BAIDU");launch();
+        ui(()->{check(field(activity,"selected")==Source.BAIDU,"non-tab source survives activity restoration");
+            check(((List<Item>)field(activity,"boardItems")).stream().allMatch(i->i.source==Source.BAIDU),"restored non-tab source keeps its own list");});
+        finishMain();prefs("appearance").edit().putInt("mode",1).commit();launch();home("04-light-zhihu");
     }
     private void restore(){for(Map.Entry<String,Map<String,?>> snapshot:backups.entrySet()){SharedPreferences.Editor edit=prefs(snapshot.getKey()).edit().clear();for(Map.Entry<String,?> item:snapshot.getValue().entrySet()){Object v=item.getValue();String k=item.getKey();if(v instanceof String)edit.putString(k,(String)v);else if(v instanceof Integer)edit.putInt(k,(Integer)v);else if(v instanceof Long)edit.putLong(k,(Long)v);else if(v instanceof Boolean)edit.putBoolean(k,(Boolean)v);else if(v instanceof Float)edit.putFloat(k,(Float)v);else if(v instanceof Set)edit.putStringSet(k,new HashSet<>((Set<String>)v));}edit.commit();}}
-    @Override public void onStart(){Bundle result=new Bundle();try{output=new File(getTargetContext().getExternalFilesDir(null),"five-source-qa/run-"+System.currentTimeMillis());output.mkdirs();report.append("SYNTHETIC cache/upgrade fixtures, actual Android lifecycle and click handlers. No live-source success claim. Preference backups remain in memory and are restored. No cookie access.\n");seed();migration();launch();home("01-dark-total50");navigation();restoredOld();}catch(Throwable e){failures++;report.append("ERROR ").append(e).append('\n');}finally{try{finishMain();restore();report.append("checks=").append(checks).append(" failures=").append(failures).append('\n');try(FileOutputStream out=new FileOutputStream(new File(output,"report.txt"))){out.write(report.toString().getBytes(StandardCharsets.UTF_8));}}catch(Exception e){failures++;report.append("CLEANUP ERROR ").append(e);}result.putString("stream",report+"\nOutput: "+output);finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);}}
+    @Override public void onStart(){Bundle result=new Bundle();try{output=new File(getTargetContext().getExternalFilesDir(null),"five-source-qa/run-"+System.currentTimeMillis());output.mkdirs();report.append("SYNTHETIC cache/upgrade fixtures, actual Android lifecycle and click handlers. No live-source success claim. Preference backups remain in memory and are restored. No cookie access.\n");seed();migration();launch();home("01-dark-zhihu");navigation();restoredOld();}catch(Throwable e){failures++;report.append("ERROR ").append(e).append('\n');}finally{try{finishMain();restore();report.append("checks=").append(checks).append(" failures=").append(failures).append('\n');try(FileOutputStream out=new FileOutputStream(new File(output,"report.txt"))){out.write(report.toString().getBytes(StandardCharsets.UTF_8));}}catch(Exception e){failures++;report.append("CLEANUP ERROR ").append(e);}result.putString("stream",report+"\nOutput: "+output);finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);}}
 }
 
 

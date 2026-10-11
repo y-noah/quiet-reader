@@ -22,6 +22,7 @@ final class PlatformMarkView extends TextView {
         setTextSize(TypedValue.COMPLEX_UNIT_DIP,20*Math.min(1.3f,getResources().getConfiguration().fontScale));
         setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));
         setGravity(Gravity.CENTER);setIncludeFontPadding(false);
+        if(android.os.Build.VERSION.SDK_INT>=28)setFallbackLineSpacing(false);
         setSingleLine(true);setLetterSpacing(0);
         setPadding(0,0,0,Math.round(4*density));
         setContentDescription(source.label);

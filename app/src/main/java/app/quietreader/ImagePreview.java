@@ -13,12 +13,15 @@ import java.util.Collections;
 /** One-image, script-free preview. Each retry owns a new WebView; old callbacks are ignored. */
 final class ImagePreview {
     interface Loader { WebResourceResponse load() throws Exception; }
+    interface GalleryLoader { WebResourceResponse load(String url) throws Exception; }
     private static final String PAGE="https://quiet-reader.invalid/image-preview";
     private final Activity activity;
-    private final String url;
+    private final java.util.List<String> urls;
+    private int index;
     private final boolean dark;
-    private final Loader loader;
-    private final Runnable invalidate;
+    private final GalleryLoader loader;
+    private final java.util.function.Consumer<String> invalidate;
+    private Button previous,next;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final LinearLayout layout;
     private final TextView status;
@@ -30,17 +33,26 @@ final class ImagePreview {
     private Runnable slow,inspectionTimeout,navigation;
 
     ImagePreview(Activity activity,String url,boolean dark,Loader loader,Runnable invalidate){
-        this.activity=activity;this.url=url;this.dark=dark;this.loader=loader;this.invalidate=invalidate;
+        this(activity,Collections.singletonList(url),0,dark,u->loader.load(),u->invalidate.run());
+    }
+    ImagePreview(Activity activity,java.util.List<String> urls,int index,boolean dark,GalleryLoader loader,java.util.function.Consumer<String> invalidate){
+        this.activity=activity;this.urls=new java.util.ArrayList<>(urls);this.index=index;this.dark=dark;this.loader=loader;this.invalidate=invalidate;
         int padding=(int)(16*activity.getResources().getDisplayMetrics().density);
         layout=new LinearLayout(activity);layout.setOrientation(LinearLayout.VERTICAL);
         layout.setBackgroundColor(dark?0xff1f2025:0xfffafafa);
         status=new TextView(activity);status.setTextSize(14);status.setTextColor(dark?0xff9b9da7:0xff696c76);
         status.setPadding(padding,padding,padding,padding);status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);layout.addView(status);
         progress=new ProgressBar(activity,null,android.R.attr.progressBarStyleHorizontal);progress.setIndeterminate(true);layout.addView(progress);
+        if(urls.size()>1){
+            LinearLayout nav=new LinearLayout(activity);
+            previous=new Button(activity);previous.setText("上一张");previous.setOnClickListener(v->move(-1));nav.addView(previous,new LinearLayout.LayoutParams(0,-2,1));
+            next=new Button(activity);next.setText("下一张");next.setOnClickListener(v->move(1));nav.addView(next,new LinearLayout.LayoutParams(0,-2,1));layout.addView(nav);
+        }
         dialog=new AlertDialog.Builder(activity).setTitle("正文图片 · 双指缩放").setView(layout).setNegativeButton("重试",null).setPositiveButton("关闭",null).create();
         dialog.setOnDismissListener(ignored->{closed=true;release();});
     }
-    void show(){dialog.show();dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v->{if(closed)return;invalidate.run();start();});start();}
+    void show(){dialog.show();dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v->{if(closed)return;invalidate.accept(urls.get(index));start();});start();}
+    private void move(int delta){int target=index+delta;if(closed||target<0||target>=urls.size())return;index=target;start();}
     void dismiss(){dialog.dismiss();}
     private boolean active(WebView web){return !closed&&web==current;}
     private void release(){
@@ -59,8 +71,25 @@ final class ImagePreview {
     }
     private void start(){
         if(closed)return;release();settled=false;
+        final String url=urls.get(index);
+        dialog.setTitle("正文图片 "+(index+1)+" / "+urls.size()+" · 双指缩放");
+        if(previous!=null){previous.setEnabled(index>0);next.setEnabled(index+1<urls.size());}
         status.setText("正在加载图片…");progress.setVisibility(View.VISIBLE);dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
         WebView web=new WebView(activity);current=web;
+        web.setOnTouchListener(new View.OnTouchListener(){
+            float x,y;boolean multiple;float initialScale;
+            public boolean onTouch(View v,android.view.MotionEvent event){
+                if(event.getActionMasked()==android.view.MotionEvent.ACTION_DOWN){x=event.getX();y=event.getY();multiple=false;if(initialScale==0)initialScale=web.getScale();}
+                if(event.getPointerCount()>1)multiple=true;
+                if(event.getActionMasked()==android.view.MotionEvent.ACTION_UP&&!multiple&&urls.size()>1&&web.getScale()<=initialScale*1.05f){
+                    float dx=event.getX()-x,dy=event.getY()-y;
+                    if(Math.abs(dx)>80*activity.getResources().getDisplayMetrics().density&&Math.abs(dx)>Math.abs(dy)*2){
+                        int delta=dx<0?1:-1;if(index+delta>=0&&index+delta<urls.size()){handler.post(()->{if(active(web))move(delta);});return true;}
+                    }
+                }
+                return false;
+            }
+        });
         WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(false);settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         settings.setBuiltInZoomControls(true);settings.setDisplayZoomControls(false);settings.setUseWideViewPort(true);settings.setLoadWithOverviewMode(true);
@@ -77,7 +106,7 @@ final class ImagePreview {
                 String requested=request.getUrl().toString();
                 if(request.isForMainFrame()&&PAGE.equals(requested))return new WebResourceResponse("text/html","UTF-8",200,"OK",Collections.singletonMap("Cache-Control","no-store"),new ByteArrayInputStream(html.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
                 if(!url.equals(requested))return unavailable();
-                try{WebResourceResponse response=loader.load();if(response==null)throw new java.io.IOException("Missing image response");return response;}
+                try{WebResourceResponse response=loader.load(url);if(response==null)throw new java.io.IOException("Missing image response");return response;}
                 catch(Exception failure){handler.post(()->finish(w,false,"图片加载失败，请点「重试」；也可以关闭后继续阅读。"));return unavailable();}
             }
             @Override public void onReceivedError(WebView w,WebResourceRequest request,WebResourceError error){

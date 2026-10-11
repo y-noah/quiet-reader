@@ -23,6 +23,6 @@ public class ReadingRepairTest {
     }
     @Test public void continuationFailureIsVisibleAtBottom(){
         Document d=new Document();d.url=question.url;d.moreStatus="login";d.notice="登录后重试，已读回答保留";
-        String html=ReaderHtml.render(d,Source.ZHIHU,19);assertTrue(html.contains("continuation-status"));assertTrue(html.contains("需先登录来源"));
+        String html=ReaderHtml.render(d,Source.ZHIHU,19);assertTrue(html.contains("continuation-status"));assertTrue(html.contains("登录后重试"));
     }
 }

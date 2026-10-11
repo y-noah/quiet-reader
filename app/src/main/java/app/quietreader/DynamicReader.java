@@ -24,11 +24,10 @@ public final class DynamicReader {
     public DynamicReader(Activity activity,Item item,Repository.Result<Document> cb) {
         this.item=item; callback=cb; web=new WebView(activity);
         WebSettings s=web.getSettings(); s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true); s.setAllowFileAccess(false); s.setAllowContentAccess(false);
-        s.setUserAgentString(SourceSession.userAgent(activity,item.source)); s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); s.setMediaPlaybackRequiresUserGesture(true);
+        SourceSession.configure(activity,item.source,web); s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); s.setMediaPlaybackRequiresUserGesture(true);
         // This surface only extracts text and image URLs; the own reader loads actual pictures.
         // Do not apply this to the explicit login view, where image challenges must stay visible.
         s.setBlockNetworkImage(true);
-        CookieManager.getInstance().setAcceptCookie(true); CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
         web.setWebViewClient(new WebViewClient(){
             @Override public WebResourceResponse shouldInterceptRequest(WebView w,WebResourceRequest r){
                 String path=r.getUrl().getPath();

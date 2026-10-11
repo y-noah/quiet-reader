@@ -50,6 +50,9 @@ public final class DynamicReadingInstrumentation extends Instrumentation {
             @Override public void failure(String reason){callbacks++;failure=reason;callbackAt=elapsed();done.countDown();}
         };
         String fixture(){
+            if(name.equals("06-question-details")){
+                return page("<div class='QuestionRichText'><span id='detail'>问题补充摘要</span><button class='Button QuestionRichText-more' onclick=\"var b=this;setTimeout(function(){document.getElementById('detail').innerHTML='<p>问题补充完整首段</p><p>完整末段 QR_DETAIL_END</p>';b.remove();},2600);\">显示全部</button></div>"+answer("detail-answer","保留回答内容"));
+            }
             JSONArray a=new JSONArray();for(String s:snapshots)a.put(s);
             // ES5 only: API 26's Chrome 69 must execute this fixture too.
             String script="(function(){var values="+a.toString().replace("</","<\\/")+",n=0;Object.defineProperty(document.documentElement,'outerHTML',{configurable:true,get:function(){n++;console.log('QR_SYNTHETIC_READ:'+n);return values[Math.min(n-1,values.length-1)];}});console.log('QR_SYNTHETIC_READY');})();";
@@ -162,6 +165,17 @@ public final class DynamicReadingInstrumentation extends Instrumentation {
                 check(login.result!=null&&AnswerStream.answers(login.result)==2&&text(login.result).contains("合成已读回答 2"),"Visible login restriction retains both previous answers");
                 check(login.result!=null&&login.result.moreStatus.equals("login")&&login.result.notice.contains("登录"),"Production login status and guidance preserved");
                 check(login.reads==1,"Visible login gate stops after first source inspection");
+            });
+            Trial detail=new Trial("06-question-details",false);
+            runTrial(detail,null,()->{
+                check(detail.result!=null&&text(detail.result).contains("QR_DETAIL_END"),"Lazy question detail is expanded before a stable excerpt can be accepted");
+                check(detail.result!=null&&!text(detail.result).contains("问题补充摘要"),"Full supplement replaces the source preview");
+                check(detail.result!=null&&AnswerStream.answers(detail.result)==1,"Supplement expansion retains the independent answer");
+                if(detail.result!=null){
+                    java.util.Set<String> expanded=new java.util.HashSet<>();ReaderHtml.expandPrimary(detail.result,expanded);
+                    org.jsoup.nodes.Document own=org.jsoup.Jsoup.parse(ReaderHtml.render(detail.result,Source.ZHIHU,19,false,expanded,false));
+                    check(own.select("#part-0 p:not(.preview)").text().contains("QR_DETAIL_END"),"Expanded own-reader supplement includes its full final paragraph");
+                }
             });
         }catch(Throwable e){failures++;log("ERROR SETUP "+e);}
         finally{

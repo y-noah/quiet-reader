@@ -25,7 +25,7 @@ public final class ReaderHtml {
         h.append("<style>h1{font-size:22px;font-weight:600;line-height:1.5;margin-bottom:12px}main{padding:12px 0 28px}p{line-height:1.8;margin-bottom:18px}.meta{margin-bottom:18px}.action{padding:10px 0;background:transparent;border:0;border-radius:0;min-height:44px;margin:8px 0}.notice{border-radius:4px;padding:10px;font-size:12px}.part{padding-bottom:8px;margin-bottom:14px}img{border-radius:4px}.preview{line-height:1.7}.end{margin-top:22px}</style>");
         h.append("<style>h1{font-size:19px;line-height:1.4;margin-bottom:6px}.meta{font-size:11px;margin-bottom:8px}.notice{padding:7px 9px;margin-bottom:10px;font-size:11px;line-height:1.5}.section-nav{display:flex;gap:18px;font-size:13px;margin:0 0 8px}.section-nav a{padding:8px 0}.content-link{overflow-wrap:anywhere;text-decoration:underline;text-underline-offset:3px}").append(style.css(dark)).append("</style>");
         h.append("<h1>").append(escape(d.title)).append("</h1><div class='meta'>").append(escape(source.label)).append(d.byline.isEmpty()?" · 原作者内容":" · "+escape(d.byline)).append("</div>");
-        if(!d.notice.isEmpty())h.append("<div class='notice'>").append(escape(d.notice)).append("</div>");
+        if(!d.notice.isEmpty()&&d.moreStatus.isEmpty())h.append("<details class='notice'><summary>阅读提示</summary>").append(escape(d.notice)).append("</details>");
         h.append("<style>.preview{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}img.emoji{display:inline-block;width:1.35em;height:1.35em;min-height:0;max-width:none;object-fit:contain;vertical-align:-.25em;margin:0 .08em;border-radius:0}</style>");
         // Android textZoom changes glyphs but not image em boxes. Size inline images explicitly.
         double emojiSize=Math.max(16,Math.min(28,inlineFont))*1.35;
@@ -41,18 +41,16 @@ public final class ReaderHtml {
             if(fold)h.append("<a class='action' href='").append(ACTION).append("toggle?index=").append(index).append("'>").append(escape(part.label)).append(" · ").append(index+1).append(open?" · 收起 ↑":" · 展开阅读 ↓").append("</a>");
             else if(source==Source.HUPU&&(part.label.startsWith("主帖")||part.label.startsWith("回复")))h.append("<div class='meta section-label'>").append(escape(part.label)).append("</div>");
             if(open){
-                navigation(h,index,sections.size());
                 int blockIndex=0;for(Block b:part.blocks)block(h,b,anchorId(part.id,blockIndex++));
                 if(WeiboPost.canContinue(source,d.url,part))h.append("<a class='action' href='").append(ACTION).append("post?index=").append(index).append("'>继续读取原帖 →</a>");
-                navigation(h,index,sections.size());
-                if(fold)h.append("<a class='action' href='").append(ACTION).append("toggle?index=").append(index).append("'>收起这段内容 ↑</a>");}
+                navigation(h,index,sections);}
             else {h.append("<p class='preview'>").append(escape(text.substring(0,Math.min(130,text.length())))).append(text.length()>130?"…":"").append("</p>");if(imageCount>0)h.append("<div class='meta'>包含 ").append(imageCount).append(" 张图片 · 展开后查看</div>");}
             h.append("</section>");index++;
         }
         if(source==Source.ZHIHU&&d.url.matches("https://[^/]*zhihu.com/question/\\d+.*")){
             if(!d.moreStatus.isEmpty())h.append("<div class='notice continuation-status' role='status'>").append(escape(d.notice)).append("</div>");
             if(d.moreStatus.equals("login"))h.append("<a class='action' href='").append(ACTION).append("login'>来源 / 登录 →</a>");
-            h.append("<a class='action' href='").append(ACTION).append("more'>").append(loading?"正在加载下一批回答…":d.moreStatus.equals("login")?"重新尝试加载（需先登录来源） ↓":d.moreStatus.equals("end")?"重新检查后续回答 ↓":"加载下一批回答 ↓").append("</a>");
+            h.append("<a class='action' href='").append(ACTION).append("more'>").append(loading?"正在加载下一批回答…":d.moreStatus.equals("login")?"登录后重试 ↓":d.moreStatus.equals("end")?"重新检查后续回答 ↓":d.moreStatus.equals("error")?"重试加载回答 ↓":"加载下一批回答 ↓").append("</a>");
         }
         h.append("<div class='end'>— 当前已提取内容结束 —</div>");
         if(UrlPolicy.sameThread(source,d.url,d.nextUrl))h.append("<a class='action' href='").append(escape(d.nextUrl)).append("'>继续阅读下一页 →</a>");
@@ -67,11 +65,13 @@ public final class ReaderHtml {
     static void expandPrimary(Document doc,Set<String> expanded){
         List<Section> parts=sections(doc);if(parts.isEmpty())return;Section first=parts.get(0);
         if(!first.answer&&(first.label.startsWith("主帖")||first.label.equals("正文")||first.label.equals("问题补充")))expanded.add(first.id);
+        if(doc.url.matches("https://[^/]*zhihu.com/question/.*"))
+            for(Section part:parts)if(part.answer){expanded.add(part.id);break;}
     }
-    private static void navigation(StringBuilder h,int index,int count){
-        if(count<2)return;h.append("<nav class='section-nav' aria-label='内容跳转'>");
-        if(index>0)h.append("<a href='").append(ACTION).append("jump?index=").append(index-1).append("'>上一条</a>");
-        if(index+1<count)h.append("<a href='").append(ACTION).append("jump?index=").append(index+1).append("'>下一条 ↓</a>");
+    private static void navigation(StringBuilder h,int index,List<Section> parts){
+        if(index+1>=parts.size())return;h.append("<nav class='section-nav' aria-label='内容跳转'>");
+        Section next=parts.get(index+1);
+        h.append("<a href='").append(ACTION).append("jump?index=").append(index+1).append("'>").append(next.answer?"下一条回答 ↓":next.label.startsWith("回复")?"下一条回复 ↓":"下一段内容 ↓").append("</a>");
         h.append("</nav>");
     }
     static String anchorId(String section,int block){return "reading-"+java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(section.getBytes(java.nio.charset.StandardCharsets.UTF_8))+"-"+block;}
@@ -80,7 +80,13 @@ public final class ReaderHtml {
             h.append("<p data-reading-anchor id='").append(anchor).append("'>");
             h.append(ReaderLinks.render(b)).append("</p>");
         }
-        else if(b.type.equals("image")&&UrlPolicy.https(b.value))h.append("<figure data-reading-anchor id='").append(anchor).append("'><a href='").append(escape(b.value)).append("'><img loading='lazy' src='").append(escape(b.value)).append("' alt='正文图片暂未显示'></a><figcaption><a href='").append(escape(b.value)).append("'>查看大图</a> · 图片可能稍后显示，点开可重试</figcaption></figure>");
+        else if(b.type.equals("image")&&UrlPolicy.https(b.value)){
+            h.append("<figure data-reading-anchor id='").append(anchor).append("'><a href='").append(escape(b.value)).append("'><img loading='lazy' ");
+            if(b.imageWidth>0&&b.imageHeight>0&&b.imageWidth<=20000&&b.imageHeight<=100000)
+                h.append("width='").append(b.imageWidth).append("' height='").append(b.imageHeight).append("' style='width:100%;aspect-ratio:").append(b.imageWidth).append("/").append(b.imageHeight).append(";' ");
+            else h.append("style='width:100%;height:240px;object-fit:contain;background:var(--card)' ");
+            h.append("src='").append(escape(b.value)).append("' alt='正文图片暂未显示'></a><figcaption><a href='").append(escape(b.value)).append("'>查看大图</a> · 图片可能稍后显示，点开可重试</figcaption></figure>");
+        }
         else if(b.type.equals("separator"))h.append("<hr>");
     }
 }

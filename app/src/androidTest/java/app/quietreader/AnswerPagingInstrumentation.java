@@ -41,11 +41,11 @@ public final class AnswerPagingInstrumentation extends Instrumentation {
             WebView web=(WebView)field(stream,"web");WebViewClient delegate=web.getWebViewClient();
             web.setWebViewClient(new WebViewClient(){
                 WebResourceResponse respond(String url){
-                    if(url.equals(URL))return response(200,"text/html",html());
+                    if(url.equals(URL))return response(200,"text/html",mode.equals("403-dom")?html().replace("</body>","<script>setTimeout(function(){var a=document.createElement('div');a.className='AnswerItem';a.id='2';a.innerHTML='<div class=RichContent-inner><div class=RichText><p>网页会话加载的后续回答</p></div></div>';document.body.appendChild(a);},4500);</script></body>"):html());
                     if(url.startsWith(API+"?")){
                         int n=++requests;urls.add(url);entered.countDown();
                         if(mode.equals("close")||mode.equals("timeout"))try{Thread.sleep(mode.equals("close")?1500:6000);}catch(InterruptedException ignored){}
-                        if(mode.equals("403"))return response(403,"application/json","{\"error\":\"synthetic gate\"}");
+                        if(mode.equals("403")||mode.equals("403-dom"))return response(403,"application/json","{\"error\":\"synthetic gate\"}");
                         if(mode.equals("foreign"))return response(200,"application/json",json(1,"https://evil.test/answers?offset=10",false));
                         if(mode.equals("cap")||mode.equals("timeout")||mode.equals("close"))return response(200,"application/json",json(1,API+"?offset="+(n*10),false));
                         if(url.contains("offset=20"))return response(200,"application/json",json(3,"",true));
@@ -82,7 +82,7 @@ public final class AnswerPagingInstrumentation extends Instrumentation {
         try{
             report.append("Synthetic source only; real production AnswerStream and native WebView XHR. No real account/session read.\n");
             activity=startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            ui(()->{((Repository)field(activity,"repo")).cancelPending();((AggregateLoader)field(activity,"aggregateLoader")).cancel();Object d=field(activity,"dynamicBoard");if(d!=null)((DynamicBoard)d).close();});
+            ui(()->{((Repository)field(activity,"repo")).cancelPending();Object d=field(activity,"dynamicBoard");if(d!=null)((DynamicBoard)d).close();});
             run("pages",t->{
                 Document first=t.await();if(first==null)return;
                 check(AnswerStream.answerIds(first).equals(new HashSet<>(Arrays.asList("1","2"))),"Duplicate first page advances to new answer while preserving old answer");
@@ -92,7 +92,8 @@ public final class AnswerPagingInstrumentation extends Instrumentation {
                 check(t.requests==3&&t.callbacks==2,"Exactly one production callback per click");
                 check(last.moreStatus.equals("end")&&last.notice.contains("末页"),"Last page reports source end with appended answer");
             });
-            run("403",t->{Document d=t.await();if(d!=null){check(d.moreStatus.equals("login"),"HTTP 403 reports login restriction");check(AnswerStream.answerIds(d).contains("1"),"HTTP 403 retains existing answer");check(t.requests==1&&t.callbacks==1,"HTTP 403 stops without retry storm");}});
+            run("403",t->{Document d=t.await();if(d!=null){check(d.moreStatus.equals("restricted"),"API 403 alone does not claim the website session is logged out");check(AnswerStream.answerIds(d).contains("1"),"HTTP 403 retains existing answer");check(t.requests==1&&t.callbacks==1,"HTTP 403 stops without retry storm");}});
+            run("403-dom",t->{Document d=t.await();if(d!=null){check(d.moreStatus.equals("loaded")&&AnswerStream.answerIds(d).equals(new HashSet<>(Arrays.asList("1","2"))),"API 403 still allows the website to supply a later answer");check(t.requests==1&&t.callbacks==1,"Rejected API is not retried while the page continues");}});
             run("foreign",t->{Document d=t.await();if(d!=null){check(t.requests==1&&t.foreignRequests==0,"External cursor is never requested");check(AnswerStream.answers(d)==1&&d.notice.contains("不等于已读完"),"Invalid cursor preserves old content without claiming completion");}});
             run("cap",t->{Document d=t.await();if(d!=null)check(t.requests==3&&t.callbacks==1&&AnswerStream.answers(d)==1,"Duplicate cursor chain is limited to 3 API pages per click");});
             run("timeout",t->{Document d=t.await();if(d!=null){check(t.requests<=3&&t.callbacks==1,"Slow API chain remains bounded and delivers once");check(AnswerStream.answers(d)==1,"Slow API timeout preserves previous answer");}});

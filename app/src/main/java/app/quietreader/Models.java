@@ -14,14 +14,19 @@ public final class Models {
         // Public web request checksum: MD5(SHA1("app=cailianpress&os=android&sv=835")); no account secret.
         CLS("财联社", "资讯热榜", "https://api3.cls.cn/v1/hot_list?app=cailianpress&os=android&sv=835&sign=e89e141e1391c13c7d2b99d8c142848c", "https://api3.cls.cn/quote/toplist?app=cailianpress&os=android&sv=835&tab=1"),
         IFANR("爱范儿", "最新文章·非热榜", "https://www.ifanr.com/", "https://www.ifanr.com/"),
-        AGGREGATE("总榜", "Top50", "", "");
-        public boolean visible() { return this==ZHIHU||this==IFANR||this==CLS||this==HUPU||this==WEIBO; }
-        public boolean readable(){return visible();}
-        public boolean navigable(){return this==AGGREGATE||visible();}
-        public static Source[] displayOrder(){return new Source[]{ZHIHU,WEIBO,HUPU,CLS,IFANR};}
-        public static Source[] navigationOrder(){return new Source[]{AGGREGATE,ZHIHU,WEIBO,HUPU,CLS,IFANR};}
-        public static Source[] aggregateSources(){return displayOrder();}
-        public String referer(){return endpoint;}
+        V2EX("V2EX", "最热", "https://www.v2ex.com/?tab=hot", "https://www.v2ex.com/signin"),
+        BAIDU("百度", "热搜", "https://top.baidu.com/board?tab=realtime", "https://www.baidu.com/"),
+        TIEBA("贴吧", "热议", "https://tieba.baidu.com/", "https://tieba.baidu.com/"),
+        SSPAI("少数派", "首页文章·非全站热榜", "https://sspai.com/", "https://sspai.com/"),
+        DOUYIN("抖音", "热榜", "https://www.douyin.com/hot", "https://www.douyin.com/"),
+        BILIBILI("B站", "综合排行榜", "https://api.bilibili.com/x/web-interface/ranking/v2?rid=0&type=all", "https://www.bilibili.com/"),
+        XHS("小红书", "发现页点赞·非全站热榜", "https://www.xiaohongshu.com/explore", "https://www.xiaohongshu.com/explore");
+        public boolean visible() { return this==ZHIHU||this==V2EX||this==CLS||this==HUPU||this==WEIBO; }
+        public boolean readable(){return true;}
+        public boolean webReading(){return this==BAIDU||this==TIEBA||this==DOUYIN||this==BILIBILI||this==XHS;}
+        public String boardPage(){return this==V2EX?"https://www.v2ex.com/?tab=hot":this==BILIBILI?"https://www.bilibili.com/v/popular/rank/all":this==WEIBO?"https://s.weibo.com/top/summary":endpoint;}
+        public static Source[] displayOrder(){return new Source[]{ZHIHU,WEIBO,HUPU,CLS,V2EX};}
+        public static Source[] navigationOrder(){return displayOrder();}
         public final String label, category, endpoint, login;
         Source(String label, String category, String endpoint, String login) {
             this.label=label; this.category=category; this.endpoint=endpoint; this.login=login;
@@ -50,6 +55,7 @@ public final class Models {
         public final String type, value;
         public final List<InlineImage> inlineImages;
         public final List<InlineLink> inlineLinks;
+        public int imageWidth,imageHeight;
         public Block(String type, String value) { this(type,value,java.util.Collections.emptyList()); }
         public Block(String type,String value,List<InlineImage> images) {
             this(type,value,images,java.util.Collections.emptyList());

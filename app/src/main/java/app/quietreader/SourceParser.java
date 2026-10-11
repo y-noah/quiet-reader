@@ -81,6 +81,8 @@ public final class SourceParser {
             case HUPU: selector=".thread-content-detail, .thread-content, .quote-content"; break;
             case WEIBO: selector=".card-wrap .txt, .weibo-text, [class*=detail_wbtext]"; break;
             case CLS: selector="section.content-box > .content"; break;
+            case V2EX: selector=".topic_content,.reply_content"; break;
+            case SSPAI: selector=".article__main__content,.ss__article__body"; break;
             case IFANR: selector="article.c-article-content"; break;
             default: selector="article";
         }
@@ -128,7 +130,7 @@ public final class SourceParser {
                 Element container=answer?root.closest(".AnswerItem"):root;
                 String id=continuation.isEmpty()?sectionId(source,root,photoUrls):"weibo-"+WeiboPost.id(continuation);
                 Element name=container.selectFirst(".AuthorInfo-name,.author-name");
-                String label=answer?"回答":source==Source.ZHIHU?(root.is(".QuestionRichText")?"问题补充":"回答"):source==Source.HUPU?"楼层":source==Source.WEIBO?"微博":"正文";
+                String label=answer?"回答":source==Source.ZHIHU?(root.is(".QuestionRichText")?"问题补充":"回答"):source==Source.V2EX?"帖子 / 回复":source==Source.HUPU?"楼层":source==Source.WEIBO?"微博":"正文";
                 if(source==Source.HUPU)label=root.closest(".reply-list-wrapper")!=null?"回复":root.closest("[class*='post-content_main-post-info']")!=null?"主帖":"楼层";
                 Section section=new Section(id,label+(name==null?"":" · "+name.text()),answer||label.equals("回答"));
                 section.continuationUrl=continuation;
@@ -152,7 +154,7 @@ public final class SourceParser {
         String body=d.body().text();
         if(body.contains("登录后查看")||body.contains("登录后继续")||body.contains("展开阅读全文")||body.contains("打开App查看全文"))
             result.notice="当前页面可能只返回部分内容。请登录后重新读取；未加载部分不会被当作全文。";
-        if(source==Source.ZHIHU && !result.blocks.isEmpty()) result.notice="回答独立折叠。下滑到底或点「加载下一批回答」继续；登录限制或未加载部分不代表完整回答列表。";
+        if(source==Source.ZHIHU && !result.blocks.isEmpty()) result.notice="首条回答默认展开，后续可按需展开。下滑继续加载；当前内容不代表完整回答列表。";
         if(source==Source.WEIBO && !result.blocks.isEmpty()) {
             result.notice=VideoPolicy.weiboTopic(url)?"仅展示当前页面已加载的微博；不是话题下全部内容。":"仅展示来源页已加载的微博正文。";
             if(result.sections.stream().anyMatch(s->!s.continuationUrl.isEmpty()))result.notice+=" 部分内容是摘要，展开后可继续读取原帖。";
@@ -213,7 +215,12 @@ public final class SourceParser {
         if(e.tagName().equals("img")) {
             String src=imageSource(e,base);
             flush(result,buffer,inline,links);
-            if(!src.isEmpty()) result.blocks.add(new Block("image",src));
+            if(!src.isEmpty()){
+                Block image=new Block("image",src);
+                try{image.imageWidth=Integer.parseInt(e.attr("width"));image.imageHeight=Integer.parseInt(e.attr("height"));}catch(NumberFormatException ignored){}
+                if(image.imageWidth<=0||image.imageHeight<=0){try{image.imageWidth=Integer.parseInt(e.attr("data-rawwidth"));image.imageHeight=Integer.parseInt(e.attr("data-rawheight"));}catch(NumberFormatException ignored){}}
+                result.blocks.add(image);
+            }
             return;
         }
         boolean boundary=e.isBlock()||e.tagName().equals("br");

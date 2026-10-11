@@ -31,7 +31,7 @@ public final class LiveProbe {
         }
         List<String> report=new ArrayList<>();
         report.add("Anonymous live probe "+java.time.Instant.now());
-        for(Source s:Source.aggregateSources()) {
+        for(Source s:Source.values()) {
             try {
                 List<Item> items=SourceParser.list(s,get(s.endpoint));
                 String line=s.name()+": board="+items.size();report.add(line);System.out.println(line);

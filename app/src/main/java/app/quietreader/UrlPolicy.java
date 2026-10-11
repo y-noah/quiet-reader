@@ -22,6 +22,13 @@ public final class UrlPolicy {
             case HUPU: return domain(h,"hupu.com");
             case CLS: return domain(h,"cls.cn");
             case IFANR: return domain(h,"ifanr.com");
+            case V2EX:return domain(h,"v2ex.com");
+            case SSPAI:return domain(h,"sspai.com");
+            case BAIDU:return domain(h,"baidu.com")&&!h.equals("tieba.baidu.com")&&!h.equals("passport.baidu.com")&&!h.equals("wappass.baidu.com");
+            case TIEBA:return h.equals("tieba.baidu.com");
+            case BILIBILI:return domain(h,"bilibili.com");
+            case DOUYIN:return domain(h,"douyin.com")||h.equals("sso.douyin.com");
+            case XHS:return domain(h,"xiaohongshu.com");
             default: return false;
         }
     }
@@ -29,6 +36,7 @@ public final class UrlPolicy {
         if(belongs(source,url))return true;
         if(!https(url))return false;
         String h=host(url);
+        if(source==Models.Source.TIEBA||source==Models.Source.BAIDU)return h.equals("passport.baidu.com")||h.equals("wappass.baidu.com");
         if(source!=Models.Source.WEIBO)return false;
         return h.equals("login.sina.com.cn")||h.equals("passport.sina.cn")||h.equals("passport.sina.com.cn")||h.equals("passport.sinaimg.cn");
     }
@@ -61,7 +69,7 @@ public final class UrlPolicy {
     /** Known forum post identity, allowing canonical query/pagination changes but not another post. */
     public static boolean sameForumPost(Models.Source source,String current,String next) {
         if(!belongs(source,current)||!belongs(source,next))return false;
-        String pattern=source==Models.Source.HUPU?"^/(\\d+)(?:-\\d+)?\\.html$":"";
+        String pattern=source==Models.Source.V2EX?"^/t/(\\d+)/?$":source==Models.Source.TIEBA?"^/p/(\\d+)/?$":source==Models.Source.HUPU?"^/(\\d+)(?:-\\d+)?\\.html$":"";
         if(pattern.isEmpty())return false;
         try {
             java.util.regex.Pattern regex=java.util.regex.Pattern.compile(pattern);

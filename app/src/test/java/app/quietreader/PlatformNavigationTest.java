@@ -5,9 +5,9 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.Source;
 
 public class PlatformNavigationTest {
-    @Test public void onlyFiveVisibleSourcesCanBeReopenedAsReaderEntries(){
-        for(Source source:Source.values())assertEquals(source.visible(),source.readable());
-        for(String url:new String[]{"https://www.douban.com/gallery/topic/1/","https://www.douban.com/group/topic/1/","https://www.guokr.com/article/1/","https://www.ithome.com/1/009/232.htm","https://juejin.cn/post/1","https://sspai.com/post/1","https://wallstreetcn.com/articles/1","https://www.geekpark.net/news/1"})
+    @Test public void allSupportedSourcesCanBeReopenedAsReaderEntries(){
+        for(Source source:Source.values())assertTrue(source.readable());
+        for(String url:new String[]{"https://www.douban.com/gallery/topic/1/","https://www.douban.com/group/topic/1/","https://www.guokr.com/article/1/","https://www.ithome.com/1/009/232.htm","https://juejin.cn/post/1","https://wallstreetcn.com/articles/1","https://www.geekpark.net/news/1"})
             assertNull(ReaderLinks.readerSource(url));
     }
     @Test public void observedMobileSearchUpgradesWithoutChangingEncodedSearch(){

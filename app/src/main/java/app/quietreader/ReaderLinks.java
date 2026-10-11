@@ -18,6 +18,9 @@ public final class ReaderLinks {
                 case ZHIHU: pattern="/(?:question/\\d+(?:/answer/\\d+)?|answer/\\d+|p/\\d+)/?";break;
                 case HUPU: pattern="/\\d+(?:-\\d+)?\\.html";break;
                 case CLS: pattern="/(?:detail|share/article)/\\d+/?";break;
+                case V2EX: pattern="/t/\\d+/?";break;
+                case SSPAI: pattern="/post/\\d+/?";break;
+                case TIEBA: pattern="/p/\\d+/?";break;
                 case IFANR: pattern="/(?:app/)?\\d+/?";break;
                 case WEIBO: pattern="/(?:detail/[A-Za-z0-9]+|status/[A-Za-z0-9]+|\\d+/[A-Za-z0-9]+)/?";break;
                 default: continue;
