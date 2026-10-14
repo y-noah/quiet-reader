@@ -11,10 +11,10 @@ import java.nio.charset.StandardCharsets;
 
 /** Black-box UI assertions against the installed, minified release; no internal reflection. */
 public final class ReleaseInstrumentation extends Instrumentation {
-    private Activity home; private File output; private int checks,failures;
+    private Activity home; private File output; private int checks,failures;private boolean liveWeibo;
     private final StringBuilder report=new StringBuilder();
     interface Work {void run() throws Exception;}
-    @Override public void onCreate(Bundle args){super.onCreate(args);start();}
+    @Override public void onCreate(Bundle args){super.onCreate(args);liveWeibo="true".equals(args.getString("liveWeibo"));start();}
     private void ui(Work work)throws Exception{Throwable[] e={null};runOnMainSync(()->{try{work.run();}catch(Throwable t){e[0]=t;}});if(e[0]!=null)throw new Exception(e[0]);}
     private void check(boolean pass,String name){checks++;if(!pass)failures++;report.append(pass?"PASS ":"FAIL ").append(name).append('\n');}
     private View find(View view,String name){if(name.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;if(view instanceof TextView&&name.contentEquals(((TextView)view).getText()))return view;if(view instanceof ViewGroup)for(int i=0;i<((ViewGroup)view).getChildCount();i++){View found=find(((ViewGroup)view).getChildAt(i),name);if(found!=null)return found;}return null;}
@@ -22,10 +22,33 @@ public final class ReleaseInstrumentation extends Instrumentation {
     private android.webkit.WebView web(View v){if(v instanceof android.webkit.WebView)return (android.webkit.WebView)v;if(v instanceof ViewGroup)for(int n=0;n<((ViewGroup)v).getChildCount();n++){android.webkit.WebView found=web(((ViewGroup)v).getChildAt(n));if(found!=null)return found;}return null;}
     private void shot(String name)throws Exception{Thread.sleep(350);Bitmap b=getUiAutomation().takeScreenshot();if(b==null)throw new IOException("Screenshot missing");try(FileOutputStream out=new FileOutputStream(new File(output,name+".png"))){b.compress(Bitmap.CompressFormat.PNG,100,out);}b.recycle();}
     private String js(String expression)throws Exception{java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);String[] value={""};ui(()->web(home.getWindow().getDecorView()).evaluateJavascript(expression,r->{value[0]=r;latch.countDown();}));if(!latch.await(5,java.util.concurrent.TimeUnit.SECONDS))throw new IOException("JS timeout");return value[0];}
+    private void tapMenu(String label)throws Exception{
+        long until=SystemClock.elapsedRealtime()+4000;
+        do{android.view.accessibility.AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();
+            if(root!=null)for(android.view.accessibility.AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByText(label)){
+                if(!label.contentEquals(node.getText()==null?"":node.getText()))continue;
+                while(node!=null&&!node.isClickable())node=node.getParent();
+                if(node!=null&&node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))return;
+            }
+            Thread.sleep(100);
+        }while(SystemClock.elapsedRealtime()<until);
+        throw new AssertionError("Missing menu action: "+label);
+    }
+    private int articleRows(View v){int n=v.getContentDescription()!=null&&v.getContentDescription().toString().endsWith("，进入阅读")?1:0;if(v instanceof ViewGroup)for(int i=0;i<((ViewGroup)v).getChildCount();i++)n+=articleRows(((ViewGroup)v).getChildAt(i));return n;}
+    private void checkLiveWeibo()throws Exception{
+        ui(()->find(home.getWindow().getDecorView(),"微博").performClick());Thread.sleep(200);
+        for(int round=1;round<=2;round++){
+            ui(()->find(home.getWindow().getDecorView(),"更多选项").performClick());tapMenu("刷新榜单");
+            long until=SystemClock.elapsedRealtime()+55000;boolean[] finished={false},fresh={false};int[] rows={0};
+            do{Thread.sleep(200);ui(()->{View root=home.getWindow().getDecorView();fresh[0]=contains(root,"微博 热搜")&&contains(root,"更新于");finished[0]=fresh[0]||contains(root,"刷新失败")||contains(root,"暂时没读到榜单");rows[0]=articleRows(root);});}while(!finished[0]&&SystemClock.elapsedRealtime()<until);
+            check(fresh[0],"signed release manual refresh completes "+round);check(rows[0]>=30,"signed release shows actual fresh Weibo rows "+round);
+            report.append("LIVE_RELEASE round=").append(round).append(" rows=").append(rows[0]).append('\n');shot("weibo-refreshed-"+round);
+        }
+    }
     @Override public void onStart(){Bundle result=new Bundle();try{
         output=new File(getTargetContext().getExternalFilesDir(null),"release-qa/run-"+System.currentTimeMillis());output.mkdirs();
         android.content.pm.PackageInfo info=getTargetContext().getPackageManager().getPackageInfo("app.quietreader",0);
-        check("0.3.34".equals(info.versionName)&&info.versionCode==45,"exact 0.3.34 release installed");
+        check("0.3.35".equals(info.versionName)&&info.versionCode==46,"exact 0.3.35 release installed");
         home=startActivitySync(new Intent().setClassName("app.quietreader","app.quietreader.MainActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));Thread.sleep(900);
         ui(()->{View root=home.getWindow().getDecorView();check(find(root,"News")!=null,"News brand");check(find(root,"总榜")==null,"removed board absent");check(find(root,"知乎").isSelected(),"default Zhihu board");});
         shot("01-release-home");
@@ -33,6 +56,7 @@ public final class ReleaseInstrumentation extends Instrumentation {
             ui(()->{View tab=find(home.getWindow().getDecorView(),name);check(tab instanceof TextView,"native text tab "+name);check(tab!=null&&tab.performClick(),"tab click "+name);});Thread.sleep(200);
             ui(()->{TextView tab=(TextView)find(home.getWindow().getDecorView(),name);check(tab.isSelected(),"tab selected "+name);check(!tab.getTypeface().isBold(),"consistent regular weight "+name);check(tab.getHeight()>=48*home.getResources().getDisplayMetrics().density-1,"48dp touch height "+name);});
         }
+        if(liveWeibo)checkLiveWeibo();
         ui(()->find(home.getWindow().getDecorView(),"知乎").performClick());Thread.sleep(400);shot("02-release-zhihu");
         ui(home::finish);
         home=startActivitySync(new Intent().setClassName("app.quietreader","app.quietreader.LoginActivity").putExtra("source","ZHIHU").putExtra("url","https://www.zhihu.com/question/9876501029").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

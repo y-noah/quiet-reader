@@ -21,6 +21,8 @@ public final class DynamicBoard {
         this.source=source;this.callback=callback;web=new WebView(activity);
         WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setUserAgentString(Repository.DESKTOP_UA);
         SourceSession.configure(activity,source,web);
+        // A board fallback follows an explicit refresh or an expired snapshot. Preserve cookies/storage.
+        s.setCacheMode(WebSettings.LOAD_NO_CACHE);
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){String url=r.getUrl().toString(),secure=UrlPolicy.upgradePlatformNavigation(source,url);if(r.isForMainFrame()&&!secure.isEmpty()){if(upgraded.size()<4&&upgraded.add(secure))v.loadUrl(secure);return true;}return !UrlPolicy.loginAllowed(source,url);}
             @Override public void onPageFinished(WebView v,String url){if(tries==0&&!ended)inspect();}

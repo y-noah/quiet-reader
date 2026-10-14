@@ -6,8 +6,8 @@ android {
         applicationId 'app.quietreader'
         minSdk 26
         targetSdk 35
-        versionCode 45
-        versionName '0.3.34'
+        versionCode 46
+        versionName '0.3.35'
         testInstrumentationRunner 'app.quietreader.FiveSourceInstrumentation'
     }
     signingConfigs {
@@ -58,3 +58,5 @@ tasks.register('expandedCapturedProbe', JavaExec) {
 if (project.hasProperty('expandedBrowsingUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.ExpandedBrowsingInstrumentation'
 
 if (project.hasProperty('mobileLayoutUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.MobileLayoutInstrumentation'
+
+if (project.hasProperty('weiboBoardUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.WeiboBoardInstrumentation'

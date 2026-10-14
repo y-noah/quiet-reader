@@ -56,6 +56,7 @@ public final class MainActivity extends Activity {
     private ImagePreview imagePreview;
     private List<Item> boardItems=Collections.emptyList();
     private String boardLabel="";
+    private boolean boardRefreshFailed;
     private static final class BoardMark {String anchor="";int position,offset;}
     private final Map<Source,BoardMark> boardMarks=new EnumMap<>(Source.class);
     private Source boardSource;
@@ -177,7 +178,7 @@ public final class MainActivity extends Activity {
         closeAnswers();expanded.clear();
         generation++; current=null; reading=null; history.clear(); savedPage=false;
         getPreferences(0).edit().putString("selected",selected.name()).apply();
-        boardItems=Collections.emptyList();boardLabel="";boardSource=selected;
+        boardItems=Collections.emptyList();boardLabel="";boardRefreshFailed=false;boardSource=selected;
         frame("news","只看你关心的");
         scroller();
         LinearLayout row=new LinearLayout(this);row.setBaselineAligned(false);row.setContentDescription("平台选择");
@@ -201,7 +202,7 @@ public final class MainActivity extends Activity {
         board.addView(row,new FrameLayout.LayoutParams(-1,dp(48),Gravity.BOTTOM));
         List<Item> cache=repo.cached(selected); long age=System.currentTimeMillis()-repo.cachedAt(selected);
         boolean cachedBoard=repo.cachedAt(selected)>0;
-        if(cachedBoard) showBoard(cache,"缓存 · "+time(repo.cachedAt(selected)));
+        if(cachedBoard) showBoard(cache,((refresh||age>=15*60*1000)?"刷新中 · 缓存 ":"缓存 · ")+time(repo.cachedAt(selected)));
         else status("正在连接"+selected.label+"…","首次获取可能需要几秒钟");
         if(repo.offline()){if(!cachedBoard)status("当前没有网络","连接网络后，从右上角菜单刷新。已有本机缓存会保留。");else showBoard(cache,(refresh?"刷新失败 · ":"离线 · ")+"缓存 "+time(repo.cachedAt(selected)));return;}
         if(!refresh&&cachedBoard&&age<15*60*1000) return;
@@ -211,13 +212,20 @@ public final class MainActivity extends Activity {
             public void failure(String reason) {
                 if(request!=generation)return;
                 if(cache.isEmpty())status("正在尝试网页来源…","使用系统浏览器内核获取榜单");
+                else showBoard(cache,"刷新中 · 正在尝试网页来源 · 缓存 "+time(repo.cachedAt(selected)));
                 dynamicBoard=new DynamicBoard(MainActivity.this,selected,new Repository.Result<List<Item>>(){
                     public void success(List<Item> items){if(request!=generation)return;repo.cache(selected,items);showBoard(items,"更新于 "+time(System.currentTimeMillis()));}
-                    public void failure(String why){if(request!=generation)return;if(cache.isEmpty()){status("暂时没读到榜单",why);content.addView(button("打开来源页后重试",()->login(new Item(selected,selected.label,selected==Source.WEIBO?"https://s.weibo.com/top/summary":selected.login,""))));}else showBoard(cache,"刷新失败 · 缓存 "+time(repo.cachedAt(selected)));}
+                    public void failure(String why){if(request==generation)boardFailure(cache,why);}
                 });
             }
         });
     }
+    private void boardFailure(List<Item> cache,String reason){
+        boardRefreshFailed=true;
+        if(cache.isEmpty()){status("暂时没读到榜单",reason);content.addView(button("打开来源页后重试",this::openBoardSource));}
+        else showBoard(cache,"刷新失败 · 缓存 "+time(repo.cachedAt(selected)));
+    }
+    private void openBoardSource(){login(new Item(selected,selected.label,selected==Source.WEIBO?selected.boardPage():selected.login,""));}
     private static int platformColor(Source source){
         switch(source){
             case ZHIHU:return 0xff256dcc;
@@ -270,6 +278,7 @@ public final class MainActivity extends Activity {
             headingText.setSpan(new android.text.style.StyleSpan(Typeface.NORMAL),name.length(),headingText.length(),0);
         }
         TextView heading=text("",17,INK);heading.setTypeface(null,Typeface.BOLD);heading.setText(headingText);heading.setLineSpacing(dp(4),1);content.addView(heading);space(content,16);
+        if(boardRefreshFailed)content.addView(button("打开来源页后重试",this::openBoardSource));
         int rank=0;for(Item item:boardItems)card(item,++rank);
         if(boardItems.isEmpty()){TextView empty=text("暂时没有可显示的图文条目，已开启视频过滤。可稍后刷新。",15,MUTED);empty.setPadding(0,dp(20),0,dp(20));content.addView(empty);}
         // Restore after layout, using an item identity so fresh rankings do not shift the reader's place.

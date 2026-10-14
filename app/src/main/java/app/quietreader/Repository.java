@@ -78,7 +78,8 @@ public final class Repository {
         }catch(Exception ignored){}
     }
     private boolean validBoardCache(Source s) {
-        return s.readable()&&s.endpoint.equals(context.getSharedPreferences("boards",0).getString(s.name()+"_endpoint",""));
+        String endpoint=context.getSharedPreferences("boards",0).getString(s.name()+"_endpoint","");
+        return s.readable()&&(s.endpoint.equals(endpoint)||s==Source.WEIBO&&WeiboBoard.compatibleCache(endpoint));
     }
     public long cachedAt(Source s) { return validBoardCache(s)?context.getSharedPreferences("boards",0).getLong(s.name()+"_time",0):0; }
     public void cache(Source s,List<Item> items) {if(!s.readable())return;android.content.SharedPreferences.Editor edit=context.getSharedPreferences("boards",0).edit().putString(s.name(),Models.toJson(visibleItems(items)).toString()).putString(s.name()+"_endpoint",s.endpoint).putLong(s.name()+"_time",System.currentTimeMillis());edit.apply();}
@@ -90,13 +91,15 @@ public final class Repository {
     public void board(Source s,Result<List<Item>> cb) {
         if(!s.readable()){cb.failure("此平台已移除");return;}
         String cookie=CookieManager.getInstance().getCookie(s.endpoint);
+        String legacyCookie=s==Source.WEIBO?CookieManager.getInstance().getCookie(WeiboBoard.LEGACY):null;
         String userAgent=SourceSession.userAgent(context,s);
         requests.submit(ticket->{
             try {
-                List<Item> items=SourceParser.list(s,fetch(s.endpoint,cookie,s.endpoint,ticket,userAgent));
+                List<Item> items=s==Source.WEIBO
+                        ?WeiboBoard.load(url->fetch(url,url.equals(WeiboBoard.PRIMARY)?cookie:legacyCookie,s.boardPage(),ticket,userAgent))
+                        :SourceParser.list(s,fetch(s.endpoint,cookie,s.endpoint,ticket,userAgent));
                 ticket.check();
-                cache(s,items);
-                main.post(()->{if(!ticket.cancelled())cb.success(items);});
+                main.post(()->{if(!ticket.cancelled()){cache(s,items);cb.success(items);}});
             } catch(Exception e) { main.post(()->{if(!ticket.cancelled())cb.failure(explain(e));}); }
         });
     }
@@ -139,6 +142,7 @@ public final class Repository {
             if(ticket!=null)ticket.check();
             UrlPolicy.requirePublicHost(current);
             HttpURLConnection c=(HttpURLConnection)new URL(current).openConnection();
+            if(WeiboBoard.endpoint(current)){c.setUseCaches(false);c.setRequestProperty("Cache-Control","no-cache");}
             c.setInstanceFollowRedirects(false); c.setConnectTimeout(5000); c.setReadTimeout(7000);
             c.setRequestProperty("User-Agent",userAgent);
             c.setRequestProperty("Accept","text/html,application/json,image/*;q=0.8,*/*;q=0.5");

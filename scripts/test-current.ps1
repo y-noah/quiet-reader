@@ -1,7 +1,7 @@
-param([ValidateSet('fiveSourceUi','answerPagingUi','dynamicReadingUi','userJourneyRepairUi','loginSessionUi','loginWindowUi','browsingExperienceUi','expandedBrowsingUi','mobileLayoutUi')][string]$Suite='fiveSourceUi',[string]$GradleInit='')
+param([ValidateSet('fiveSourceUi','answerPagingUi','dynamicReadingUi','userJourneyRepairUi','loginSessionUi','loginWindowUi','browsingExperienceUi','expandedBrowsingUi','mobileLayoutUi','weiboBoardUi')][string]$Suite='fiveSourceUi',[string]$GradleInit='')
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$runner=@{fiveSourceUi='FiveSourceInstrumentation';answerPagingUi='AnswerPagingInstrumentation';dynamicReadingUi='DynamicReadingInstrumentation';userJourneyRepairUi='UserJourneyRepairInstrumentation';loginSessionUi='LoginSessionInstrumentation';loginWindowUi='LoginWindowInstrumentation';browsingExperienceUi='BrowsingExperienceInstrumentation';expandedBrowsingUi='ExpandedBrowsingInstrumentation';mobileLayoutUi='MobileLayoutInstrumentation'}[$Suite]
+$runner=@{fiveSourceUi='FiveSourceInstrumentation';answerPagingUi='AnswerPagingInstrumentation';dynamicReadingUi='DynamicReadingInstrumentation';userJourneyRepairUi='UserJourneyRepairInstrumentation';loginSessionUi='LoginSessionInstrumentation';loginWindowUi='LoginWindowInstrumentation';browsingExperienceUi='BrowsingExperienceInstrumentation';expandedBrowsingUi='ExpandedBrowsingInstrumentation';mobileLayoutUi='MobileLayoutInstrumentation';weiboBoardUi='WeiboBoardInstrumentation'}[$Suite]
 $tasks=@('assembleDebug','assembleDebugAndroidTest',"-P$Suite")
 if($GradleInit){$tasks=@('-I',$GradleInit)+$tasks}
 & "$PSScriptRoot/build.ps1" -Tasks $tasks
@@ -16,7 +16,7 @@ $report | Write-Output
 $remote=''; $location=$report | Select-String 'Output: (.+)' | Select-Object -Last 1
 if($location){$remote=$location.Matches.Groups[1].Value.Trim()}
 if($remote){& $adb -s emulator-5556 pull $remote $evidence; if($LASTEXITCODE -ne 0){throw 'Evidence pull failed'}}
-if($instrumentExit -ne 0 -or !(($report -match 'checks=\d+ failures=0$') -or ($report -match '^CHECKS \d+ FAILURES 0$')) -or ($report -match '^FAIL |^ERROR |INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|Process crashed') -or ($Suite -notin @('answerPagingUi','loginSessionUi','expandedBrowsingUi') -and !$remote)){throw 'Regression failed; inspect evidence'}
+if($instrumentExit -ne 0 -or !(($report -match 'checks=\d+ failures=0$') -or ($report -match '^CHECKS \d+ FAILURES 0$')) -or ($report -match '^FAIL |^ERROR |INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|Process crashed') -or ($Suite -notin @('answerPagingUi','loginSessionUi','expandedBrowsingUi','weiboBoardUi') -and !$remote)){throw 'Regression failed; inspect evidence'}
 
 if($Suite -eq 'browsingExperienceUi'){
     & $adb -s emulator-5556 shell am force-stop app.quietreader

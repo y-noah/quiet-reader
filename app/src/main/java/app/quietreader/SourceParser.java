@@ -20,8 +20,12 @@ public final class SourceParser {
         if(AdditionalSources.supports(source))return AdditionalSources.list(source,raw);
         List<Item> out=new ArrayList<>();
         if(source==Source.WEIBO&&raw.trim().startsWith("{")) {
-            JSONArray a=new JSONObject(raw).getJSONObject("data").getJSONArray("realtime");
-            for(int i=0;i<a.length();i++) { JSONObject t=a.getJSONObject(i); if(t.optInt("is_ad",0)!=0)continue;String title=t.optString("word",t.optString("word_scheme"));add(out,source,title,"https://s.weibo.com/weibo?q="+java.net.URLEncoder.encode(title,"UTF-8"),t.optString("num"),VideoPolicy.metadata(t)); }
+            JSONObject response=new JSONObject(raw);
+            if(response.has("ok")&&response.optInt("ok")!=1)throw new IllegalStateException("微博暂未返回热搜");
+            JSONObject data=response.getJSONObject("data");
+            JSONArray a=data.optJSONArray("band_list");
+            if(a==null)a=data.getJSONArray("realtime");
+            for(int i=0;i<a.length();i++) { JSONObject t=a.getJSONObject(i); if(t.optInt("is_ad",0)!=0)continue;String title=t.optString("word").trim();if(title.isEmpty())title=t.optString("note",t.optString("word_scheme")).trim();add(out,source,title,"https://s.weibo.com/weibo?q="+java.net.URLEncoder.encode(title,"UTF-8"),t.optString("num"),VideoPolicy.metadata(t)); }
         } else if(source==Source.ZHIHU) {
             JSONArray a=new JSONObject(raw).getJSONArray("data");
             for(int i=0;i<a.length();i++) {

@@ -8,7 +8,7 @@ import java.util.List;
 public final class Models {
     private Models() {}
     public enum Source {
-        WEIBO("微博", "热搜", "https://weibo.com/ajax/side/hotSearch", "https://passport.weibo.com/sso/signin?entry=wapsso&source=wapssowb&url=https%3A%2F%2Fm.weibo.cn%2F"),
+        WEIBO("微博", "热搜", WeiboBoard.PRIMARY, "https://passport.weibo.com/sso/signin?entry=wapsso&source=wapssowb&url=https%3A%2F%2Fm.weibo.cn%2F"),
         ZHIHU("知乎", "热榜", "https://www.zhihu.com/api/v3/feed/topstory/hot-list-web?limit=30&desktop=true", "https://www.zhihu.com/signin"),
         HUPU("虎扑", "热帖", "https://bbs.hupu.com/topic-daily-hot", "https://bbs.hupu.com/"),
         // Public web request checksum: MD5(SHA1("app=cailianpress&os=android&sv=835")); no account secret.
