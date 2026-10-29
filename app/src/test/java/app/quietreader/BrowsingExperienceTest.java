@@ -26,7 +26,7 @@ public class BrowsingExperienceTest {
         org.jsoup.nodes.Document page=org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.ZHIHU,19));
         assertEquals(1,page.select(".notice").size());assertTrue(page.select(".notice").first().hasClass("continuation-status"));
         d.moreStatus="";page=org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.ZHIHU,19));
-        assertEquals(1,page.select("details:not([open])").size());
+        assertTrue(page.select("details").isEmpty());assertFalse(page.text().contains("阅读提示"));
     }
     @Test public void readingSnapshotPreservesLoadedAnswersImagesAndInlineLinks()throws Exception{
         Document d=question();d.moreStatus="end";d.notice="末页";d.filteredSectionIds.add("video-1");

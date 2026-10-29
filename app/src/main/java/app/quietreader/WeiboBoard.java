@@ -13,6 +13,7 @@ final class WeiboBoard {
         try { return SourceParser.list(Source.WEIBO,fetch.get(PRIMARY)); }
         catch(Exception e) { first=e; }
         if(Thread.currentThread().isInterrupted())throw first;
+        if(first instanceof Repository.HttpFailure){Repository.HttpFailure failure=(Repository.HttpFailure)first;if(failure.status==429||failure.retryAt>System.currentTimeMillis())throw first;}
         try { return SourceParser.list(Source.WEIBO,fetch.get(LEGACY)); }
         catch(Exception e) { if(e!=first)e.addSuppressed(first);throw e; }
     }

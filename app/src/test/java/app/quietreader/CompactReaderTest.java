@@ -14,7 +14,7 @@ public final class CompactReaderTest {
         assertEquals(label,page.selectFirst("section.part").attr("data-section-label"));
         assertTrue(page.select("img").isEmpty());
         assertEquals("原文🐎仍完整保留",page.select("section.part p:not(.preview)").text());
-        assertTrue(page.select("a.action").text().contains(label));
+        assertEquals(label,page.select("section.part .section-label").text());assertEquals("1 · 收起 ↑",page.select("a.action").text());
     }
 
     @Test public void shortUnfoldedSectionKeepsExplicitMainOrReplyIdentity() {
@@ -47,7 +47,7 @@ public final class CompactReaderTest {
         for(int n=0;n<2;n++) {Section s=new Section("a"+n,"作者"+n,true);s.blocks.add(new Block("text","回答正文"+n));d.sections.add(s);d.blocks.addAll(s.blocks);}
         org.jsoup.nodes.Document closed=org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.ZHIHU,19,true,Collections.emptySet(),false));
         assertEquals(2,closed.select("a[href*='toggle?index=']").size());
-        assertEquals(1,closed.select("a[href='https://quiet-reader.invalid/more']").size());
+        assertEquals(1,closed.select("#reader-continuation[data-continuation=ready]").size());
         assertEquals(2,closed.select("p.preview").size());
         org.jsoup.nodes.Document open=org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.ZHIHU,19,true,Collections.singleton("a1"),false));
         assertEquals("回答正文1",open.select("#part-1 p:not(.preview)").text());

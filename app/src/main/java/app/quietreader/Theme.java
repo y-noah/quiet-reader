@@ -17,6 +17,7 @@ final class Theme {
     @SuppressWarnings("deprecation")
     static void configureWeb(WebView web,boolean sourcePage){
         web.setBackgroundColor(background(web.getContext()));
+        web.setVerticalScrollBarEnabled(false);
         boolean adapt=sourcePage&&dark(web.getContext());
         if(android.os.Build.VERSION.SDK_INT>=33)web.getSettings().setAlgorithmicDarkeningAllowed(adapt);
         else if(android.os.Build.VERSION.SDK_INT>=29)web.getSettings().setForceDark(adapt?WebSettings.FORCE_DARK_ON:WebSettings.FORCE_DARK_OFF);

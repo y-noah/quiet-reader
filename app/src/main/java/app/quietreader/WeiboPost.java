@@ -16,6 +16,16 @@ final class WeiboPost {
         }catch(Exception ignored){return "";}
     }
     static boolean same(String a,String b){String id=id(a);return !id.isEmpty()&&id.equals(id(b));}
+    /** Only the enclosing post's observed author header; never mentions or repost prose. */
+    static Element author(Element root){
+        if(root.closest(VideoPolicy.EXCLUDED+",.weibo-rp")!=null)return null;
+        Element owner=root.closest(".card-wrap,.card");if(owner==null)return null;
+        for(Element candidate:owner.select("header h3.m-text-cut,.info a.name")){
+            if(candidate.closest(".card-wrap,.card")!=owner||candidate.closest(VideoPolicy.EXCLUDED+",.weibo-rp,.weibo-text,.txt")!=null)continue;
+            if(!candidate.text().trim().isEmpty())return candidate;
+        }
+        return null;
+    }
     static boolean fulltextLabel(Element a){return a.text().trim().matches("(?:…|\\.\\.\\.)?(?:全文|展开全文)");}
     static String continuation(String page,Element root){
         if(!VideoPolicy.weiboTopic(page))return "";

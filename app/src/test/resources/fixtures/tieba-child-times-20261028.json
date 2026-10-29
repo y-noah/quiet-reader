@@ -1,0 +1,25 @@
+{
+  "url": "https://tieba.baidu.com/p/11139792603",
+  "endpoint": "https://tieba.baidu.com/p/totalComment?tid=11139792603&pn=1",
+  "captured_at": "2026-10-28T08:20:51.768939+00:00",
+  "replies": [
+    {
+      "thread_id": "11139792603",
+      "post_id": "154074790043",
+      "comment_id": "154076372041",
+      "now_time": 1793074275
+    },
+    {
+      "thread_id": "11139792603",
+      "post_id": "154074790043",
+      "comment_id": "154076383836",
+      "now_time": 1793074509
+    },
+    {
+      "thread_id": "11139792603",
+      "post_id": "154074791930",
+      "comment_id": "154074806091",
+      "now_time": 1793028136
+    }
+  ]
+}

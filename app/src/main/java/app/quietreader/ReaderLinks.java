@@ -9,6 +9,19 @@ public final class ReaderLinks {
     private ReaderLinks() {}
     private static final Pattern URL=Pattern.compile("https?://[^\\s<>\"'\\p{IsHan}，。；！？、（）【】]+",Pattern.CASE_INSENSITIVE);
     public static boolean allowed(String url){return UrlPolicy.https(url)&&!UrlPolicy.host(url).equals("quiet-reader.invalid");}
+    /** Resolve only the explicit Zhihu outbound wrapper, without following network redirects. */
+    static String readerTarget(String url){
+        if(readerSource(url)!=null)return url;
+        if(!allowed(url)||!UrlPolicy.host(url).equals("link.zhihu.com"))return "";
+        try {
+            java.net.URI wrapper=new java.net.URI(url);
+            if(!"/".equals(wrapper.getRawPath())&&!"".equals(wrapper.getRawPath()))return "";
+            String query=wrapper.getRawQuery();
+            if(query==null||!query.startsWith("target=")||query.indexOf('&')>=0||wrapper.getRawFragment()!=null)return "";
+            String target=java.net.URLDecoder.decode(query.substring(7),"UTF-8");
+            return readerSource(target)!=null?target:"";
+        }catch(Exception ignored){return "";}
+    }
     static Source readerSource(String url){
         if(!allowed(url))return null;
         String path=java.net.URI.create(url).getPath();
@@ -19,8 +32,12 @@ public final class ReaderLinks {
                 case HUPU: pattern="/\\d+(?:-\\d+)?\\.html";break;
                 case CLS: pattern="/(?:detail|share/article)/\\d+/?";break;
                 case V2EX: pattern="/t/\\d+/?";break;
+                case ITHOME: return IthomeSource.articleUrl(url)?source:null;
+                case THEPAPER: return !ThepaperSource.articleId(url).isEmpty()?source:null;
+                case BBC: return !BbcChineseSource.articleId(url).isEmpty()?source:null;
                 case SSPAI: pattern="/post/\\d+/?";break;
                 case TIEBA: pattern="/p/\\d+/?";break;
+                case BILIBILI: pattern="/video/BV[0-9A-Za-z]+/?";break;
                 case IFANR: pattern="/(?:app/)?\\d+/?";break;
                 case WEIBO: pattern="/(?:detail/[A-Za-z0-9]+|status/[A-Za-z0-9]+|\\d+/[A-Za-z0-9]+)/?";break;
                 default: continue;

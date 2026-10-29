@@ -11,16 +11,16 @@ import java.util.*;
 import java.util.concurrent.*;
 import static app.quietreader.Models.*;
 public final class MobileLayoutInstrumentation extends Instrumentation {
-    private LoginActivity page;private File output;private boolean live,raw,autoplay;private String only="";private boolean diagnose;private volatile String douyinCase="";private int checks,failures;
+    private LoginActivity page;private File output;private boolean live,raw,autoplay;private String only="";private boolean diagnose,current,layoutOnly;private volatile String douyinCase="";private int checks,failures;
     private final java.util.List<String> networkIssues=new java.util.concurrent.CopyOnWriteArrayList<>();
-    private final StringBuilder report=new StringBuilder();
+    private final StringBuilder report=new StringBuilder();private String target="";
     interface Task{void run()throws Exception;}
-    @Override public void onCreate(Bundle args){super.onCreate(args);diagnose=args!=null&&"true".equals(args.getString("diagnose"));live=args!=null&&"true".equals(args.getString("live"));raw=args!=null&&"true".equals(args.getString("raw"));autoplay=args!=null&&"true".equals(args.getString("autoplay"));if(args!=null)only=args.getString("source","");start();}
+    @Override public void onCreate(Bundle args){super.onCreate(args);diagnose=args!=null&&"true".equals(args.getString("diagnose"));live=args!=null&&"true".equals(args.getString("live"));raw=args!=null&&"true".equals(args.getString("raw"));autoplay=args!=null&&"true".equals(args.getString("autoplay"));if(args!=null){only=args.getString("source","");target=args.getString("target","");current="true".equals(args.getString("current"));layoutOnly="true".equals(args.getString("layoutOnly"));}start();}
     private void ui(Task task)throws Exception{Throwable[] e={null};runOnMainSync(()->{try{task.run();}catch(Throwable t){e[0]=t;}});if(e[0]!=null)throw new Exception(e[0]);}
     private void check(boolean ok,String label){android.util.Log.i("QR_MOBILE",(ok?"PASS ":"FAIL ")+label);checks++;if(!ok)failures++;report.append(ok?"PASS ":"FAIL ").append(label).append('\n');}
     private WebView web()throws Exception{Field f=LoginActivity.class.getDeclaredField("web");f.setAccessible(true);return (WebView)f.get(page);}
     private String js(String script)throws Exception{CountDownLatch done=new CountDownLatch(1);String[] result={""};WebView w=web();ui(()->w.evaluateJavascript(script,s->{result[0]=s;done.countDown();}));if(!done.await(15,TimeUnit.SECONDS))throw new IOException("JS timeout");return result[0];}
-    private String url(Source s){return switch(s){
+    private String url(Source s){if(!target.isEmpty())return target;return switch(s){
         case BAIDU->"https://www.baidu.com/s?wd=%E9%83%91%E9%92%A6%E6%96%87%E4%B8%AD%E7%BD%91";
         case TIEBA->"https://tieba.baidu.com/hottopic/browse/hottopic?topic_id=28366928&topic_name=%E4%B8%96%E7%BA%AA%E5%92%8C%E8%A7%A3";
         case BILIBILI->"https://www.bilibili.com/video/BV1VeHQ6tEaS/";
@@ -29,7 +29,7 @@ public final class MobileLayoutInstrumentation extends Instrumentation {
     private String selector(Source s){return switch(s){case BAIDU->"#content_left";case TIEBA->".topic-wrapper,.main-content,.pb-title-wrap,.pc-pb-reply-top";case BILIBILI->"#mirror-vdcon,#playerWrap";default->".leftContainer,.video-detail-container";};}
     private String fixture(Source s){
         String content=switch(s){
-            case BAIDU->"<div id=wrapper><div id=container><div id=content_left><div><h3>百度搜索结果：长标题应当自动换行</h3><p>可读的搜索摘要与原文入口</p><a id=action href='#detail'>打开原文</a></div></div><div id=content_right>桌面侧栏</div></div></div>";
+            case BAIDU->"<div id=wrapper><div id=container><div id=content_left><div><h3>百度搜索结果：长标题应当自动换行</h3><p>可读的搜索摘要与原文入口</p><div class=cos-row style='display:flex;width:700px'><div class=cos-col style='width:140px'><div id=qr-fixture-image style='width:140px;height:90px;background:gray'></div></div><div class=cos-col style='width:560px'><h3 id=qr-fixture-text>图片旁边的长标题与摘要应当在手机上依次排列</h3><p>这段文字不应被图片覆盖</p></div></div><a id=action href='#detail'>打开原文</a></div></div><div id=content_right>桌面侧栏</div></div></div>";
             case TIEBA->"<div class=topic-wrapper><div class=topic-header-info><h2 class=topic-title>贴吧话题长标题</h2></div><div class=topic-body><div class=main><ul class=thread-list><li><div class=center><a class=title id=action href='#detail'>相关帖子与讨论内容</a><div class=content>点击帖子继续阅读</div></div></li></ul></div></div></div>";
             case BILIBILI->"<div id=app><div id=mirror-vdcon><div class=left-container><div id=viewbox_report><h1>哔哩哔哩长视频标题需要正确换行</h1></div><div id=playerWrap><div id=bilibili-player><video></video></div></div><div id=arc_toolbar_report><button id=action>查看评论</button></div></div><div class=right-container>推荐侧栏</div></div></div>";
             default->"<div id=root><div class=playerControlHeight><div class=leftContainer><div class=video-detail-container><div><div class=xgplayer><video></video></div></div></div><div><h1>抖音视频完整描述需要换行显示</h1><button id=action>查看评论</button></div></div><div class=detailPage>桌面推荐栏</div></div></div>";
@@ -54,6 +54,9 @@ public final class MobileLayoutInstrumentation extends Instrumentation {
         String selector=selector(s);
         check(js("(()=>{let nodes=Array.from(document.querySelectorAll('"+selector+"')).filter(e=>e.getBoundingClientRect().width>0);return nodes.length>0&&nodes.every(e=>{let r=e.getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1;})})()").equals("true"),name+" main content and player fit viewport");
         report.append(name+" metrics ").append(js("JSON.stringify({width:innerWidth,scroll:document.documentElement.scrollWidth,scale:visualViewport.scale,title:document.title,text:document.body.innerText.slice(0,180),over:Array.from(document.querySelectorAll('#content_left>div,.topic-wrapper>div,.pc-pb-box,.pc-pb-box>.container,.image-text,.pb-title-wrap,.pb-content-wrap,.pc-pb-reply-list,.video-detail-container,.leftContainer>div,#mirror-vdcon>div')).filter(e=>{let r=e.getBoundingClientRect();return r.width>0&&r.right>innerWidth+2&&getComputedStyle(e).position!=='absolute'&&getComputedStyle(e).position!=='fixed'}).slice(0,18).map(e=>({tag:e.tagName,id:e.id,c:e.className,w:Math.round(e.getBoundingClientRect().width)}))})")).append('\n');
+    }
+    private void imageDiagnostics()throws Exception{
+        report.append("Image layout ").append(js("JSON.stringify(Array.from(document.querySelectorAll('#content_left img')).filter(e=>e.getBoundingClientRect().width>60).slice(0,6).map(e=>[e,e.parentElement,e.parentElement.parentElement,e.parentElement.parentElement.parentElement,e.parentElement.parentElement.parentElement.parentElement].map(n=>{let r=n.getBoundingClientRect(),s=getComputedStyle(n);return {tag:n.tagName,c:n.className,x:r.x,y:r.y,w:r.width,h:r.height,pos:s.position,float:s.cssFloat,display:s.display}})))")).append('\n');
     }
     @Override public void callActivityOnCreate(Activity a,Bundle state){
         super.callActivityOnCreate(a,state);
@@ -106,12 +109,35 @@ public final class MobileLayoutInstrumentation extends Instrumentation {
         }
         douyinCase="";
     }
+    private String currentTopic(Source source)throws Exception{
+        CountDownLatch done=new CountDownLatch(1);List<Item> rows=new ArrayList<>();String[] error={""};
+        Repository[] repository={null};DynamicBoard[] browser={null};
+        Repository.Result<List<Item>> result=new Repository.Result<>(){
+            public void success(List<Item> value){rows.addAll(value);done.countDown();}
+            public void failure(String why){error[0]=why;done.countDown();}
+        };
+        try{
+            ui(()->{if(source==Source.BILIBILI||source==Source.DOUYIN)browser[0]=new DynamicBoard(page,source,result);
+                else{repository[0]=new Repository(page);repository[0].board(source,result);}});
+            if(!done.await(40,TimeUnit.SECONDS))throw new IOException(source+" current board timed out");
+            if(rows.isEmpty())throw new IOException(source+" current board unavailable: "+error[0]);
+            Item item=rows.get(0);report.append(source+" current topic ").append(item.title).append(" url=").append(item.url).append('\n');
+            return item.url;
+        }finally{ui(()->{if(browser[0]!=null)browser[0].close();if(repository[0]!=null)repository[0].close();});}
+    }
     private void run(Source s)throws Exception{
-        page=(LoginActivity)startActivitySync(new Intent(getTargetContext(),LoginActivity.class).putExtra("source",s.name()).putExtra("url",url(s)).putExtra("browse",true).putExtra("board",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        if(!target.isEmpty()&&(!live||!UrlPolicy.belongs(s,target)))throw new IllegalArgumentException("Target must belong to the selected live source");
+        page=(LoginActivity)startActivitySync(new Intent(getTargetContext(),LoginActivity.class).putExtra("source",s.name()).putExtra("url",live&&current?s.boardPage():url(s)).putExtra("browse",true).putExtra("board",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
 
+        if(live&&current){String target=currentTopic(s);ui(()->web().loadUrl(target));}
         if(diagnose){android.util.Log.i("QR_DIAG","Holding before any test gesture");Thread.sleep(600000);}
-        if(raw){ui(()->{Field f=LoginActivity.class.getDeclaredField("mobileLayout");f.setAccessible(true);f.setBoolean(page,false);web().getSettings().setLoadWithOverviewMode(true);web().reload();});Thread.sleep(18000);}else waitLayout();Thread.sleep(live?3500:400);bounds(s,s.name());shot(s.name());
-        if(live){
+        if(raw){ui(()->{Field f=LoginActivity.class.getDeclaredField("mobileLayout");f.setAccessible(true);f.setBoolean(page,false);web().getSettings().setLoadWithOverviewMode(true);web().reload();});Thread.sleep(18000);}else waitLayout();Thread.sleep(live?3500:400);bounds(s,s.name());if(live&&s==Source.BAIDU)imageDiagnostics();shot(s.name());
+        if(live&&s==Source.TIEBA&&!target.isEmpty())report.append("Post structure ").append(js("JSON.stringify({title:document.title,roots:Array.from(document.querySelectorAll('.pc-pb-box,.pb-content-wrap,.pc-pb-reply-list,.image-text,.pb-content-item,.d_post_content')).slice(0,15).map(e=>({c:e.className,children:Array.from(e.querySelectorAll('*')).slice(0,65).map(n=>({tag:n.tagName,c:n.className,text:n.children.length===0?n.textContent.slice(0,60):''}))}))})")).append('\n');
+        if(live&&s==Source.BAIDU){
+            check(js("(()=>{let rows=Array.from(document.querySelectorAll('#content_left .cos-row')).filter(r=>r.querySelector('.cos-col img'));return rows.length>0&&rows.every(row=>{let cols=Array.from(row.children).filter(e=>e.matches('.cos-col')&&e.getBoundingClientRect().height>0);return cols.every((e,i)=>i===0||cols[i-1].getBoundingClientRect().bottom<=e.getBoundingClientRect().top+1)})})()").equals("true"),"BAIDU current image result columns do not overlap");
+            js("document.querySelector('#content_left .cos-row:has(.cos-col img)')?.scrollIntoView({block:'center'})");Thread.sleep(500);shot("BAIDU-image-results");
+        }
+        if(live&&!layoutOnly){
             if((s==Source.DOUYIN||s==Source.BILIBILI)&&js("!!document.querySelector('.video-detail-container,#playerWrap')").equals("true")){
                 String rect=js("JSON.stringify((()=>{let e=document.querySelector('#qr-douyin-player button')||document.querySelector('.video-detail-container,#playerWrap'),r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})())");
                 org.json.JSONObject point=new org.json.JSONObject((String)new org.json.JSONTokener(rect).nextValue());
@@ -160,6 +186,7 @@ public final class MobileLayoutInstrumentation extends Instrumentation {
             js("(()=>{let e=document.querySelector('.pc-pb-box,.route-scroll-container');if(e)e.scrollTop=650;else scrollTo(0,650)})()");Thread.sleep(3000);shot(s+"-scrolled");
         }
         if(!live){
+            if(s==Source.BAIDU)check(js("document.querySelector('#qr-fixture-image').getBoundingClientRect().bottom<=document.querySelector('#qr-fixture-text').getBoundingClientRect().top").equals("true"),"BAIDU image and text columns stack without overlap");
             check(js("document.querySelector('#action').click();document.body.dataset.clicked").equals(org.json.JSONObject.quote("yes")),s+" original event handler retained");
             ui(()->{android.view.ViewGroup.LayoutParams lp=web().getLayoutParams();lp.width=Math.round(320*page.getResources().getDisplayMetrics().density);web().setLayoutParams(lp);});Thread.sleep(400);
             bounds(s,s+" narrow320");
@@ -175,7 +202,7 @@ public final class MobileLayoutInstrumentation extends Instrumentation {
             check(js("document.querySelector('meta[name=viewport]').content").equals(org.json.JSONObject.quote("width=1280")),s+" original viewport restored");
             js(SourceMobileLayout.script(s,true));bounds(s,s+" restored");
             js("scrollTo(0,500)");check(!js("scrollY").equals("0"),s+" vertical scrolling works");
-        }else if(s==Source.TIEBA){
+        }else if(!layoutOnly&&s==Source.TIEBA){
             ui(()->web().loadUrl("https://tieba.baidu.com/p/10977988189"));waitLayout();Thread.sleep(3500);bounds(s,"TIEBA-post");shot("TIEBA-post");
         }
         if(!live&&s==Source.DOUYIN)fallbackFixtures();
@@ -183,6 +210,9 @@ public final class MobileLayoutInstrumentation extends Instrumentation {
     }
     @Override public void onStart(){try{
         output=new File(getTargetContext().getExternalFilesDir(null),"mobile-layout-qa/"+(live?"live-":"fixture-")+System.currentTimeMillis());output.mkdirs();
+        if(!only.isEmpty()&&!java.util.Set.of("BAIDU","TIEBA","BILIBILI","DOUYIN").contains(only))throw new IllegalArgumentException("Unsupported source: "+only);
+        if(!target.isEmpty()&&only.isEmpty())throw new IllegalArgumentException("Target requires one source");
+        report.append("live=").append(live).append(" current=").append(current).append(" layoutOnly=").append(layoutOnly).append("; layout checks do not certify login or playback\n");
         for(Source s:new Source[]{Source.BAIDU,Source.TIEBA,Source.BILIBILI,Source.DOUYIN})if(only.isEmpty()||s.name().equals(only))run(s);
     }catch(Throwable e){failures++;report.append("ERROR ").append(e).append('\n');}
     finally{try{if(page!=null)ui(page::finish);}catch(Exception ignored){}

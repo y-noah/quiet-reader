@@ -1,0 +1,304 @@
+{
+  "schema": 1,
+  "corpus_sha256": "4dc5f5dba33a4cd3d5506e3f8056982c371e06bb3f640489d623564e92e5a36a",
+  "scope": "After-score synthetic regression challenge copied from retained JVM safety cases, not independent or population evaluation.",
+  "pairs": [
+    {
+      "label": "uncertain",
+      "reason": "Explicit fabricated/quoted/withdrawn/old text is not the underlying current claim.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/0/left",
+        "title": "有人杜撰了这句话，傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/0/right",
+        "title": "傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Explicit fabricated/quoted/withdrawn/old text is not the underlying current claim.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/1/left",
+        "title": "网上流传的虚构标题，傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 2,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/1/right",
+        "title": "傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 2,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Explicit fabricated/quoted/withdrawn/old text is not the underlying current claim.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/2/left",
+        "title": "请别再照搬这个标题，傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 3,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/2/right",
+        "title": "傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 3,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Explicit fabricated/quoted/withdrawn/old text is not the underlying current claim.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/3/left",
+        "title": "上个月的旧文章标题，傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 4,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/3/right",
+        "title": "傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 4,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Explicit fabricated/quoted/withdrawn/old text is not the underlying current claim.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/4/left",
+        "title": "被冒用的文章标题，傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 5,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/4/right",
+        "title": "傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 5,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Explicit fabricated/quoted/withdrawn/old text is not the underlying current claim.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/5/left",
+        "title": "原作者撤回了这个标题，傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 6,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/5/right",
+        "title": "傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 6,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Explicit fabricated/quoted/withdrawn/old text is not the underlying current claim.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/6/left",
+        "title": "这句话断章取义，傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 7,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/6/right",
+        "title": "傲慢的皇马还要装多久鸵鸟",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 7,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Repeated qualified assertion has no new independent current event evidence.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/7/left",
+        "title": "工程师林清将加盟江城大学",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 8,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/7/right",
+        "title": "工程师林清将加盟江城大学",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 8,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Repeated qualified assertion has no new independent current event evidence.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/8/left",
+        "title": "工程师林清考虑加盟江城大学",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 9,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/8/right",
+        "title": "工程师林清考虑加盟江城大学",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 9,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Repeated qualified assertion has no new independent current event evidence.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/9/left",
+        "title": "工程师林清去年加盟江城大学",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 10,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/9/right",
+        "title": "工程师林清去年加盟江城大学",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 10,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Repeated qualified assertion has no new independent current event evidence.",
+      "provenance": "Synthetic existing regression cases; quotation scores were previously investigated on desktop. This is after-score development safety testing, not independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-safety/10/left",
+        "title": "工程师林清是否加盟江城大学",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 11,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-safety/10/right",
+        "title": "工程师林清是否加盟江城大学",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 11,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    }
+  ]
+}

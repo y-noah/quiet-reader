@@ -51,4 +51,9 @@ public class WeiboBoardTest {
         catch(java.io.InterruptedIOException expected){assertEquals(1,calls.size());}
         finally{Thread.interrupted();}
     }
+    @Test public void rateLimitDoesNotProbeAnotherEndpoint()throws Exception{
+        List<String> calls=new ArrayList<>();
+        try{WeiboBoard.load(url->{calls.add(url);throw new Repository.HttpFailure(429,Long.MAX_VALUE);});fail();}
+        catch(Repository.HttpFailure expected){assertEquals(429,expected.status);assertEquals(1,calls.size());}
+    }
 }

@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "runtime": "onnxruntime-android:1.23.2",
+  "tokenizer_runtime": "sentencepiece:0.2.1+qr-jni-v1",
+  "tokenizer_source_revision": "31646a467d2051eb904e0b45de3a73e91fe1c1e3",
+  "models": [
+    {
+      "original": "BAAI/bge-small-zh-v1.5",
+      "original_revision": "7999e1d3359715c523056ef9478215996d62a620",
+      "quantized": "onnx-community/bge-small-zh-v1.5-ONNX",
+      "quantized_revision": "9507db33464b5da99a532ac26b2a251767cbc62b",
+      "weights": [
+        "onnx/model_quantized.onnx",
+        "onnx/model_quantized.onnx_data"
+      ],
+      "tokenizer": [
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "vocab.txt"
+      ],
+      "id": "embedding",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "embedding/model_quantized.onnx",
+          "bytes": 168002,
+          "sha256": "99a6e522710c00220c89f8c52e0cc5aa09d4cbb1c34c0e932eab3a9dfdc65df3"
+        },
+        {
+          "path": "embedding/model_quantized.onnx_data",
+          "bytes": 23774208,
+          "sha256": "952623481ca8beea884e3d3c9ecaf8a3c7bf1d0c21de29e970cd31af9d37a90b"
+        },
+        {
+          "path": "embedding/upstream/vocab.txt",
+          "bytes": 109540,
+          "sha256": "45bbac6b341c319adc98a532532882e91a9cefc0329aa57bac9ae761c27b291c"
+        }
+      ]
+    },
+    {
+      "original": "BAAI/bge-reranker-base",
+      "original_revision": "2cfc18c9415c912f9d8155881c133215df768a70",
+      "quantized": "Xenova/bge-reranker-base",
+      "quantized_revision": "280bcc27a84e0b898c251e06fddb25171bd9b101",
+      "weights": [
+        "onnx/model_int8.onnx"
+      ],
+      "tokenizer": [
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "sentencepiece.bpe.model"
+      ],
+      "id": "reranker",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "reranker/model_int8.onnx",
+          "bytes": 278825308,
+          "sha256": "2059d8ef0b6e935b4845e11b38c9af9e9e2e7b91f69fc99efe03254e0a7da8d3"
+        },
+        {
+          "path": "reranker/upstream/sentencepiece.bpe.model",
+          "bytes": 5069051,
+          "sha256": "cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865"
+        }
+      ]
+    }
+  ]
+}

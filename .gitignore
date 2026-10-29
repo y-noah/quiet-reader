@@ -1,5 +1,7 @@
 .tools/
 .gradle/
+.cxx/
+**/.cxx/
 **/build/
 local.properties
 *.jks
@@ -9,7 +11,13 @@ artifacts/
 .env.*
 !.env.example
 *.p12
+# Public loopback regression certificate, packaged only in androidTest.
+!app/src/androidTest/assets/loopback-cancellation-test.p12
 *.pfx
 password.xml
 .codex/
 .codex-remote-attachments/
+
+# Generated Python bytecode
+__pycache__/
+*.py[cod]

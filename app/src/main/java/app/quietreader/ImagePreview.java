@@ -19,14 +19,16 @@ final class ImagePreview {
     private final java.util.List<String> urls;
     private int index;
     private final boolean dark;
-    private final GalleryLoader loader;
     private final java.util.function.Consumer<String> invalidate;
+    private final Runnable cancelLoad;
+    private final java.util.function.Supplier<GalleryLoader> beginLoad;
     private Button previous,next;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final LinearLayout layout;
     private final TextView status;
     private final ProgressBar progress;
     private final AlertDialog dialog;
+    private TextView compactTitle;
     private volatile WebView current;
     private volatile boolean closed;
     private boolean settled,checking;
@@ -36,7 +38,11 @@ final class ImagePreview {
         this(activity,Collections.singletonList(url),0,dark,u->loader.load(),u->invalidate.run());
     }
     ImagePreview(Activity activity,java.util.List<String> urls,int index,boolean dark,GalleryLoader loader,java.util.function.Consumer<String> invalidate){
-        this.activity=activity;this.urls=new java.util.ArrayList<>(urls);this.index=index;this.dark=dark;this.loader=loader;this.invalidate=invalidate;
+        this(activity,urls,index,dark,loader,invalidate,()->{},()->loader);
+    }
+    ImagePreview(Activity activity,java.util.List<String> urls,int index,boolean dark,GalleryLoader loader,java.util.function.Consumer<String> invalidate,Runnable cancelLoad,java.util.function.Supplier<GalleryLoader> beginLoad){
+        this.cancelLoad=cancelLoad;this.beginLoad=beginLoad;
+        this.activity=activity;this.urls=new java.util.ArrayList<>(urls);this.index=index;this.dark=dark;this.invalidate=invalidate;
         int padding=(int)(16*activity.getResources().getDisplayMetrics().density);
         layout=new LinearLayout(activity);layout.setOrientation(LinearLayout.VERTICAL);
         layout.setBackgroundColor(dark?0xff1f2025:0xfffafafa);
@@ -48,14 +54,26 @@ final class ImagePreview {
             previous=new Button(activity);previous.setText("上一张");previous.setOnClickListener(v->move(-1));nav.addView(previous,new LinearLayout.LayoutParams(0,-2,1));
             next=new Button(activity);next.setText("下一张");next.setOnClickListener(v->move(1));nav.addView(next,new LinearLayout.LayoutParams(0,-2,1));layout.addView(nav);
         }
-        dialog=new AlertDialog.Builder(activity).setTitle("正文图片 · 双指缩放").setView(layout).setNegativeButton("重试",null).setPositiveButton("关闭",null).create();
+        AlertDialog.Builder builder=new AlertDialog.Builder(activity).setTitle("正文图片 · 双指缩放").setView(layout).setNegativeButton("重试",null).setPositiveButton("关闭",null);
+        if(activity.getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE){
+            compactTitle=new TextView(activity);compactTitle.setTextSize(16);compactTitle.setTextColor(dark?0xffcdcfd5:0xff30323a);
+            compactTitle.setPadding(padding,padding/2,padding,padding/2);builder.setCustomTitle(compactTitle);
+            status.setTextSize(12);status.setPadding(padding,0,padding,0);
+        }
+        dialog=builder.create();
         dialog.setOnDismissListener(ignored->{closed=true;release();});
     }
-    void show(){dialog.show();dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v->{if(closed)return;invalidate.accept(urls.get(index));start();});start();}
+    void show(){
+        dialog.show();
+        if(activity.getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE)
+            dialog.getWindow().setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT);
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v->{if(closed)return;invalidate.accept(urls.get(index));start();});start();
+    }
     private void move(int delta){int target=index+delta;if(closed||target<0||target>=urls.size())return;index=target;start();}
     void dismiss(){dialog.dismiss();}
     private boolean active(WebView web){return !closed&&web==current;}
     private void release(){
+        cancelLoad.run();
         if(slow!=null)handler.removeCallbacks(slow);
         if(inspectionTimeout!=null)handler.removeCallbacks(inspectionTimeout);
         if(navigation!=null)handler.removeCallbacks(navigation);
@@ -67,14 +85,17 @@ final class ImagePreview {
         settled=true;checking=false;web.getSettings().setJavaScriptEnabled(false);
         if(slow!=null)handler.removeCallbacks(slow);
         if(inspectionTimeout!=null)handler.removeCallbacks(inspectionTimeout);
-        progress.setVisibility(View.GONE);status.setText(message);dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(true);
+        progress.setVisibility(View.GONE);status.setText(message);
+        if(compactTitle!=null&&ready)status.setVisibility(View.GONE);
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(true);
     }
     private void start(){
-        if(closed)return;release();settled=false;
+        if(closed)return;release();final GalleryLoader pageLoader=beginLoad.get();settled=false;
         final String url=urls.get(index);
-        dialog.setTitle("正文图片 "+(index+1)+" / "+urls.size()+" · 双指缩放");
+        String title="正文图片 "+(index+1)+" / "+urls.size()+" · 双指缩放";
+        if(compactTitle!=null)compactTitle.setText(title);else dialog.setTitle(title);
         if(previous!=null){previous.setEnabled(index>0);next.setEnabled(index+1<urls.size());}
-        status.setText("正在加载图片…");progress.setVisibility(View.VISIBLE);dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
+        status.setText("正在加载图片…");status.setVisibility(View.VISIBLE);progress.setVisibility(View.VISIBLE);dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
         WebView web=new WebView(activity);current=web;
         web.setOnTouchListener(new View.OnTouchListener(){
             float x,y;boolean multiple;float initialScale;
@@ -95,9 +116,10 @@ final class ImagePreview {
         settings.setBuiltInZoomControls(true);settings.setDisplayZoomControls(false);settings.setUseWideViewPort(true);settings.setLoadWithOverviewMode(true);
         Theme.configureWeb(web,false);
         if(android.os.Build.VERSION.SDK_INT<=27)web.setLayerType(View.LAYER_TYPE_SOFTWARE,null);
-        // Limit the preview to the available window; large images remain scrollable/zoomable.
-        int height=(int)(activity.getResources().getDisplayMetrics().heightPixels*.55);
-        layout.addView(web,new LinearLayout.LayoutParams(-1,height));
+        // Reserve controls first, then give the image the remaining measured space.
+        // A fixed image height can extend under the buttons in landscape/large fonts.
+        layout.setMinimumHeight((int)(activity.getResources().getDisplayMetrics().heightPixels*.75));
+        layout.addView(web,new LinearLayout.LayoutParams(-1,0,1));
         final String html="<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; img-src https:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\"><style>body{margin:0;background:"+(dark?"#1f2025;color:#cdcfd5":"#fafafa;color:#30323a")+"}img{width:100%;height:auto}</style></head><body><img src='"+ReaderHtml.escape(url)+"' alt='图片暂不可用'></body></html>";
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView w,WebResourceRequest request){return true;}
@@ -106,14 +128,14 @@ final class ImagePreview {
                 String requested=request.getUrl().toString();
                 if(request.isForMainFrame()&&PAGE.equals(requested))return new WebResourceResponse("text/html","UTF-8",200,"OK",Collections.singletonMap("Cache-Control","no-store"),new ByteArrayInputStream(html.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
                 if(!url.equals(requested))return unavailable();
-                try{WebResourceResponse response=loader.load(url);if(response==null)throw new java.io.IOException("Missing image response");return response;}
-                catch(Exception failure){handler.post(()->finish(w,false,"图片加载失败，请点「重试」；也可以关闭后继续阅读。"));return unavailable();}
+                try{WebResourceResponse response=pageLoader.load(url);if(response==null||!active(w))throw new java.io.IOException("Missing image response");return response;}
+                catch(Exception failure){handler.post(()->finish(w,false,"图片加载失败，请点「重试」。"));return unavailable();}
             }
             @Override public void onReceivedError(WebView w,WebResourceRequest request,WebResourceError error){
-                if(request.isForMainFrame()||url.equals(request.getUrl().toString()))finish(w,false,"图片加载失败，请点「重试」；也可以关闭后继续阅读。");
+                if(request.isForMainFrame()||url.equals(request.getUrl().toString()))finish(w,false,"图片加载失败，请点「重试」。");
             }
             @Override public void onReceivedHttpError(WebView w,WebResourceRequest request,WebResourceResponse response){
-                if(request.isForMainFrame()||url.equals(request.getUrl().toString()))finish(w,false,"图片加载失败，请点「重试」；也可以关闭后继续阅读。");
+                if(request.isForMainFrame()||url.equals(request.getUrl().toString()))finish(w,false,"图片加载失败，请点「重试」。");
             }
             @Override public void onPageFinished(WebView w,String page){
                 if(!active(w)||settled||checking||!PAGE.equals(w.getUrl()))return;

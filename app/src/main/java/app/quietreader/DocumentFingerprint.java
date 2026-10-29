@@ -14,7 +14,17 @@ final class DocumentFingerprint {
     static String of(Document document) {
         DocumentFingerprint f=new DocumentFingerprint();
         f.text(document.title);f.text(document.byline);f.text(document.url);f.text(document.notice);
+        f.text(document.metadataHash);
+        if(document.topic!=null){f.text(document.topic.postUrl);f.text(document.topic.postSession);f.number(document.topic.choices.size());for(Item item:document.topic.choices){f.text(item.title);f.text(item.url);f.text(item.detail);}}
+        f.number(document.discussionPage);
+        f.number(document.virtualDiscussion?1:0);
+        if(UrlPolicy.belongs(Source.TIEBA,document.sourceUrl())){f.text("tiebaReplyRevision");f.number(document.tiebaReplyRevision);}
+        if(UrlPolicy.belongs(Source.HUPU,document.sourceUrl())){f.text("hupuBodyRevision");f.number(document.hupuBodyRevision);}
+        f.text(document.videoPoster);
+        f.text(document.videoUrl);
+        f.number(document.videos.size());for(VideoAttachment video:document.videos){f.text(video.url);f.text(video.poster);}
         f.number(document.unsupportedVideo?1:0);
+        f.number(document.videoTopic?1:0);
         f.number(document.loginRequired?1:0);
         f.number(document.filteredVideo?1:0);f.number(document.filteredVideos);
         for(String id:new java.util.TreeSet<>(document.filteredSectionIds))f.text(id);
@@ -22,6 +32,10 @@ final class DocumentFingerprint {
         f.number(document.sections.size());
         for(Section section:document.sections) {
             f.text(section.id);f.text(section.label);f.text(section.continuationUrl);f.number(section.answer?1:0);f.blocks(section.blocks);
+            if(!section.sourcePostId.isEmpty()){f.text("sourcePostId");f.text(section.sourcePostId);}
+            if(section.nestedReply){f.text("nestedReply");}
+            if(!section.parentSectionId.isEmpty()){f.text("parentSectionId");f.text(section.parentSectionId);}
+            if(!section.replyToAuthor.isEmpty()){f.text("replyToAuthor");f.text(section.replyToAuthor);}
         }
         f.number(document.related.size());
         for(Item item:document.related) {

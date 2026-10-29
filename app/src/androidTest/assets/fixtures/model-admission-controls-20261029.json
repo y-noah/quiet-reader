@@ -1,0 +1,223 @@
+{
+  "schema": 1,
+  "corpus_sha256": "8e52dd82da4147c240b48963986d0680771ee71d38ccb9928e3d0077298a0b27",
+  "scope": "Synthetic admission ablation controls frozen before scoring; pairwise <=24 tasks, not population accuracy.",
+  "pairs": [
+    {
+      "label": "same",
+      "reason": "Same public opening of same archive.",
+      "provenance": "Synthetic control frozen before model scores; not observed news or independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-control/0/left",
+        "title": "蓝桥博物馆修复档案首次面向公众",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-control/0/right",
+        "title": "蓝桥博物馆修复档案首次向公众开放",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "same",
+      "reason": "Same registration channel; wording only.",
+      "provenance": "Synthetic control frozen before model scores; not observed news or independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-control/1/left",
+        "title": "青山图书馆跨年阅读活动报名通道",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 2,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-control/1/right",
+        "title": "青山图书馆跨年阅读活动的报名通道",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 2,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "different",
+      "reason": "Public access versus researcher-only access.",
+      "provenance": "Synthetic control frozen before model scores; not observed news or independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-control/2/left",
+        "title": "蓝桥博物馆修复档案首次面向公众",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 3,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-control/2/right",
+        "title": "蓝桥博物馆修复档案仍仅供研究人员查阅",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 3,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "different",
+      "reason": "Registration opens versus closes.",
+      "provenance": "Synthetic control frozen before model scores; not observed news or independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-control/3/left",
+        "title": "青山图书馆跨年阅读活动报名通道开启",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 4,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-control/3/right",
+        "title": "青山图书馆跨年阅读活动报名通道关闭",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 4,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "different",
+      "reason": "Weekend opening versus cancellation.",
+      "provenance": "Synthetic control frozen before model scores; not observed news or independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-control/4/left",
+        "title": "蓝桥博物馆本周末向公众开放",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 5,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-control/4/right",
+        "title": "蓝桥博物馆取消本周末向公众开放",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 5,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "different",
+      "reason": "Confirmed winners versus prediction.",
+      "provenance": "Synthetic control frozen before model scores; not observed news or independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-control/5/left",
+        "title": "青山文学奖本届完整获奖名单",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 6,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-control/5/right",
+        "title": "青山文学奖本届获奖名单预测",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 6,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "different",
+      "reason": "Increase versus decrease.",
+      "provenance": "Synthetic control frozen before model scores; not observed news or independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-control/6/left",
+        "title": "青山食堂饭菜涨价后的学生意见",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 7,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-control/6/right",
+        "title": "青山食堂饭菜降价后的学生意见",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 7,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    },
+    {
+      "label": "uncertain",
+      "reason": "Shared subject, distinct reporting angle; insufficient event identity.",
+      "provenance": "Synthetic control frozen before model scores; not observed news or independent holdout.",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/admission-control/7/left",
+        "title": "蓝桥博物馆古籍修复背后的故事",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 8,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      },
+      "right": {
+        "source": "BAIDU",
+        "url": "https://example.org/admission-control/7/right",
+        "title": "蓝桥博物馆古籍修复的新项目计划",
+        "snippet": "",
+        "heat": "",
+        "video": false,
+        "rank": 8,
+        "publishedAt": null,
+        "observedAt": 1793232000000
+      }
+    }
+  ]
+}

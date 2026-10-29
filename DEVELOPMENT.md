@@ -1,5 +1,11 @@
 # 静读 / Quiet Reader
 
+## 当前开发需求基线（2026-10-23）
+
+后续个性化热搜重构以 [中文个性化热搜阅读 V1](docs/requirements/personalized-hot-topics-v1.md) 为需求、模块边界和验收基线。已确认方案为 BGE-small 中文初筛 + BGE-reranker-base INT8 按需精排，UI 使用原型第二种“阅读卡片”；默认本地运行、免 Key，整体内存与耗电需单独验证。
+
+参考原型已归档在 `docs/reference/news-discovery-concept.html`，仅第二变体的视觉是选定方案，示例数据与旧 RSS 业务语义不是生产需求。下方旧版本内容保留作历史证据，不代表新方案已实现或通过验收；用户后续明确变更优先。
+
 ## 0.3.7 (2026-10-02)
 
 DynamicReader's current-WebView and sampled-location guards now apply known Tieba/Hupu post identities, not just platform domain membership. UrlPolicy shares the supported numeric post/pagination patterns between sameForumPost and sameThread; the latter still excludes an identical URL. Both endpoints must belong to the platform, and Tieba passport hosts cannot supply forum content. Independent `test-identity.ps1` uses real production callbacks with local synthetic same-origin History navigation, including positive same-post and pagination cases; it does not prove HTTP302 handling. The new gate is part of test-local. Evidence: `IDENTITY-QA.md`, `VERIFICATION-0.3.7.md`. The current live-source and latency observations on unchanged 0.3.6 remain separately labelled in `LIVE-QA-0.3.6-remaining.md` and `LATENCY-0.3.6.md`.

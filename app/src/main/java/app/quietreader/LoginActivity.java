@@ -18,8 +18,13 @@ public final class LoginActivity extends Activity {
     private WebChromeClient.CustomViewCallback fullscreenCallback;
     private android.widget.FrameLayout fullscreenLayer;
     private String initialUrl="",pageIssue="";
-    private int extraction;
-    private int navigation;
+    private Item requestedItem;
+    private volatile int extraction;
+    private volatile int navigation;
+    private volatile boolean extractionClosed;
+    private final java.util.concurrent.ThreadPoolExecutor extractor=new java.util.concurrent.ThreadPoolExecutor(
+            1,1,0,java.util.concurrent.TimeUnit.MILLISECONDS,new java.util.concurrent.ArrayBlockingQueue<>(1),
+            new java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy());
     private boolean positionedPage;
     private int[] restoredPosition;
     private SourceWindow sourceWindow;
@@ -27,6 +32,7 @@ public final class LoginActivity extends Activity {
     public static Document pendingDocument;
     @Override public void onCreate(Bundle state) {
         Theme.apply(this);super.onCreate(state);
+        BackNavigation.install(this,this::systemBack);
         try { source=Source.valueOf(getIntent().getStringExtra("source")); } catch(Exception e) { finish(); return; }
         if(!source.readable()){pendingDocument=null;finish();return;}
         browse=getIntent().getBooleanExtra("browse",false);
@@ -35,8 +41,8 @@ public final class LoginActivity extends Activity {
         final boolean board=getIntent().getBooleanExtra("board",false);
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Theme.background(this)); root.setFitsSystemWindows(true);
         LinearLayout bar=new LinearLayout(this);
-        Button back=new Button(this); back.setText(board?"返回热榜":"返回阅读"); back.setOnClickListener(v->returnToReader()); bar.addView(back);
-        if(!board&&!browse){Button read=new Button(this); read.setText("读取当前页"); read.setOnClickListener(v->extract()); bar.addView(read);}
+        Button back=new Button(this); back.setText(board?"返回热榜":getIntent().getBooleanExtra("return_to_discovery",false)?"返回发现":"返回阅读"); back.setOnClickListener(v->returnToReader()); bar.addView(back);
+        if(!board&&(!browse||getIntent().getBooleanExtra("reader_import",false))){Button read=new Button(this); read.setText("读取当前页"); read.setOnClickListener(v->extract()); bar.addView(read);}
         if(browse){Button signIn=new Button(this);signIn.setText("登录滑窗");signIn.setOnClickListener(v->{CookieManager.getInstance().flush();startActivityForResult(new Intent(this,LoginActivity.class).putExtra("source",source.name()).putExtra("url",UrlPolicy.belongs(source,web.getUrl())?web.getUrl():source.login).putExtra("board",true),200);});bar.addView(signIn);}
         desktopMode=state==null?SourceSession.desktop(this,source):state.getBoolean("desktop",SourceSession.desktop(this,source));
         Button desktop=new Button(this);
@@ -114,9 +120,10 @@ public final class LoginActivity extends Activity {
             @Override public void onReceivedError(WebView v,WebResourceRequest r,WebResourceError e){if(r.isForMainFrame())issue("来源页连接失败："+e.getErrorCode()+"。可切换手机版/桌面版后重试");}
             @Override public void onReceivedHttpError(WebView v,WebResourceRequest r,WebResourceResponse response){if(r.isForMainFrame())issue("来源页返回 HTTP "+response.getStatusCode()+"；可稍后重试，登录不一定能解决");}
         });
-        web.setDownloadListener((u,a,c,m,n)->status.setText("下载已拦截；News 不要求安装来源 App"));
+        web.setDownloadListener((u,a,c,m,n)->status.setText("下载已拦截；New 不要求安装来源 App"));
         String url=getIntent().getStringExtra("url");
         initialUrl=UrlPolicy.loginAllowed(source,url)?url:source.login;
+        try{Item item=Item.from(new org.json.JSONObject(getIntent().getStringExtra("reader_item")));if(item.source==source&&initialUrl.equals(item.url))requestedItem=item;}catch(Exception ignored){}
         if(state==null||web.restoreState(state)==null)web.loadUrl(initialUrl);
         else if(adapted&&mobileLayout&&web.getUrl()!=null){String restored=web.getUrl(),recovered=SourceMobileLayout.recoveryUrl(source,restored);if(!restored.equals(recovered))web.loadUrl(recovered);}
     }
@@ -138,31 +145,58 @@ public final class LoginActivity extends Activity {
     }
     private void extract(String url,int request,int attempt) {
         if(isFinishing()||isDestroyed()||request!=extraction||!url.equals(web.getUrl()))return;
+        // Capture before JS runs. A navigation, login change or invalidation must
+        // never stamp an earlier DOM as if it came from the replacement session.
+        int revision=navigation;
+        ArticleSession session=requestedItem!=null&&url.equals(requestedItem.url)?new ArticleSession(this,requestedItem):new ArticleSession(this,url);
         web.evaluateJavascript(SourceSnapshot.script(source),encoded->{
-            if(isFinishing()||isDestroyed()||request!=extraction||!url.equals(web.getUrl()))return;
-            try {
+            if(!currentExtraction(url,request,revision))return;
+            // Large snapshots must not decode/parse on the UI thread. Keep at most
+            // one queued request: repeated taps replace obsolete work, not grow RAM.
+            extractor.execute(()->parseSnapshot(encoded,url,request,attempt,revision,session));
+        });
+    }
+    private boolean currentExtraction(String url,int request,int revision){
+        return !extractionClosed&&!isFinishing()&&!isDestroyed()&&request==extraction&&revision==navigation&&web!=null&&url.equals(web.getUrl());
+    }
+    private void parseSnapshot(String encoded,String url,int request,int attempt,int revision,ArticleSession session){
+        if(extractionClosed||request!=extraction||revision!=navigation)return;
+        Document parsed=null;boolean expanding=false;String message="";
+        try {
                 Object value=new JSONTokener(encoded).nextValue();
                 if(!(value instanceof String))throw new IllegalStateException("No snapshot");
                 org.json.JSONObject snapshot=new org.json.JSONObject((String)value);
                 String actual=snapshot.optString("url");
                 if(url.equals(actual)&&snapshot.optBoolean("expanding")){
+                    expanding=true;
+                }else if(!url.equals(actual)||snapshot.isNull("html")||snapshot.optString("html").length()>4*1024*1024){
+                    message="页面已跳转、过大或尚未加载";
+                }else{
+                    parsed=SourceParser.readingArticle(source,snapshot.getString("html"),actual);
+                }
+        }catch(Exception invalid){message="读取失败，请等待页面加载后重试";}
+        if(extractionClosed||request!=extraction||revision!=navigation)return;
+        Document doc=parsed;boolean needsExpansion=expanding;String issue=message;
+        runOnUiThread(()->{
+                if(!currentExtraction(url,request,revision))return;
+                if(needsExpansion){
                     if(attempt>=8){status.setText("来源正文仍未展开，请在网页确认后重试");return;}
                     status.setText("正在展开来源正文…");
                     web.postDelayed(()->extract(url,request,attempt+1),1000);return;
                 }
-                if(!url.equals(actual)||snapshot.isNull("html")||snapshot.optString("html").length()>4*1024*1024){status.setText("页面已跳转、过大或尚未加载");return;}
-                Document doc=SourceParser.article(source,snapshot.getString("html"),actual);
-                if(!doc.canPresent()) { status.setText(doc.notice); return; }
+                if(doc==null){status.setText(issue);return;}
+                if(!doc.canPresent()||doc.loginRequired||doc.sourceUnavailable) { status.setText(doc.notice); return; }
+                if(!session.stamp(doc)){status.setText("登录或缓存状态已变化，请重新读取当前页");return;}
                 pendingDocument=doc;
                 setResult(RESULT_OK,new Intent().putExtra("source",source.name())); finish();
-            } catch(Exception e) { status.setText("读取失败，请等待页面加载后重试"); }
         });
     }
     private void hideFullscreen(){if(fullscreen==null)return;((android.view.ViewGroup)fullscreenLayer.getParent()).removeView(fullscreenLayer);fullscreen=null;fullscreenLayer=null;WebChromeClient.CustomViewCallback c=fullscreenCallback;fullscreenCallback=null;if(c!=null)c.onCustomViewHidden();}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==200&&web!=null){CookieManager.getInstance().flush();reloadSource();}}
-    @Override public void onBackPressed() { if(fullscreen!=null){hideFullscreen();return;} if(web!=null&&web.canGoBack()) {pageIssue="";upgradedUrls.clear();status.setText("正在返回上一来源页…");web.goBack();} else super.onBackPressed(); }
+    private void systemBack(){if(fullscreen!=null){hideFullscreen();return;}if(web!=null&&web.canGoBack()){pageIssue="";upgradedUrls.clear();status.setText("正在返回上一来源页…");web.goBack();}else finish();}
+    @Override public void onBackPressed(){systemBack();}
     @Override protected void onSaveInstanceState(Bundle state) {state.putBoolean("mobileLayout",mobileLayout);state.putBoolean("desktop",desktopMode);if(sourceWindow!=null){state.putInt("panX",sourceWindow.panX());state.putInt("panY",sourceWindow.panY());state.putInt("windowWidth",sourceWindow.getWidth());state.putInt("windowHeight",sourceWindow.getHeight());}if(web!=null)web.saveState(state);super.onSaveInstanceState(state);}
-    @Override protected void onPause() { if(web!=null) { SourceSession.preferWeb(this,source);web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
+    @Override protected void onPause() { extraction++;extractor.getQueue().clear();if(web!=null) { SourceSession.preferWeb(this,source);web.onPause(); CookieManager.getInstance().flush(); } super.onPause(); }
     @Override protected void onResume() { super.onResume(); if(web!=null) web.onResume(); }
-    @Override protected void onDestroy() { extraction++;navigation++;hideFullscreen();if(web!=null) {web.stopLoading(); web.destroy(); } super.onDestroy(); }
+    @Override protected void onDestroy() { extractionClosed=true;extraction++;navigation++;extractor.shutdownNow();hideFullscreen();if(web!=null) {SourceSurface.release(web);web=null;} super.onDestroy(); }
 }

@@ -12,6 +12,7 @@ final class AdditionalSources {
     static List<Item> list(Source source,String raw)throws Exception{
         if(!supports(source))throw new IllegalArgumentException("不支持此榜单来源");
         List<Item> out=new ArrayList<>();String trimmed=raw.trim();
+        if(source==Source.TIEBA&&trimmed.startsWith("{"))return TiebaHotBoard.parse(trimmed);
         if(source==Source.BILIBILI&&trimmed.startsWith("{")){
             JSONObject response=new JSONObject(raw);if(response.optInt("code",-1)!=0)throw new IllegalStateException("B站榜单暂不可用");
             JSONArray rows=response.getJSONObject("data").getJSONArray("list");
@@ -37,9 +38,10 @@ final class AdditionalSources {
                     add(out,source,a.selectFirst("h3").text(),a.attr("href"),"热榜 #"+(out.size()+1),true);
                 }
             }else if(source==Source.XHS){
+                Set<String> videos=XhsArticle.videoNoteIds(doc);
                 for(Element row:doc.select("section.note-item")){
                     Element a=row.selectFirst("a[href*=/explore/][href*=xsec_token]");Element title=row.selectFirst(".title");Element likes=row.selectFirst(".like-wrapper .count");
-                    if(a!=null&&title!=null)add(out,source,title.text(),a.attr("href"),source.category+(likes==null?"":" · "+likes.text()+" 赞"),false);
+                    if(a!=null&&title!=null)add(out,source,title.text(),a.attr("href"),source.category+(likes==null?"":" · "+likes.text()+" 赞"),VideoPolicy.row(row)||videos.contains(XhsArticle.id(UrlPolicy.normalize(source.boardPage(),a.attr("href")))));
                 }
             }else if(source==Source.SSPAI){
                 for(Element row:doc.select("article.article__card")){
@@ -47,7 +49,15 @@ final class AdditionalSources {
                     if(a!=null&&title!=null&&ReaderLinks.readerSource(UrlPolicy.normalize(source.endpoint,a.attr("href")))==source)add(out,source,title.text(),a.attr("href"),source.category,false);
                 }
             }else if(source==Source.V2EX){
-                for(Element a:doc.select("#Main .cell.item .item_title a[href]"))if(ReaderLinks.readerSource(UrlPolicy.normalize(source.endpoint,a.attr("href")))==source)add(out,source,a.text(),a.attr("href"),source.category,false);
+                for(Element a:doc.select("#Main .cell.item .item_title a[href]"))if(ReaderLinks.readerSource(UrlPolicy.normalize(source.endpoint,a.attr("href")))==source){
+                    int before=out.size();add(out,source,a.text(),a.attr("href"),source.category,false);
+                    if(out.size()>before){Element row=a.closest(".cell.item"),node=row==null?null:row.selectFirst("a.node[href]");String tag="";
+                        if(node!=null)try{java.net.URI uri=new java.net.URI(node.absUrl("href"));String path=uri.getPath();
+                            if("https".equals(uri.getScheme())&&("www.v2ex.com".equals(uri.getHost())||"v2ex.com".equals(uri.getHost()))&&uri.getUserInfo()==null&&path!=null&&path.matches("/go/[a-z0-9_]+"))tag="node:"+path.substring(4);
+                        }catch(Exception ignored){}
+                        Item item=out.get(before);out.set(before,new Item(item.source,item.title,item.url,item.detail,item.video,item.snippet,item.publishedAt,tag));
+                    }
+                }
             }else if(source==Source.BILIBILI){
                 for(Element a:doc.select(".rank-item a.title[href]"))add(out,source,a.text(),a.attr("href"),"综合榜 #"+(out.size()+1),true);
             }else{

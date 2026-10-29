@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "purpose": "Developer claim labels selected from a second archived public snapshot before reranker scores; shared platform/product families mean this is not a fully independent quality holdout.",
+  "pairs": [
+    ["same", "秦始皇兵马俑上发现女性指纹", "WEIBO", "秦兵马俑上发现女性指纹", "BAIDU", "同一考古对象及发现动作，朝代名称展示差异"],
+    ["same", "成都蓉城0比1大连英博", "WEIBO", "中超第 29 轮，成都蓉城 0-1 大连英博，如何评价这场比赛？", "ZHIHU", "同队伍与相同赛果，比分展示和提问包装不同"],
+    ["different", "病重男子转院被网约车司机丢弃致死", "WEIBO", "病重男子转院途中被网约车司机甩路边", "BAIDU", "死亡是新增实质结果，不能因同一背景隐藏这一进展"],
+    ["different", "菲两架军机空中相撞画面曝光", "BAIDU", "菲2架飞机相撞4名空军飞行员死亡", "WEIBO", "相撞影像与确认四人死亡的结果不同，不能丢掉新增伤亡事实"],
+    ["different", "去年全国结婚登记676万对", "WEIBO", "2025年全国初婚人数重回千万", "BAIDU", "登记对数与初婚人数的统计口径及数字不同"],
+    ["different", "iPhone Duo备货量猛增至1500万台", "BAIDU", "iPhoneDuo 华为铰链", "WEIBO", "同产品的备货数量与铰链话题不同"],
+    ["different", "程序员更支持开源的 DeepSeek 还是平价的 GPT？", "ZHIHU", "曝DeepSeek完成千亿融资", "TIEBA", "工具选择与融资事件不同"],
+    ["different", "蓉城末轮若输球英博赢球将逆袭夺冠", "WEIBO", "蓉城不敌英博 错失第6个冠军点", "BAIDU", "未来条件推演与已结束比赛结果不同"],
+    ["uncertain", "“听到咔嚓一声”，快乐没有5分钟！多位网友晒图：iPhone Duo刚到手屏幕就裂开，屏幕维修费最高近8千元", "CLS", "多位网友晒iPhoneDuo屏幕裂了", "WEIBO", "开裂主张相近，是否同批案例及维修费新进展缺乏证据"],
+    ["uncertain", "毛不易这情商", "HUPU", "毛不易 情商", "WEIBO", "相同人物评价不能凭短标题确认具体事件"]
+  ]
+}

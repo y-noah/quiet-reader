@@ -37,4 +37,17 @@ public class RequestQueueTest {
         }
     }
     @Test public void closeRejectsFurtherRequests(){RequestQueue queue=new RequestQueue();queue.close();try{queue.submit(ticket->{});fail("Closed queue accepted request");}catch(RejectedExecutionException expected){}}
+    @Test public void idleRequestAndCancellationWorkersExitAndNextActionRestarts()throws Exception{
+        try(RequestQueue queue=new RequestQueue()){
+            SlowConnection connection=new SlowConnection();CountDownLatch bound=new CountDownLatch(1),finished=new CountDownLatch(1);
+            queue.submit(ticket->{try{ticket.bind(connection);bound.countDown();connection.waitForDisconnect();}catch(Exception error){throw new AssertionError(error);}finally{ticket.unbind(connection);finished.countDown();}});
+            assertTrue(bound.await(1,TimeUnit.SECONDS));queue.cancelPending();assertTrue(finished.await(1,TimeUnit.SECONDS));
+            java.lang.reflect.Field workerField=RequestQueue.class.getDeclaredField("workers"),cancelField=RequestQueue.class.getDeclaredField("cancellations");workerField.setAccessible(true);cancelField.setAccessible(true);
+            ThreadPoolExecutor workers=(ThreadPoolExecutor)workerField.get(queue),cancels=(ThreadPoolExecutor)cancelField.get(queue);
+            long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(8);
+            while((workers.getPoolSize()!=0||cancels.getPoolSize()!=0)&&System.nanoTime()<deadline)Thread.sleep(25);
+            assertEquals("Idle reader stacks must be released",0,workers.getPoolSize());assertEquals("Idle cancellation stack must be released",0,cancels.getPoolSize());
+            assertFalse(workers.isShutdown());CountDownLatch next=new CountDownLatch(1);queue.submit(ticket->next.countDown());assertTrue("Real action recreates the worker",next.await(1,TimeUnit.SECONDS));
+        }
+    }
 }

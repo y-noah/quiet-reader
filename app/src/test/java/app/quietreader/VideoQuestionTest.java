@@ -13,7 +13,7 @@ public final class VideoQuestionTest {
         Document d=videoQuestion();assertFalse(d.hasContent());assertTrue(d.unsupportedVideo);
         org.jsoup.nodes.Document page=org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.ZHIHU,19));
         assertTrue(page.select("section.part").isEmpty());
-        assertEquals(1,page.select("a[href='https://quiet-reader.invalid/more']").size());
+        assertEquals(1,page.select("#reader-continuation[data-continuation=ready]").size());
         assertTrue(page.select(".notice").text().contains("视频"));
     }
     @Test public void copyingForContinuationKeepsKnownMediaLimit() {

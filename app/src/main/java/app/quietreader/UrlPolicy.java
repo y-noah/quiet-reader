@@ -23,6 +23,9 @@ public final class UrlPolicy {
             case CLS: return domain(h,"cls.cn");
             case IFANR: return domain(h,"ifanr.com");
             case V2EX:return domain(h,"v2ex.com");
+            case ITHOME:return domain(h,"ithome.com");
+            case THEPAPER:return domain(h,"thepaper.cn");
+            case BBC:return h.equals("www.bbc.com");
             case SSPAI:return domain(h,"sspai.com");
             case BAIDU:return domain(h,"baidu.com")&&!h.equals("tieba.baidu.com")&&!h.equals("passport.baidu.com")&&!h.equals("wappass.baidu.com");
             case TIEBA:return h.equals("tieba.baidu.com");
@@ -58,7 +61,10 @@ public final class UrlPolicy {
     public static String normalize(String base,String raw) {
         try {
             if(raw==null||raw.trim().isEmpty()||raw.startsWith("#")) return "";
-            String url=new URI(base).resolve(raw.replace(" ","%20")).toString();
+            // URI.resolve("?p=2") drops the last path segment on the JDK. Forum
+            // pagers mean the same post with a replaced query, not its parent.
+            String encoded=raw.replace(" ","%20");
+            String url=encoded.startsWith("?")?base.split("[?#]",2)[0]+encoded:new URI(base).resolve(encoded).toString();
             if(url.startsWith("http://")) url="https://"+url.substring(7);
             return https(url)?url:"";
         } catch(Exception e) { return ""; }

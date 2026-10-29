@@ -1,0 +1,320 @@
+{
+  "schema": 1,
+  "source_sha256": "0303b482b94a53ef1b0817dad47545f6c4a0c22c56498f8699ba3ff38afd1d75",
+  "scope": "Diagnostic development titles and frozen synthetic controls; no production behavior change.",
+  "transform": "Only complete comma-separated generic suffix questions; all other clauses preserved.",
+  "pairs": [
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "涅槃逆袭八强!IG击败LYON晋级",
+      "right": "IG战胜LYON晋级S16八强",
+      "inputLeft": "涅槃逆袭八强!IG击败LYON晋级",
+      "inputRight": "IG战胜LYON晋级S16八强"
+    },
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "S16 瑞士轮 iG 2:1 击败 LYON，时隔 2565 天重新闯进淘汰赛，如何评价这场比赛？",
+      "right": "iG时隔2565天晋级淘汰赛",
+      "inputLeft": "S16 瑞士轮 iG 2:1 击败 LYON，时隔 2565 天重新闯进淘汰赛，如何评价这场比赛？",
+      "inputRight": "iG时隔2565天晋级淘汰赛"
+    },
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "苹果首款触控屏 MacBook Pro 正式发布：双层串联 OLED、低至 1.38 千克重量，22,999 元起",
+      "right": "苹果发布首款触控屏MacBook Pro",
+      "inputLeft": "苹果首款触控屏 MacBook Pro 正式发布：双层串联 OLED、低至 1.38 千克重量，22,999 元起",
+      "inputRight": "苹果发布首款触控屏MacBook Pro"
+    },
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "苹果发布首款触屏 MacBook Pro，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "苹果发布首款触控屏MacBook Pro",
+      "inputLeft": "苹果发布首款触屏 MacBook Pro",
+      "inputRight": "苹果发布首款触控屏MacBook Pro"
+    },
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "美联储如期维持基准利率不变 两名票委主张加息25个基点",
+      "right": "美联储宣布维持利率不变",
+      "inputLeft": "美联储如期维持基准利率不变 两名票委主张加息25个基点",
+      "inputRight": "美联储宣布维持利率不变"
+    },
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "沃什宣布明年起减少议息频次 对后续利率路径仍拒绝给出指引",
+      "right": "美联储主席宣布将减少议息频次",
+      "inputLeft": "沃什宣布明年起减少议息频次 对后续利率路径仍拒绝给出指引",
+      "inputRight": "美联储主席宣布将减少议息频次"
+    },
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "巴基斯坦对台湾地区航司关闭领空",
+      "right": "巴基斯坦对台湾航司关闭领空",
+      "inputLeft": "巴基斯坦对台湾地区航司关闭领空",
+      "inputRight": "巴基斯坦对台湾航司关闭领空"
+    },
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "Alphabet盘后重挫10%！营收、利润均逊于预期 连续两季录得负自由现金流",
+      "right": "谷歌三季度营收不及预期盘后暴跌",
+      "inputLeft": "Alphabet盘后重挫10%！营收、利润均逊于预期 连续两季录得负自由现金流",
+      "inputRight": "谷歌三季度营收不及预期盘后暴跌"
+    },
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "三丽鸥致歉",
+      "right": "三丽鸥致歉",
+      "inputLeft": "三丽鸥致歉",
+      "inputRight": "三丽鸥致歉"
+    },
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "华为“天才少年”杨玉雯加盟南京大学",
+      "right": "华为“天才少年”杨玉雯加盟南京大学",
+      "inputLeft": "华为“天才少年”杨玉雯加盟南京大学",
+      "inputRight": "华为“天才少年”杨玉雯加盟南京大学"
+    },
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "女子欠1700元被限高公开照片",
+      "right": "31岁女子欠1700元被限高",
+      "inputLeft": "女子欠1700元被限高公开照片",
+      "inputRight": "31岁女子欠1700元被限高"
+    },
+    {
+      "scope": "observed-development",
+      "label": "different",
+      "left": "涅槃逆袭八强!IG击败LYON晋级",
+      "right": "T1击败MKOI晋级S16八强",
+      "inputLeft": "涅槃逆袭八强!IG击败LYON晋级",
+      "inputRight": "T1击败MKOI晋级S16八强"
+    },
+    {
+      "scope": "observed-development",
+      "label": "different",
+      "left": "IG战胜LYON晋级S16八强",
+      "right": "LYON一比一扳平iG",
+      "inputLeft": "IG战胜LYON晋级S16八强",
+      "inputRight": "LYON一比一扳平iG"
+    },
+    {
+      "scope": "observed-development",
+      "label": "different",
+      "left": "苹果首款触控屏 MacBook Pro 正式发布：双层串联 OLED、低至 1.38 千克重量，22,999 元起",
+      "right": "兄弟们， MacBook Pro 经典 LOGO 发光的重新回归，有点小激动啊",
+      "inputLeft": "苹果首款触控屏 MacBook Pro 正式发布：双层串联 OLED、低至 1.38 千克重量，22,999 元起",
+      "inputRight": "兄弟们， MacBook Pro 经典 LOGO 发光的重新回归，有点小激动啊"
+    },
+    {
+      "scope": "observed-development",
+      "label": "different",
+      "left": "美联储如期维持基准利率不变 两名票委主张加息25个基点",
+      "right": "沃什宣布明年起减少议息频次 对后续利率路径仍拒绝给出指引",
+      "inputLeft": "美联储如期维持基准利率不变 两名票委主张加息25个基点",
+      "inputRight": "沃什宣布明年起减少议息频次 对后续利率路径仍拒绝给出指引"
+    },
+    {
+      "scope": "observed-development",
+      "label": "different",
+      "left": "三丽鸥致歉",
+      "right": "三丽鸥将与抹黑中国日剧再次联名",
+      "inputLeft": "三丽鸥致歉",
+      "inputRight": "三丽鸥将与抹黑中国日剧再次联名"
+    },
+    {
+      "scope": "observed-development",
+      "label": "different",
+      "left": "Alphabet盘后重挫10%！营收、利润均逊于预期 连续两季录得负自由现金流",
+      "right": "如何看待谷歌推出 Gemini 4 Carbon，在多个榜单拿下全球第一？",
+      "inputLeft": "Alphabet盘后重挫10%！营收、利润均逊于预期 连续两季录得负自由现金流",
+      "inputRight": "如何看待谷歌推出 Gemini 4 Carbon，在多个榜单拿下全球第一？"
+    },
+    {
+      "scope": "observed-development",
+      "label": "different",
+      "left": "31岁亚马逊前华人女工程师听GPT建议自行停药后死亡，父母起诉OpenAI",
+      "right": "亚马逊加码智能家居：一次推出5款新品，16英寸智能屏“叫板”苹果HomeView",
+      "inputLeft": "31岁亚马逊前华人女工程师听GPT建议自行停药后死亡，父母起诉OpenAI",
+      "inputRight": "亚马逊加码智能家居：一次推出5款新品，16英寸智能屏“叫板”苹果HomeView"
+    },
+    {
+      "scope": "observed-development",
+      "label": "uncertain",
+      "left": "求助！那位老哥知道！！",
+      "right": "求助！那位老哥知道！！",
+      "inputLeft": "求助！那位老哥知道！！",
+      "inputRight": "求助！那位老哥知道！！"
+    },
+    {
+      "scope": "observed-development",
+      "label": "uncertain",
+      "left": "苹果发布会",
+      "right": "苹果发布首款触控屏MacBook Pro",
+      "inputLeft": "苹果发布会",
+      "inputRight": "苹果发布首款触控屏MacBook Pro"
+    },
+    {
+      "scope": "observed-development",
+      "label": "uncertain",
+      "left": "24岁海归医学博士不会打方结",
+      "right": "海归医学女博士上综艺不会用显微镜",
+      "inputLeft": "24岁海归医学博士不会打方结",
+      "inputRight": "海归医学女博士上综艺不会用显微镜"
+    },
+    {
+      "scope": "observed-development",
+      "label": "uncertain",
+      "left": "【早报】美联储按兵不动，沃什宣布：减少议息频次；美股存储芯片板块，全线爆发；谷歌业绩不及预期，盘后大跌",
+      "right": "Alphabet盘后重挫10%！营收、利润均逊于预期 连续两季录得负自由现金流",
+      "inputLeft": "【早报】美联储按兵不动，沃什宣布：减少议息频次；美股存储芯片板块，全线爆发；谷歌业绩不及预期，盘后大跌",
+      "inputRight": "Alphabet盘后重挫10%！营收、利润均逊于预期 连续两季录得负自由现金流"
+    },
+    {
+      "scope": "observed-development",
+      "label": "uncertain",
+      "left": "万斯致信伊朗安全高官试图重启谈判 欧洲天然气近四年来首破100欧元 | 环球市场",
+      "right": "欧洲天然气近四年来首破100欧元！中东战火冲击供应 冬季能源危机阴云再起",
+      "inputLeft": "万斯致信伊朗安全高官试图重启谈判 欧洲天然气近四年来首破100欧元 | 环球市场",
+      "inputRight": "欧洲天然气近四年来首破100欧元！中东战火冲击供应 冬季能源危机阴云再起"
+    },
+    {
+      "scope": "observed-development",
+      "label": "uncertain",
+      "left": "西班牙高铁相撞事故已造成 68 人死亡，有中国公民受伤，初步调查显示事故系人为失误所致，具体情况如何？",
+      "right": "第1现场｜西班牙再发列车相撞惨剧：已致64死，事故或因人为失误",
+      "inputLeft": "西班牙高铁相撞事故已造成 68 人死亡，有中国公民受伤，初步调查显示事故系人为失误所致，具体情况如何？",
+      "inputRight": "第1现场｜西班牙再发列车相撞惨剧：已致64死，事故或因人为失误"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "星河未发布 NoteBook Pro，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro",
+      "inputLeft": "星河未发布 NoteBook Pro",
+      "inputRight": "星河发布 NoteBook Pro"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "星河将发布 NoteBook Pro，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro",
+      "inputLeft": "星河将发布 NoteBook Pro",
+      "inputRight": "星河发布 NoteBook Pro"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "星河拟发布 NoteBook Pro，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro",
+      "inputLeft": "星河拟发布 NoteBook Pro",
+      "inputRight": "星河发布 NoteBook Pro"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "星河是否发布 NoteBook Pro，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro",
+      "inputLeft": "星河是否发布 NoteBook Pro",
+      "inputRight": "星河发布 NoteBook Pro"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "据称星河发布 NoteBook Pro，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro",
+      "inputLeft": "据称星河发布 NoteBook Pro",
+      "inputRight": "星河发布 NoteBook Pro"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "星河去年发布 NoteBook Pro，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro",
+      "inputLeft": "星河去年发布 NoteBook Pro",
+      "inputRight": "星河发布 NoteBook Pro"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "星河曾发布 NoteBook Pro，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro",
+      "inputLeft": "星河曾发布 NoteBook Pro",
+      "inputRight": "星河发布 NoteBook Pro"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "北辰发布 NoteBook Pro，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro",
+      "inputLeft": "北辰发布 NoteBook Pro",
+      "inputRight": "星河发布 NoteBook Pro"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "星河发布 NoteBook Max，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro",
+      "inputLeft": "星河发布 NoteBook Max",
+      "inputRight": "星河发布 NoteBook Pro"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "星河发布 NoteBook Pro，起售价12399元，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro，起售价12499元",
+      "inputLeft": "星河发布 NoteBook Pro，起售价12399元",
+      "inputRight": "星河发布 NoteBook Pro，起售价12499元"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "星河发布 NoteBook Pro，单层串联OLED，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro，双层串联OLED",
+      "inputLeft": "星河发布 NoteBook Pro，单层串联OLED",
+      "inputRight": "星河发布 NoteBook Pro，双层串联OLED"
+    },
+    {
+      "scope": "synthetic-adversarial",
+      "label": "different",
+      "left": "星河发布 NoteBook Pro，重量1.28千克，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro，重量1.29千克",
+      "inputLeft": "星河发布 NoteBook Pro，重量1.28千克",
+      "inputRight": "星河发布 NoteBook Pro，重量1.29千克"
+    },
+    {
+      "scope": "synthetic-positive",
+      "label": "same",
+      "left": "星河发布 NoteBook Pro，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河发布 NoteBook Pro",
+      "inputLeft": "星河发布 NoteBook Pro",
+      "inputRight": "星河发布 NoteBook Pro"
+    },
+    {
+      "scope": "synthetic-positive",
+      "label": "same",
+      "left": "青河市发现古代遗址，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "青河市发现古代遗址",
+      "inputLeft": "青河市发现古代遗址",
+      "inputRight": "青河市发现古代遗址"
+    },
+    {
+      "scope": "synthetic-positive",
+      "label": "same",
+      "left": "星河俱乐部就球员言论道歉，有哪些亮点值得关注？你看好其市场前景吗？",
+      "right": "星河俱乐部就球员言论道歉",
+      "inputLeft": "星河俱乐部就球员言论道歉",
+      "inputRight": "星河俱乐部就球员言论道歉"
+    }
+  ]
+}

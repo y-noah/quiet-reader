@@ -6,6 +6,10 @@ import static app.quietreader.Models.*;
 
 /** Same-question paging only. Returned HTML still passes the normal article sanitizer. */
 final class ZhihuAnswers {
+    static String questionId(String url){
+        if(!UrlPolicy.belongs(Source.ZHIHU,url))return "";
+        try{java.util.regex.Matcher match=java.util.regex.Pattern.compile("/question/([1-9][0-9]*)(?:/answer/[1-9][0-9]*)?/?").matcher(URI.create(url).getPath());return match.matches()?match.group(1):"";}catch(Exception invalid){return "";}
+    }
     static String first(Item item){
         java.util.regex.Matcher m=java.util.regex.Pattern.compile("/question/(\\d+)(?:/answer/\\d+)?/?").matcher(URI.create(item.url).getPath());
         return m.matches()?"https://www.zhihu.com/api/v4/questions/"+m.group(1)+"/answers?include=data%5B%2A%5D.content&limit=10&offset=0&sort_by=default":"";

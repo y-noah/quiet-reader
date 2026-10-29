@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "scope": "Frozen diagnostic development inputs; no user interest labels or independent holdout",
+  "transform": "Main clause only; intentional conflicting secondary controls must be evaluated before production use",
+  "pairs": [
+    {
+      "scope": "observed-development",
+      "label": "same",
+      "left": "美联储如期维持基准利率不变 两名票委主张加息25个基点",
+      "right": "美联储宣布维持利率不变",
+      "inputLeft": "美联储维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "same",
+      "left": "欧洲央行决定维持政策利率不变",
+      "right": "欧洲央行维持利率不变",
+      "inputLeft": "欧洲央行维持利率不变",
+      "inputRight": "欧洲央行维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "same",
+      "left": "英国央行维持基准利率不变，三名票委主张降息25个基点",
+      "right": "英国央行宣布维持利率不变",
+      "inputLeft": "英国央行维持利率不变",
+      "inputRight": "英国央行维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "same",
+      "left": "美联储维持利率不变，两名票委主张加息25个基点",
+      "right": "美联储宣布维持基准利率不变，两名票委主张加息25个基点",
+      "inputLeft": "美联储维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "different",
+      "left": "美联储维持利率不变，两名票委主张加息25个基点",
+      "right": "美联储维持利率不变，两名票委主张降息25个基点",
+      "inputLeft": "美联储维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "different",
+      "left": "美联储维持利率不变，两名票委主张加息25个基点",
+      "right": "美联储维持利率不变，两名票委主张加息50个基点",
+      "inputLeft": "美联储维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "different",
+      "left": "美联储维持利率不变，两名票委主张加息25个基点",
+      "right": "美联储维持利率不变，三名票委主张加息25个基点",
+      "inputLeft": "美联储维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "different",
+      "left": "美联储维持利率不变，目标区间为3.75%至4%",
+      "right": "美联储维持利率不变，目标区间为4%至4.25%",
+      "inputLeft": "美联储维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "different",
+      "left": "美联储维持利率不变",
+      "right": "欧洲央行维持利率不变",
+      "inputLeft": "美联储维持利率不变",
+      "inputRight": "欧洲央行维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "different",
+      "left": "美联储宣布加息25个基点",
+      "right": "美联储维持利率不变",
+      "inputLeft": "美联储宣布加息25个基点",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "different",
+      "left": "美联储预计维持利率不变",
+      "right": "美联储宣布维持利率不变",
+      "inputLeft": "美联储预计维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "different",
+      "left": "美联储是否维持利率不变",
+      "right": "美联储宣布维持利率不变",
+      "inputLeft": "美联储是否维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "different",
+      "left": "美联储去年维持利率不变",
+      "right": "美联储宣布维持利率不变",
+      "inputLeft": "美联储去年维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "different",
+      "left": "美联储下次会议将维持利率不变",
+      "right": "美联储宣布维持利率不变",
+      "inputLeft": "美联储下次会议将维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "uncertain",
+      "left": "美联储维持利率不变，明年将加息两次",
+      "right": "美联储宣布维持利率不变",
+      "inputLeft": "美联储维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    },
+    {
+      "scope": "synthetic-development",
+      "label": "uncertain",
+      "left": "美联储维持利率不变，市场人士预计未来降息",
+      "right": "美联储宣布维持利率不变",
+      "inputLeft": "美联储维持利率不变",
+      "inputRight": "美联储维持利率不变"
+    }
+  ]
+}

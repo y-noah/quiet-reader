@@ -1,0 +1,263 @@
+{
+  "resultCode": 1,
+  "data": {
+    "hotNews": [
+      {
+        "contId": "34324278",
+        "name": "马上评｜“独生女继承遗产后遭离婚分产”怎么会反复上热搜",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792817864022,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 27224,
+          "name": "澎湃评论",
+          "desc": "在这里知道更多"
+        }
+      },
+      {
+        "contId": "34324990",
+        "name": "董明珠发话“长头发该剪了”，珠海格力技工学校为师生安排免费剪发",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792826763485,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25487,
+          "name": "教育家",
+          "desc": "最先进的教育理念在此碰撞"
+        }
+      },
+      {
+        "contId": "34321749",
+        "name": "博闻丨举报校内有“风水蛙”后，老师年度考核被判不合格",
+        "contType": 9,
+        "link": "",
+        "pubTimeLong": 1792809525392,
+        "trackArticleType": "视频",
+        "nodeInfo": {
+          "nodeId": 26913,
+          "name": "锋线视频",
+          "desc": "不满足于琐碎的片段，做有态度的新闻视频。"
+        }
+      },
+      {
+        "contId": "34325334",
+        "name": "一图世界｜多型导弹首次参与，瞄准岛链封锁，美日“利剑”演习为何值得关注",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792842328414,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25430,
+          "name": "澎湃防务",
+          "desc": "传递最新鲜、专业的全球防务新闻，探析军事发展趋势"
+        }
+      },
+      {
+        "contId": "34323887",
+        "name": "众声｜谭爷爷独自进藏值得点赞，尤需思考如何让更多老人放心出行",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792822691751,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25422,
+          "name": "浦江头条",
+          "desc": "上海每天最重要的事件"
+        }
+      },
+      {
+        "contId": "34225156",
+        "name": "当AI开始写代码，还需要什么样的程序员？",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792808287441,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 138033,
+          "name": "对齐Lab",
+          "desc": "知识蒸馏，技术尝鲜，让AI动向清晰可见"
+        }
+      },
+      {
+        "contId": "34324536",
+        "name": "男子帮朋友代购字画被指诈骗遭追逃：176幅鉴定仅值25万，律师称“同一性”存疑",
+        "contType": 0,
+        "pubTimeLong": 1792832429920,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25424,
+          "name": "一号专案",
+          "desc": "司法个案，法治调查"
+        }
+      },
+      {
+        "contId": "34325208",
+        "name": "又双‌叒没赢！成都0比1不敌大连，中超冠军收官战揭晓",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792834633029,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25599,
+          "name": "运动家",
+          "desc": "看体育如何改变世界"
+        }
+      },
+      {
+        "contId": "34324775",
+        "name": "山东枣庄一老师被指体罚学生，区教育局：家长已报警，会跟进处理",
+        "contType": 9,
+        "link": "",
+        "pubTimeLong": 1792829891110,
+        "trackArticleType": "视频",
+        "nodeInfo": {
+          "nodeId": 26913,
+          "name": "锋线视频",
+          "desc": "不满足于琐碎的片段，做有态度的新闻视频。"
+        }
+      },
+      {
+        "contId": "34325705",
+        "name": "王沪宁陪同朝鲜最高领导人金正恩访问丹东",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792839705659,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 122905,
+          "name": "大国外交",
+          "desc": "构建人类命运共同体"
+        }
+      },
+      {
+        "contId": "34325090",
+        "name": "广西多地呼吁“外嫁女回娘家”摒弃攀比",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792833355541,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25462,
+          "name": "中国政库",
+          "desc": "洞悉中国动向的时政解读"
+        }
+      },
+      {
+        "contId": "34325730",
+        "name": "二十届中央第八轮巡视对象公布",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792839778054,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25462,
+          "name": "中国政库",
+          "desc": "洞悉中国动向的时政解读"
+        }
+      },
+      {
+        "contId": "34317118",
+        "name": "前三季度人均可支配收入34230元，是个什么概念？",
+        "contType": 9,
+        "link": "",
+        "pubTimeLong": 1792803418204,
+        "trackArticleType": "视频",
+        "nodeInfo": {
+          "nodeId": 166746,
+          "name": "财晓得",
+          "desc": "更轻松看懂财经世界"
+        }
+      },
+      {
+        "contId": "34325799",
+        "name": "商务部新闻发言人就美发布新版对外投资限制拟议规则答记者问",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792842237214,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25432,
+          "name": "自贸区连线",
+          "desc": "自贸区第一信息和服务平台"
+        }
+      },
+      {
+        "contId": "34317897",
+        "name": "经纬度：“快乐经济”如何释放持久消费活力？",
+        "contType": 0,
+        "pubTimeLong": 1792799969869,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 27224,
+          "name": "澎湃评论",
+          "desc": "在这里知道更多"
+        }
+      },
+      {
+        "contId": "34325596",
+        "name": "言短意长｜肯德基员工就不能投诉胖哥俩了？",
+        "contType": 0,
+        "pubTimeLong": 1792846375905,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25462,
+          "name": "中国政库",
+          "desc": "洞悉中国动向的时政解读"
+        }
+      },
+      {
+        "contId": "34299888",
+        "name": "专访 | 飞天奖导演刘家成：还要再干十年，扎根烟火写人间",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792828248470,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25448,
+          "name": "有戏",
+          "desc": "陪你过一种审美的生活"
+        }
+      },
+      {
+        "contId": "34324451",
+        "name": "台风“蔷琵”影响何时结束？今年编号台风数已并列本世纪以来最多",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792817745019,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25422,
+          "name": "浦江头条",
+          "desc": "上海每天最重要的事件"
+        }
+      },
+      {
+        "contId": "34317321",
+        "name": "“中国高科”间接控股公司迁址未了局：行政立案与刑事立案下的两地博弈",
+        "contType": 0,
+        "pubTimeLong": 1792818854228,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25424,
+          "name": "一号专案",
+          "desc": "司法个案，法治调查"
+        }
+      },
+      {
+        "contId": "34325583",
+        "name": "八国外长“史无前例”齐聚土耳其，反对对伊朗采取军事行动",
+        "contType": 0,
+        "link": "",
+        "pubTimeLong": 1792842389466,
+        "trackArticleType": "文章",
+        "nodeInfo": {
+          "nodeId": 25429,
+          "name": "全球速报",
+          "desc": "最热点的全球资讯"
+        }
+      }
+    ]
+  }
+}

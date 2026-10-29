@@ -1,0 +1,18 @@
+[
+  {
+    "file": "modern-33.png",
+    "url": "https://tb3.bdstatic.com/emoji/image_emoticon33@2x.png",
+    "status": 200,
+    "mime": "image/png",
+    "bytes": 1825,
+    "sha256": "bd715634ce3598a8c04a68643b699c8791d4f8a06120281ce2cca5099bf11cc4"
+  },
+  {
+    "file": "legacy-1.png",
+    "url": "https://tb2.bdstatic.com/tb/editor/images/client/image_emoticon1.png",
+    "status": 200,
+    "mime": "image/png",
+    "bytes": 4915,
+    "sha256": "ce2826bf32e2006032c1f4b5c7a1bbf835adafed96bc3b8bf5d29e26ef11b17a"
+  }
+]

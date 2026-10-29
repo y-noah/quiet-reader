@@ -27,7 +27,7 @@ final class SourceWindow extends FrameLayout {
                 }
                 return super.onInterceptTouchEvent(event);
             }
-        };vertical.setFillViewport(true);
+        };vertical.setFillViewport(true);vertical.setVerticalScrollBarEnabled(false);
         horizontal=new HorizontalScrollView(context){
             @Override public boolean onInterceptTouchEvent(MotionEvent event){
                 if(event.getPointerCount()>1)return false;

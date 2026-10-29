@@ -70,6 +70,9 @@ final class SourceMobileLayout {
         html[data-qr-mobile=BAIDU] #content_left>div{box-sizing:border-box!important;width:100%!important;max-width:100%!important;margin:0 0 12px!important;padding:12px!important;}
         html[data-qr-mobile=BAIDU] #content_left :is(.c-container,.c-row,.c-span9,.c-span12,.c-span24,.c-offset){box-sizing:border-box!important;width:auto!important;min-width:0!important;max-width:100%!important;margin-left:0!important;}
         html[data-qr-mobile=BAIDU] #content_left .c-row{display:flex!important;flex-wrap:wrap!important;gap:8px;}
+        html[data-qr-mobile=BAIDU] #content_left .cos-row{box-sizing:border-box!important;display:flex!important;flex-wrap:wrap!important;width:100%!important;min-width:0!important;max-width:100%!important;gap:8px!important;margin:0!important;}
+        html[data-qr-mobile=BAIDU] #content_left .cos-row>.cos-col{box-sizing:border-box!important;flex:0 0 100%!important;width:100%!important;min-width:0!important;max-width:100%!important;padding:0!important;margin:0!important;}
+        html[data-qr-mobile=BAIDU] #content_left .cos-image{max-width:100%!important;}
         html[data-qr-mobile=BAIDU] #content_left :is(p,.c-abstract){font-size:16px!important;line-height:1.65!important;}
         html[data-qr-mobile=BAIDU] #content_left h3{font-size:19px!important;line-height:1.5!important;height:auto!important;}
         html[data-qr-mobile=BAIDU] #content_left img{max-width:100%!important;object-fit:contain;}

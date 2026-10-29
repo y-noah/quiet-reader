@@ -6,9 +6,8 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.*;
 
 public class AdditionalSourcesTest {
-    @Test public void fiveTabsKeepAllTwelvePlatformsAvailable(){
-        assertEquals(12,Source.values().length);
-        assertArrayEquals(new Source[]{Source.ZHIHU,Source.WEIBO,Source.HUPU,Source.CLS,Source.V2EX},Source.navigationOrder());
+    @Test public void allFifteenSourcesRemainReadable(){
+        assertEquals(15,Source.values().length);
         for(Source source:Source.values())assertTrue(source.readable());
     }
     @Test public void ifanrListUsesObservedArticleContainersAndSkipsForeignDuplicates()throws Exception{

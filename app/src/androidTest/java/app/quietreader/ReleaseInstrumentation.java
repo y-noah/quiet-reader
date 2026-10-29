@@ -50,7 +50,7 @@ public final class ReleaseInstrumentation extends Instrumentation {
         android.content.pm.PackageInfo info=getTargetContext().getPackageManager().getPackageInfo("app.quietreader",0);
         check("0.3.35".equals(info.versionName)&&info.versionCode==46,"exact 0.3.35 release installed");
         home=startActivitySync(new Intent().setClassName("app.quietreader","app.quietreader.MainActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));Thread.sleep(900);
-        ui(()->{View root=home.getWindow().getDecorView();check(find(root,"News")!=null,"News brand");check(find(root,"总榜")==null,"removed board absent");check(find(root,"知乎").isSelected(),"default Zhihu board");});
+        ui(()->{View root=home.getWindow().getDecorView();check(find(root,"New")!=null,"New brand");check(find(root,"总榜")==null,"removed board absent");check(find(root,"知乎").isSelected(),"default Zhihu board");});
         shot("01-release-home");
         for(String name:new String[]{"知乎","微博","虎扑","财联社","V2EX"}){
             ui(()->{View tab=find(home.getWindow().getDecorView(),name);check(tab instanceof TextView,"native text tab "+name);check(tab!=null&&tab.performClick(),"tab click "+name);});Thread.sleep(200);

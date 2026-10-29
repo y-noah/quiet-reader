@@ -10,6 +10,8 @@ import static app.quietreader.Models.*;
 
 /** A retained source page loads real subsequent answers by scrolling, without exporting cookies. */
 final class AnswerStream {
+    static final int MAX_ANSWERS=600;
+    private static final String LIMIT_NOTICE="当前已保留较多回答，为控制内存暂缓继续追加；已读内容保留，可在来源页继续阅读。";
     private final WebView web;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService parser=Executors.newSingleThreadExecutor();
@@ -56,6 +58,7 @@ final class AnswerStream {
         } catch(Exception invalid) { return false; }
     }
     void more(Document previous,Repository.Result<Document> cb){
+        if(!closed&&!busy&&("limit".equals(previous.moreStatus)||answers(previous)+(long)previous.filteredSectionIds.size()>=MAX_ANSWERS)){Document bounded=copy(previous);bounded.moreStatus="limit";bounded.notice=LIMIT_NOTICE;cb.success(bounded);close();return;}
         if(closed||busy)return;busy=true;batch++;apiPages=0;apiTried=false;apiRestricted=false;callback=cb;attempts=0;stopReason="";stopStatus="";lastSnapshot="";accumulated=copy(previous);previousAnswerIds=answerIds(previous);
         main.postDelayed(this::finish,20000);
         if(!started){started=true;String url=item.url.replaceAll("(/question/\\d+).*","$1");main.post(()->{if(!closed&&busy)web.loadUrl(url);});}else inspect();
@@ -71,7 +74,7 @@ final class AnswerStream {
                 Document result=parsed;String snapshot=result==null?"":DocumentFingerprint.of(result);boolean needsLogin=auth,wrongSource=wrongPage,waiting=expanding;main.post(()->{
                     if(closed||!busy||run!=batch)return;
                     if(wrongSource||!sameQuestion(item,web.getUrl())){leftQuestion();return;}
-                    if(result!=null)merge(accumulated,result);
+                    if(result!=null&&(!mergeWithinBudget(accumulated,result)||"limit".equals(accumulated.moreStatus))){stopStatus="limit";stopReason=LIMIT_NOTICE;finish();return;}
                     if(needsLogin){stopStatus="login";stopReason="知乎要求登录才能继续。请在来源页登录后重新读取，已读回答已保留。";finish();return;}
                     if(waiting){lastSnapshot="";main.postDelayed(this::inspect,1100);return;}
                     // Make even one new answer available once its extracted content settles.
@@ -120,7 +123,7 @@ final class AnswerStream {
                         if(closed||!busy||run!=batch)return;
                         if(!sameQuestion(item,web.getUrl())){leftQuestion();return;}
                         if(!okay){inspect();return;}
-                        merge(accumulated,result);
+                        if(!mergeWithinBudget(accumulated,result)||"limit".equals(accumulated.moreStatus)){stopStatus="limit";stopReason=LIMIT_NOTICE;finish();return;}
                         boolean advanced=!cursor.isEmpty()&&!cursor.equals(nextApi);if(advanced)nextApi=cursor;
                         if(ended){stopStatus="end";stopReason="来源已返回本次可见回答的末页，共保留 "+answers(accumulated)+" 条。登录状态或来源内容变化后可重试。";finish();}
                         else if(hasNewAnswers(accumulated,previousAnswerIds))finish();
@@ -139,23 +142,49 @@ final class AnswerStream {
         }
         accumulated.moreStatus=stopReason.isEmpty()?"loaded":stopStatus;int count=answers(accumulated);
         accumulated.notice=!stopReason.isEmpty()?stopReason:!hasNewAnswers(accumulated,previousAnswerIds)?"本次没有新增回答。已保留 "+count+" 条回答，请点「加载下一批回答」重试；未取得新内容不等于已读完全部回答。":"已加载 "+count+" 条回答。可继续下滑或点「加载下一批回答」；未取得新内容不等于已读完全部回答。";
-        if(accumulated.unsupportedVideo)accumulated.notice+=" 原文包含视频；News 仅整理文字和图片，视频可在来源页观看。";
+        if(accumulated.unsupportedVideo)accumulated.notice+=" 原文包含视频；New 仅整理文字和图片，视频可在来源页观看。";
         if(accumulated.filteredVideos>0)accumulated.notice+=" "+VideoPolicy.filteredNotice(accumulated.filteredVideos);
         callback.success(accumulated);
+        if("limit".equals(stopStatus))close();
     }
     static int answers(Document d){int n=0;for(Section s:d.sections)if(s.answer)n++;return n;}
     static Set<String> answerIds(Document d){Set<String> ids=new HashSet<>();for(Section s:d.sections)if(s.answer&&!d.filteredSectionIds.contains(s.id))ids.add(s.id);return ids;}
     /** Removal of a newly classified video can offset additions; net size is not progress. */
     static boolean hasNewAnswers(Document d,Set<String> previous){for(String id:answerIds(d))if(!previous.contains(id))return true;return false;}
-    static Document copy(Document d){Document n=new Document();n.title=d.title;n.byline=d.byline;n.url=d.url;n.notice=d.notice;n.nextUrl=d.nextUrl;n.moreStatus=d.moreStatus;n.unsupportedVideo=d.unsupportedVideo;n.filteredVideo=d.filteredVideo;n.filteredVideos=d.filteredVideos;n.filteredSectionIds.addAll(d.filteredSectionIds);n.blocks.addAll(d.blocks);n.sections.addAll(d.sections);n.related.addAll(d.related);return n;}
+    static boolean mergeWithinBudget(Document into,Document from){
+        Document proposed=copy(into);merge(proposed,from);
+        if(answers(proposed)+(long)proposed.filteredSectionIds.size()>MAX_ANSWERS||DocumentSize.estimate(proposed)>ArticleDiskCache.MAX_ENTRY||!DocumentSize.serializationFits(proposed,ArticleDiskCache.MAX_ENTRY)){
+            into.moreStatus="limit";into.notice=LIMIT_NOTICE;return false;
+        }
+        into.sections.clear();into.sections.addAll(proposed.sections);into.blocks.clear();into.blocks.addAll(proposed.blocks);
+        into.videos.clear();into.videos.addAll(proposed.videos);into.videoUrl=proposed.videoUrl;into.videoPoster=proposed.videoPoster;
+        into.unsupportedVideo=proposed.unsupportedVideo;into.videoTopic=proposed.videoTopic;into.filteredVideos=proposed.filteredVideos;into.filteredSectionIds.clear();into.filteredSectionIds.addAll(proposed.filteredSectionIds);
+        if(answers(into)+(long)into.filteredSectionIds.size()>=MAX_ANSWERS){into.moreStatus="limit";into.notice=LIMIT_NOTICE;}return true;
+    }
+    static Document copy(Document d){Document n=new Document();n.title=d.title;n.byline=d.byline;n.url=d.url;n.topic=d.topic;n.notice=d.notice;n.nextUrl=d.nextUrl;n.moreStatus=d.moreStatus;n.videoPoster=d.videoPoster;n.videoUrl=d.videoUrl;n.videos.addAll(d.videos);n.videoTopic=d.videoTopic;n.metadataHash=d.metadataHash;n.discussionPage=d.discussionPage;n.virtualDiscussion=d.virtualDiscussion;n.tiebaReplyRevision=d.tiebaReplyRevision;n.hupuBodyRevision=d.hupuBodyRevision;n.cachedAt=d.cachedAt;n.cachedSession=d.cachedSession;n.cachedNamespace=d.cachedNamespace;n.unsupportedVideo=d.unsupportedVideo;n.filteredVideo=d.filteredVideo;n.loginRequired=d.loginRequired;n.sourceUnavailable=d.sourceUnavailable;n.filteredVideos=d.filteredVideos;n.filteredSectionIds.addAll(d.filteredSectionIds);n.blocks.addAll(d.blocks);n.sections.addAll(d.sections);n.related.addAll(d.related);return n;}
     static void merge(Document into,Document from){
-        into.unsupportedVideo|=from.unsupportedVideo;
+        String question=ZhihuAnswers.questionId(into.url);boolean sameQuestion=!question.isEmpty()&&question.equals(ZhihuAnswers.questionId(from.url));
+        if(into.videos.isEmpty()&&(!into.videoUrl.isEmpty()||!into.videoPoster.isEmpty())&&!from.videos.isEmpty())ReaderMedia.add(into,into.videoUrl,into.videoPoster);
+        for(VideoAttachment video:from.videos)ReaderMedia.add(into,video.url,video.poster);
+        if(from.videos.isEmpty()&&(!from.videoUrl.isEmpty()||!from.videoPoster.isEmpty())&&!into.videos.isEmpty())ReaderMedia.add(into,from.videoUrl,from.videoPoster);
+        if(into.videoPoster.isEmpty())into.videoPoster=from.videoPoster;
+        if(into.videoUrl.isEmpty())into.videoUrl=from.videoUrl;
+        into.unsupportedVideo|=from.unsupportedVideo;into.videoTopic|=from.videoTopic;
         into.filteredSectionIds.addAll(from.filteredSectionIds);
         into.filteredVideos=Math.max(Math.max(into.filteredVideos,from.filteredVideos),into.filteredSectionIds.size());
         into.sections.removeIf(s->into.filteredSectionIds.contains(s.id));
-        for(Section s:from.sections){if(into.filteredSectionIds.contains(s.id))continue;int existing=-1;for(int i=0;i<into.sections.size();i++)if(into.sections.get(i).id.equals(s.id)){existing=i;break;}if(existing<0)into.sections.add(s);else if(length(s)>length(into.sections.get(existing)))into.sections.set(existing,s);}
+        for(Section s:from.sections){
+            if(into.filteredSectionIds.contains(s.id))continue;
+            if(sameQuestion&&!s.answer&&s.label.equals("问题补充")&&s.id.equals("zhihu-question-"+question)){
+                int first=-1;Section best=s;
+                for(int i=0;i<into.sections.size();i++){Section old=into.sections.get(i);if(old.answer||!old.label.equals("问题补充"))continue;if(first<0)first=i;if(length(old)>length(best))best=old;}
+                if(first>=0){Section anchor=into.sections.get(first),updated=new Section(anchor.id,best.label,false);updated.blocks.addAll(best.blocks);updated.continuationUrl=best.continuationUrl;updated.sourcePostId=best.sourcePostId;into.sections.set(first,updated);for(int i=into.sections.size()-1;i>first;i--)if(!into.sections.get(i).answer&&into.sections.get(i).label.equals("问题补充"))into.sections.remove(i);continue;}
+            }
+            int existing=-1;for(int i=0;i<into.sections.size();i++)if(into.sections.get(i).id.equals(s.id)){existing=i;break;}if(existing<0)into.sections.add(s);else if(length(s)>length(into.sections.get(existing)))into.sections.set(existing,s);
+        }
         into.blocks.clear();for(Section s:into.sections)into.blocks.addAll(s.blocks);
     }
     private static int length(Section s){int n=0;for(Block b:s.blocks)n+=b.value.length();return n;}
+    boolean busy(){return busy;}
     void close(){if(closed)return;closed=true;busy=false;main.removeCallbacksAndMessages(null);parser.shutdownNow();SourceSurface.release(web);}
 }

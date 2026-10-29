@@ -57,7 +57,16 @@ public final class BrowsingExperienceInstrumentation extends Instrumentation {
         check(new ReadingHistory(getTargetContext()).get(URL).has("document"),"Loaded answer snapshot stored on disk");
     }
     private void restore()throws Exception{
-        ui(()->{quiet();((android.util.LruCache<?,?>)field(activity,"marks")).evictAll();((Repository)field(activity,"repo")).invalidateArticles();call("open",new Class[]{Item.class,boolean.class},new Item(Source.ZHIHU,"浏览体验合成测试",URL,""),false);});
+        ui(()->{
+            quiet();((android.util.LruCache<?,?>)field(activity,"marks")).evictAll();
+            Repository repo=(Repository)field(activity,"repo");String namespace=new ArticleDiskCache(activity).namespace();
+            // Restart evicts memory; explicit cache invalidation also revokes persisted
+            // bodies and is a different operation from ordinary process restoration.
+            repo.releaseArticleMemory();
+            check(namespace.equals(new ArticleDiskCache(activity).namespace())&&new ReadingHistory(activity).get(URL).has("document"),"Memory eviction preserves valid persisted reading snapshot");
+            check(repo.cachedArticle(new Item(Source.ZHIHU,"恢复验证",URL,""))==null,"Resume begins without an in-memory body");
+            call("open",new Class[]{Item.class,boolean.class},new Item(Source.ZHIHU,"浏览体验合成测试",URL,""),false);
+        });
         Thread.sleep(1100);
         check(js("document.querySelectorAll('section.part').length").equals("3"),"New process restores all loaded sections from disk");
         check(js("document.querySelectorAll('#part-2 p:not(.preview)').length").equals("15"),"Expanded destination survives process restart");
@@ -83,12 +92,61 @@ public final class BrowsingExperienceInstrumentation extends Instrumentation {
         ui(()->check((int)field(preview[0],"index")==0,"Real horizontal swipe switches to previous image"));
         ui(()->{WebView web=(WebView)field(preview[0],"current");check(web.getSettings().getBuiltInZoomControls(),"Gallery supports pinch zoom");check(web.getContentHeight()>web.getHeight()/web.getScale(),"Long image can scroll vertically");preview[0].dismiss();});
     }
+    private void unified()throws Exception{
+        android.content.SharedPreferences appearance=getTargetContext().getSharedPreferences("appearance",0);boolean hadMode=appearance.contains("mode");int previousMode=appearance.getInt("mode",0);
+        try{
+        for(boolean dark:new boolean[]{false,true})for(String kind:new String[]{"article","discussion","video","video-poster","video-multiple"}){
+            Document doc=new Document();doc.url="https://www.cls.cn/detail/9876501030";doc.title="统一阅读 · "+kind;
+            if(!kind.startsWith("video")||kind.equals("video-multiple")){
+                Section body=new Section("unified-body","正文",false);body.blocks.add(new Block("text","这是一段跨平台统一排版的正文。长链接、长标题和大字号不应造成内容横向溢出。"));doc.sections.add(body);doc.blocks.addAll(body.blocks);
+            }
+            if(kind.equals("discussion")){
+                Section reply=new Section("unified-reply","回复 · 读者",false);reply.blocks.add(new Block("text","这是一条与正文分开的讨论内容。"));doc.sections.add(reply);doc.blocks.addAll(reply.blocks);
+                Section longReply=new Section("unified-long-reply","评论 · 长评论作者",false);longReply.blocks.add(new Block("text","较长的讨论内容应提供一个明确的展开与收起入口。".repeat(60)));doc.sections.add(longReply);doc.blocks.addAll(longReply.blocks);
+            }
+            doc.unsupportedVideo=kind.startsWith("video");
+            if(kind.equals("video-poster")){
+                doc.videoPoster="https://reader-poster-fixture.invalid/cover.png";
+                Bitmap poster=Bitmap.createBitmap(320,180,Bitmap.Config.ARGB_8888);poster.eraseColor(0xff367caa);
+                java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();poster.compress(Bitmap.CompressFormat.PNG,100,bytes);poster.recycle();
+                ((ReaderImages)field(activity,"images")).put(doc.videoPoster,doc.url,bytes.toByteArray());
+            }
+            if(kind.equals("video-multiple")){
+                for(int n=0;n<2;n++)doc.videos.add(new VideoAttachment("https://video.cls.cn/"+n+".mp4",""));
+            }
+            ui(()->{quiet();appearance.edit().putInt("mode",dark?2:1).commit();Theme.apply(activity);set("dark",dark);set("BG",Theme.background(activity));set("INK",Theme.ink(activity));set("GREEN",Theme.accent(activity));set("MUTED",dark?0xff9b9da7:0xff696c76);set("CARD",dark?0xff282a31:0xfff1f2f4);set("BUTTON",dark?0xff2d3038:0xfff1f2f4);set("current",new Item(Source.CLS,doc.title,doc.url,""));set("primaryPending",true);call("frame",new Class[]{String.class,String.class},"统一阅读","news");call("scroller",new Class[0]);call("render",new Class[]{Document.class},doc);});
+            Thread.sleep(600);
+            check(js("document.querySelector('.reader-content')?.dataset.readerLayout").equals(JSONObject.quote(kind.startsWith("video")?"video":kind)),kind+" uses production unified renderer "+dark);
+            check(js("!document.querySelector('video,iframe,script')").equals("true"),kind+" does not eagerly load media or platform scripts "+dark);
+            if(kind.equals("discussion")){
+                check(js("document.querySelectorAll('.discussion-heading').length===1&&document.querySelectorAll('.part.discussion').length===2").equals("true"),"Discussion separated from body "+dark);
+                check(js("document.querySelectorAll('#part-0 a.action,#part-1 a.action,.section-nav').length===0&&document.querySelectorAll('#part-1 p:not(.preview)').length===1").equals("true"),"Short body/reply have no redundant controls "+dark);
+                check(js("document.querySelectorAll('#part-2 a.action').length===1&&!document.querySelector('#part-2 p:not(.preview)')").equals("true"),"Long comment starts with exactly one expand control "+dark);
+                click("#part-2 a.action");
+                check(js("document.querySelectorAll('#part-2 a.action').length===1&&document.querySelector('#part-2 p:not(.preview)')?.textContent.length>900").equals("true"),"Production action reveals full long comment "+dark);
+                click("#part-2 a.action");
+                check(js("document.querySelectorAll('#part-2 a.action').length===1&&!document.querySelector('#part-2 p:not(.preview)')").equals("true"),"Production collapse restores preview without duplicate controls "+dark);
+                ui(()->((WebView)field(activity,"readerWeb")).scrollTo(0,0));
+            }
+            if(kind.startsWith("video")&&!kind.equals("video-multiple"))check(js("document.querySelectorAll('.media-fallback').length===1&&document.querySelector('.media-fallback a').textContent.includes('来源页')").equals("true"),"Video-only document has honest fallback instead of empty screen "+dark);
+            if(kind.equals("video-multiple"))check(js("document.querySelectorAll('.media-compact').length===2&&document.querySelectorAll('.media-play').length===2&&document.querySelectorAll('a[href=\"https://quiet-reader.invalid/login\"]').length===1&&document.querySelector('#part-0').getBoundingClientRect().top<innerHeight").equals("true"),"Multiple compact media keep body visible with one source action "+dark);
+            if(kind.equals("video-poster"))check(js("document.querySelector('.media-poster')?.naturalWidth===320&&document.querySelector('.media-poster')?.naturalHeight===180").equals("true"),"Common poster uses authorized image pipeline and decodes "+dark);
+            for(int width:new int[]{320,412}){
+                ui(()->{WebView web=(WebView)field(activity,"readerWeb");android.view.ViewGroup.LayoutParams lp=web.getLayoutParams();lp.width=width==412?-1:Math.round(width*activity.getResources().getDisplayMetrics().density);web.setLayoutParams(lp);web.getSettings().setTextZoom(150);});Thread.sleep(250);
+                check(js("document.documentElement.scrollWidth<=innerWidth+1").equals("true"),kind+" no overflow at "+(width==412?"available width":"320dp")+" font150 "+dark);
+                ui(()->{WebView web=(WebView)field(activity,"readerWeb");int[] xy=new int[2];web.getLocationOnScreen(xy);check(xy[0]>=0&&xy[0]+web.getWidth()<=activity.getResources().getDisplayMetrics().widthPixels,kind+" WebView stays inside screen "+width+" "+dark);});
+            }
+            Bitmap shot=getUiAutomation().takeScreenshot();if(shot!=null){try(FileOutputStream file=new FileOutputStream(new File(output,"unified-"+kind+"-"+dark+".png"))){shot.compress(Bitmap.CompressFormat.PNG,100,file);}shot.recycle();}
+        }
+        }finally{((ReaderImages)field(activity,"images")).remove("https://reader-poster-fixture.invalid/cover.png");android.content.SharedPreferences.Editor edit=appearance.edit();if(hadMode)edit.putInt("mode",previousMode);else edit.remove("mode");edit.commit();}
+    }
     @Override public void onStart(){
         Bundle result=new Bundle();
         try{
             output=new File(getTargetContext().getExternalFilesDir(null),"browsing-qa/"+phase+"-"+System.currentTimeMillis());output.mkdirs();
             activity=(MainActivity)startActivitySync(new Intent(getTargetContext(),MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));Thread.sleep(600);
-            if(phase.equals("restore"))restore();else prepare();
+            if(phase.equals("media")){VideoReaderProbe probe=new VideoReaderProbe(this,activity);probe.run();checks+=probe.checks;failures+=probe.failures;report.append(probe.report);return;}
+            if(phase.equals("unified"))unified();else if(phase.equals("restore"))restore();else prepare();
             Bitmap shot=getUiAutomation().takeScreenshot();try(FileOutputStream file=new FileOutputStream(new File(output,"reader.png"))){shot.compress(Bitmap.CompressFormat.PNG,100,file);}shot.recycle();
         }catch(Throwable e){failures++;report.append("ERROR ").append(e).append('\n');}
         finally{try{if(activity!=null)ui(()->{quiet();activity.finish();});if(phase.equals("restore"))getTargetContext().getSharedPreferences("reading-history",0).edit().remove(URL).commit();report.append("checks=").append(checks).append(" failures=").append(failures).append('\n');try(FileOutputStream file=new FileOutputStream(new File(output,"report.txt"))){file.write(report.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}}catch(Exception e){failures++;}result.putString("stream",report+"\nOutput: "+output);finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);}

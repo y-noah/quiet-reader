@@ -1,0 +1,6 @@
+onnx==1.19.1
+onnxruntime==1.23.2
+transformers==4.57.1
+sentencepiece==0.2.1
+numpy==2.2.6
+protobuf==6.33.0

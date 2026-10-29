@@ -1,12 +1,15 @@
-param([ValidateSet('emulator-5556','emulator-5558')][string]$Serial='emulator-5556')
+param([ValidateSet('emulator-5556','emulator-5558','emulator-5560')][string]$Serial='emulator-5556')
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 $env:ANDROID_USER_HOME=Join-Path $projectRoot '.tools/android-user'
 $env:JAVA_HOME=(Get-ChildItem -LiteralPath (Join-Path $projectRoot '.tools/jdk') -Directory | Select-Object -First 1).FullName
 $adb=Join-Path $projectRoot '.tools/android-sdk/platform-tools/adb.exe'
-if((& $adb -s $Serial shell getprop ro.kernel.qemu).Trim() -ne '1'){throw 'Only project emulator allowed'}
-$expectedAvd=if($Serial -eq 'emulator-5558'){'quiet-reader-api26'}else{'quiet-reader-test'}
-if((& $adb -s $Serial emu avd name) -notcontains $expectedAvd){throw 'Wrong project AVD'}
+$qemuReply=@(& $adb -s $Serial shell getprop ro.kernel.qemu)
+if($LASTEXITCODE -ne 0){throw 'Project emulator is unavailable; start it and wait for boot before installing.'}
+if(($qemuReply -join "`n").Trim() -ne '1'){throw 'Only project emulator allowed'}
+$expectedAvd=if($Serial -eq 'emulator-5558'){'quiet-reader-api26'}elseif($Serial -eq 'emulator-5560'){'quiet-reader-api36'}else{'quiet-reader-test'}
+$avdReply=@(& $adb -s $Serial emu avd name)
+if($LASTEXITCODE -ne 0 -or $avdReply -notcontains $expectedAvd){throw 'Wrong or unavailable project AVD'}
 $credential=Import-Clixml -LiteralPath (Join-Path $projectRoot '.tools/signing/password.xml')
 $previousSecret=$env:QR_STORE_PASSWORD
 try {

@@ -12,7 +12,7 @@ public class PlatformAppearanceTest {
             d.blocks.add(new Block("text","合成正文"));
             d.blocks.add(new Block("image","https://example.com/photo.jpg"));
             String html=ReaderHtml.render(d,source,19,true,Collections.emptySet(),false);
-            assertTrue(source.name(),html.contains("color-scheme:dark;--bg:#1f2025;--card:#282a31;--ink:#cdcfd5"));
+            assertTrue(source.name(),html.contains("color-scheme:dark;--bg:#121316;--card:#1b1d22;--ink:#cdcfd5"));
             assertFalse(source.name(),html.contains("color-scheme:light"));
             assertFalse(source.name(),html.contains("filter:invert"));
             assertFalse(source.name(),html.contains("filter: invert"));

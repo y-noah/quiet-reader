@@ -1,0 +1,27 @@
+# 正文与后台来源的连通无障碍验证 — 2026-10-27
+
+只新增ReaderSourceAccessibilityProbe及FeedStoreInstrumentation测试入口，无正式App代码修改。普通候选仍New-20261027-cbe07180.apk，手机仍c050a471。本轮未访问手机、上传、推送或发布。
+
+## 具体范围
+
+晚间手机uiautomator原始转储曾包含后台知乎/贴吧源网页文字，截图则是统一正文。SourceSurface已有IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS；原始转储不等同于正常触摸探索，不能直接当成TalkBack泄漏。
+
+新增隔离API36测试先启用已存在的测试APK AccessibilityService，UiAutomation使用DONT_SUPPRESS_ACCESSIBILITY_SERVICES，实际确认服务可见及AccessibilityManager触摸探索已启用，明确去掉INCLUDE_NOT_IMPORTANT_VIEWS。不是仅检查源码标志。
+
+通过正常缓存入口打开真实MainActivity统一阅读WebView，连通树必须找到固定标题和正文；随后用生产SourceSurface.attach将另一个已加载WebView放在同一内容宿主、前台原生层之后。合成来源页有独特标题和链接，无网络依赖；加载完成且DOM文字/真实非零viewport均检查后，再断言后台文字/链接不出现在前台树。
+
+阳性对照：仅在测试中将同一来源WebView的排除属性改为AUTO，连通树必须确实发现同一独特来源文字；再次调用生产attach后，来源消失而当前正文仍存在。这样排除网页未加载或测试本来无法观察它导致的假通过。
+
+继续用ACTION_ACCESSIBILITY_FOCUS实际聚焦正文，ACTION_CLICK操作真实“更多选项”菜单并找到“来源 / 登录”，返回键关闭菜单后正文仍可达；生产release销毁来源后前台树保持可读。测试finally恢复UiAutomation原flags并释放来源、阅读Activity和Repository。
+
+## 结果与恢复
+
+证据 artifacts/local-ai/reader-source-accessibility-20261027/。标准窗口1080x2400/420dpi/fontScale1.0：12/0；640x1280/320dpi/fontScale1.5，即320dp窗口：12/0。两组24项均INSTRUMENTATION_CODE:-1，包括同一来源可观察的阳性对照，不是24个来源或24种真实账号场景。
+
+Debug app/test编译通过；安装成功日志与本轮APK哈希在summary.json。不伪称拉取了这次Debug实际安装包。测试服务仅存在于discoveryStoreTest测试Manifest，正式包没有增加服务或权限。操作前服务配置null/accessibility_enabled0，结束按原值恢复并逐项比较通过；显示恢复1080x2400/420dpi/fontScale1.0。两个隔离包force-stop，AVD正常关闭且userdata保留，进程终态见cleanup.json。
+
+## 边界
+
+这是实际框架触摸探索/控件树/焦点/菜单操作验证，没有运行TalkBack语音引擎，不证明朗读顺序、全部内容控件、其他WebView版本或物理ColorOS兼容。合成缓存正文和受控来源WebView验证的是生产SourceSurface的共存规则，不代替实际知乎/虎扑权限或动态采集全部生命周期。手机原始dump观察得到合理解释，不能扩大为全部无障碍已验收。
+
+原整体门槛继续开放：ARM双模型全App峰值、拔线能耗、真实账号全面权限及逐条贴吧关系、个人推荐收益、独立事件去重质量、完整页面/TalkBack验收和长期实际磁盘行为。

@@ -12,6 +12,29 @@ public class WeiboContinuationTest {
     private static String card(String text,String link){return "<div class='card-wrap'><div class='weibo-text'>"+text+link+"</div></div>";}
     private static String link(String url){return "<a href='"+url+"'>全文</a>";}
     private static Document parse(String html){return SourceParser.article(Source.WEIBO,html,SEARCH);}
+    private static String authored(String author,String body){return "<div class='card-wrap'><header class='weibo-top'><h3 class='m-text-cut'>"+author+"<img class='vipicon'></h3><h4 class='m-text-cut'>2小时前 来自某客户端</h4></header><div class='weibo-og'><div class='weibo-text'>"+body+"</div></div></div>";}
+    @Test public void mobilePostsRetainTheirOwnHeaderAuthorsWithoutTimeOrBadges(){
+        Document d=parse(authored("甲作者","第一条正文")+authored("乙作者","第二条正文"));
+        assertEquals("微博 · 甲作者",d.sections.get(0).label);assertEquals("微博 · 乙作者",d.sections.get(1).label);
+        assertFalse(d.blocks.stream().anyMatch(b->b.value.contains("2小时前")));assertTrue(ReaderHtml.render(d,Source.WEIBO,19).contains("微博 · 甲作者"));
+    }
+    @Test public void desktopPostAuthorComesFromItsInfoRatherThanAMention(){
+        Document d=parse("<div class='card-wrap'><div class='info'><a class='name'>桌面作者</a></div><p class='txt'>正文提及<a class='name'>被提及的人</a></p></div>");
+        assertEquals("微博 · 桌面作者",d.sections.get(0).label);
+    }
+    @Test public void equalTextByDifferentAuthorsKeepsSeparateCardsAndFoldIdentities(){
+        Document d=parse(authored("甲作者","相同文字")+authored("乙作者","相同文字"));
+        assertEquals(2,d.sections.size());assertNotEquals(d.sections.get(0).id,d.sections.get(1).id);
+        assertEquals(1,parse(authored("甲作者","相同文字")+authored("甲作者","相同文字")).sections.size());
+    }
+    @Test public void recommendationAndNestedCardsCannotSupplyMissingAuthor(){
+        Document d=parse("<div class='card-wrap'><aside class='recommend'><header><h3 class='m-text-cut'>推荐作者</h3></header></aside><div class='card'><header><h3 class='m-text-cut'>另一张卡片作者</h3></header></div><div class='weibo-text'>没有作者的正文</div></div>");
+        assertEquals("微博",d.sections.get(0).label);
+    }
+    @Test public void quotedPostNeverInheritsRepostingAuthorsName(){
+        Document d=parse("<div class='card-wrap'><header><h3 class='m-text-cut'>转发者</h3></header><div class='weibo-og'><div class='weibo-text'>转发附言</div></div><div class='weibo-rp'><div class='weibo-text'>被转发内容</div></div></div>");
+        assertEquals("微博 · 转发者",d.sections.get(0).label);assertEquals("微博",d.sections.get(1).label);
+    }
     @Test public void retainsObservedFulltextDestinationWithoutTurningItIntoBodyText(){
         Document d=parse(card("原帖摘要…",link(POST)));
         assertEquals(1,d.sections.size());assertEquals(POST,d.sections.get(0).continuationUrl);

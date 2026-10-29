@@ -1,14 +1,18 @@
 plugins { id 'com.android.application' }
 android {
     namespace 'app.quietreader'
-    compileSdk 35
+    compileSdk 36
+    buildFeatures { buildConfig true }
+    ndkVersion '28.2.13676358'
     defaultConfig {
         applicationId 'app.quietreader'
         minSdk 26
-        targetSdk 35
-        versionCode 46
-        versionName '0.3.35'
+        targetSdk 36
+        versionCode 48
+        versionName '0.4.0'
+        buildConfigField 'boolean', 'RANKING_MEASUREMENT_ENABLED', project.hasProperty('isolatedReleaseFlowProbe') ? 'true' : 'false'
         testInstrumentationRunner 'app.quietreader.FiveSourceInstrumentation'
+        externalNativeBuild { cmake { arguments "-DSENTENCEPIECE_SOURCE=${project.findProperty('sentencepieceSource') ?: rootProject.file('.tools/native/sources/sentencepiece-31646a467d2051eb904e0b45de3a73e91fe1c1e3')}", '-DANDROID_STL=c++_static'; targets 'quietreader_sentencepiece' } }
     }
     signingConfigs {
         personal {
@@ -23,9 +27,24 @@ android {
     buildTypes { release { minifyEnabled true; signingConfig signingConfigs.personal; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro' } }
     compileOptions { coreLibraryDesugaringEnabled true; sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     testOptions { unitTests.returnDefaultValues = true }
+    sourceSets.androidTest.assets.srcDir('src/test/resources')
+    // Notification permission belongs only to the isolated flow-test target.
+    if (project.hasProperty('isolatedReleaseFlowProbe')) {
+        sourceSets.release.manifest.srcFile('src/isolatedFlowProbe/AndroidManifest.xml')
+    }
+    // Bound accessibility service is only for emulator store/UI probes, never phone/release drivers.
+    if (project.hasProperty('discoveryStoreUi')) {
+        sourceSets.androidTest.manifest.srcFile('src/discoveryStoreTest/AndroidManifest.xml')
+        sourceSets.androidTest.res.srcDir('src/discoveryStoreTest/res')
+    }
+    externalNativeBuild { cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.22.1'; if(project.hasProperty('nativeBuildRoot')) buildStagingDirectory file(project.property('nativeBuildRoot')) } }
+    // Explicit offline trial packaging; regular diagnostics use a verified local import.
+    if (project.hasProperty('bundleLocalModels')) sourceSets.main.assets.srcDir(rootProject.file('.tools/model-package'))
 }
 dependencies {
+    implementation 'androidx.webkit:webkit:1.18.0'
     implementation 'org.jsoup:jsoup:1.23.2'
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.23.2'
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs_nio:2.1.5'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20240303'
@@ -60,3 +79,15 @@ if (project.hasProperty('expandedBrowsingUi')) android.defaultConfig.testInstrum
 if (project.hasProperty('mobileLayoutUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.MobileLayoutInstrumentation'
 
 if (project.hasProperty('weiboBoardUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.WeiboBoardInstrumentation'
+
+if (project.hasProperty('localAiUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.LocalAiInstrumentation'
+if (project.hasProperty('discoveryStoreUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.FeedStoreInstrumentation'
+if (project.hasProperty('systemBackUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.SystemBackInstrumentation'
+if (project.hasProperty('releaseDiscoveryUi')) android.defaultConfig.testInstrumentationRunner = 'app.quietreader.ReleaseDiscoveryInstrumentation'
+
+// Isolated local clean-install diagnostic; never changes the normal application id.
+if (project.hasProperty('isolatedReleaseProbe')) android.defaultConfig.applicationId = 'app.quietreader.installprobe'
+if (project.hasProperty('isolatedReleaseFlowProbe')) android.defaultConfig.applicationId = 'app.quietreader.flowprobe'
+// normalUpgradeProbe remains a packaging-script selector; normal and trial
+// artifacts now share the actual 0.4.0/version48 upgrade identity.
+if (project.hasProperty('isolatedDiscoveryProbe')) android.defaultConfig.applicationId = 'app.quietreader.discoveryprobe'

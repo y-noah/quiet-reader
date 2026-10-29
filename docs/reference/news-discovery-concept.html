@@ -1,0 +1,94 @@
+<div id="news-discovery-preview">
+  <div class="nd-caption">概念预览 · 文章、来源与排序均为示例</div>
+  <div class="viz-carousel viz-dotted-background" aria-label="News 阅读列表设计" data-previous-label="上一种" data-next-label="下一种">
+    <section data-variant="清爽列表" aria-label="清爽列表方案"><div class="nd-stage"><div class="nd-phone" data-layout="list" aria-label="清爽阅读列表"></div></div></section>
+    <section data-variant="阅读卡片" aria-label="阅读卡片方案" hidden><div class="nd-stage"><div class="nd-phone" data-layout="cards" aria-label="阅读卡片列表"></div></div></section>
+  </div>
+</div>
+<style>
+#news-discovery-preview{font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif;color:light-dark(#30323a,#dddfe5)}
+#news-discovery-preview .nd-caption{text-align:center;font-size:12px;color:light-dark(#747982,#a3a6af);margin:0 0 14px}
+#news-discovery-preview .nd-stage{padding:20px 12px 30px;min-height:1000px;box-sizing:border-box;display:flex;align-items:flex-start;justify-content:center}
+#news-discovery-preview .nd-phone{--nd-bg:light-dark(#fafafa,#1f2025);--nd-ink:light-dark(#30323a,#dddfe5);--nd-sub:light-dark(#717680,#a5a9b3);--nd-line:light-dark(#e9eaed,#36383f);--nd-blue:light-dark(#247bc1,#83bdf1);--nd-soft:light-dark(#edf4fa,#293440);--nd-paper:light-dark(#fff,#282a31);width:100%;max-width:410px;min-height:798px;position:relative;box-sizing:border-box;padding:16px 22px 0;border:1px solid var(--nd-line);border-radius:28px;background:var(--nd-bg);color:var(--nd-ink);box-shadow:0 14px 40px light-dark(#18233218,#00000035);overflow:hidden;display:flex;flex-direction:column;font-size:14px;line-height:1.5}
+#news-discovery-preview .nd-phone *{box-sizing:border-box}
+#news-discovery-preview .nd-phone button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:inherit}
+#news-discovery-preview .nd-status{display:flex;justify-content:space-between;align-items:center;padding:0 3px 21px;font-size:12px;font-weight:500}
+#news-discovery-preview .nd-status span:last-child{display:flex;gap:5px;align-items:center}
+#news-discovery-preview .nd-status svg{width:14px;height:14px}
+#news-discovery-preview .nd-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+#news-discovery-preview .nd-brand{font-size:23px;letter-spacing:-.8px;font-weight:600}
+#news-discovery-preview .nd-header button{min-width:44px;min-height:44px;display:grid;place-items:center;color:var(--nd-sub)}
+#news-discovery-preview .nd-titleline{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+#news-discovery-preview h2{font-size:24px;line-height:1.3;font-weight:600;letter-spacing:-.5px;margin:0}
+#news-discovery-preview .nd-titleline button{font-size:12px;color:var(--nd-blue);min-height:44px;display:flex;gap:4px;align-items:center;white-space:nowrap}
+#news-discovery-preview .nd-titleline svg{width:14px;height:14px}
+#news-discovery-preview .nd-summary{font-size:12px;color:var(--nd-sub);margin:0 0 17px}
+#news-discovery-preview .nd-filters{display:flex;flex-wrap:wrap;gap:7px;padding-bottom:17px;border-bottom:1px solid var(--nd-line)}
+#news-discovery-preview .nd-filters button{padding:6px 12px;border-radius:7px;font-size:13px;min-height:36px;color:var(--nd-sub)}
+#news-discovery-preview .nd-filters button[aria-pressed=true]{background:var(--nd-ink);color:var(--nd-bg)}
+#news-discovery-preview .nd-main{flex:1;min-height:506px}
+#news-discovery-preview .nd-row{display:grid;grid-template-columns:24px minmax(0,1fr);gap:9px;padding:17px 0;border-bottom:1px solid var(--nd-line)}
+#news-discovery-preview .nd-rank{font-size:13px;letter-spacing:-.4px;color:var(--nd-sub);padding-top:2px;font-variant-numeric:tabular-nums}
+#news-discovery-preview .nd-row:first-child .nd-rank{color:var(--nd-blue)}
+#news-discovery-preview .nd-open{text-align:left;display:block;width:100%;font-size:16px!important;font-weight:500!important;line-height:1.55!important;letter-spacing:.1px}
+#news-discovery-preview .nd-meta{font-size:11px;color:var(--nd-sub);margin-top:7px;display:flex;flex-wrap:wrap;column-gap:7px;row-gap:2px}
+#news-discovery-preview .nd-desc{font-size:12px;color:var(--nd-sub);margin:8px 0 0;line-height:1.65}
+#news-discovery-preview .nd-why{font-size:11px!important;margin-top:8px;color:var(--nd-blue)!important;text-align:left;display:flex;align-items:center;gap:5px;min-height:24px}
+#news-discovery-preview .nd-why svg{height:12px;width:12px}
+#news-discovery-preview .nd-bottom{display:flex;justify-content:space-around;gap:10px;padding:12px 0 15px;margin-top:12px;border-top:1px solid var(--nd-line)}
+#news-discovery-preview .nd-bottom button{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:60px;min-height:46px;color:var(--nd-sub);font-size:11px}
+#news-discovery-preview .nd-bottom button[aria-selected=true]{color:var(--nd-blue)}
+#news-discovery-preview .nd-bottom svg{height:20px;width:20px}
+#news-discovery-preview .nd-homebar{height:4px;border-radius:10px;width:96px;background:var(--nd-ink);margin:0 auto 10px;opacity:.85}
+#news-discovery-preview .nd-phone[data-layout=cards] .nd-filters{border:0;padding-bottom:7px}
+#news-discovery-preview .nd-phone[data-layout=cards] .nd-main{padding-top:3px}
+#news-discovery-preview .nd-phone[data-layout=cards] .nd-row{background:var(--nd-paper);border:1px solid var(--nd-line);border-radius:12px;padding:14px 13px;margin:10px 0;grid-template-columns:22px minmax(0,1fr)}
+#news-discovery-preview .nd-phone[data-layout=cards] .nd-row:first-child{padding:18px 13px;background:var(--nd-soft);border-color:transparent}
+#news-discovery-preview .nd-phone[data-layout=cards] .nd-row:first-child .nd-open{font-size:18px!important}
+#news-discovery-preview .nd-panel{padding:18px 0 8px}
+#news-discovery-preview .nd-panel h3{font-size:17px;font-weight:500;margin:5px 0 14px}
+#news-discovery-preview .nd-panel p{font-size:14px;line-height:1.85;margin:0 0 18px;color:var(--nd-sub)}
+#news-discovery-preview .nd-back{display:flex;align-items:center;gap:6px;min-height:44px;color:var(--nd-blue)!important;margin-bottom:8px}
+#news-discovery-preview .nd-back svg{width:16px;height:16px}
+#news-discovery-preview .nd-setting{display:flex;justify-content:space-between;gap:15px;align-items:center;padding:15px 0;border-bottom:1px solid var(--nd-line)}
+#news-discovery-preview .nd-setting small{display:block;font-size:12px;color:var(--nd-sub);margin-top:4px}
+#news-discovery-preview .nd-setting input{accent-color:var(--nd-blue);width:18px;height:18px;flex-shrink:0}
+#news-discovery-preview .nd-setting select{font:inherit;color:var(--nd-ink);border:1px solid var(--nd-line);background:var(--nd-paper);border-radius:6px;padding:7px;max-width:140px}
+#news-discovery-preview .nd-action{background:var(--nd-ink)!important;color:var(--nd-bg)!important;border-radius:9px!important;min-height:44px;padding:10px 16px!important;width:100%;margin-top:20px}
+#news-discovery-preview .nd-source{display:flex;justify-content:space-between;align-items:center;padding:17px 0;border-bottom:1px solid var(--nd-line);gap:10px}
+#news-discovery-preview .nd-source small{display:block;font-size:12px;color:var(--nd-sub);margin-top:4px}
+#news-discovery-preview .nd-source span:last-child{font-size:11px;background:var(--nd-soft);color:var(--nd-blue);border-radius:5px;padding:3px 7px;white-space:nowrap}
+#news-discovery-preview .nd-notice{font-size:12px;color:var(--nd-sub);padding:17px 0;text-align:center}
+#news-discovery-preview .nd-detail-title{font-size:22px;line-height:1.55;margin:13px 0}
+#news-discovery-preview .nd-detail-tag{font-size:12px;color:var(--nd-blue);margin-bottom:14px}
+@media(max-width:400px){#news-discovery-preview .nd-stage{padding:12px 0 24px;min-height:1100px}#news-discovery-preview .nd-phone{padding:14px 16px 0;border-radius:20px}#news-discovery-preview .nd-row{gap:6px}#news-discovery-preview .nd-meta{font-size:11px}}
+</style>
+<script>
+(() => {
+const root=document.getElementById('news-discovery-preview');
+const articles=[
+ {id:1,title:'买 NAS 之前，先算清这笔长期账',source:'少数派',type:'实用指南',category:'科技',age:'35分钟前',minutes:8,desc:'从硬盘、电费到备份，真正影响使用成本的，是买回来之后的选择。',reason:'符合「实用经验」偏好',detail:'实用经验优先；来自你选择的科技来源；发布时间较近。'},
+ {id:2,title:'城市为什么越来越热？树荫之外，还有这些答案',source:'研究机构网站',type:'研究解读',category:'社会',age:'1小时前',minutes:6,desc:'建筑材料、街道形态与夜间散热，如何共同影响我们体感中的城市。',reason:'为你的列表补充不同视角',detail:'与已选科技文章主题不同；匹配你保留的社会与公共生活方向。'},
+ {id:3,title:'一个人维护开源项目，最难的往往不是写代码',source:'个人博客 · RSS',type:'亲历记录',category:'科技',age:'2小时前',minutes:10,desc:'一份关于维护、沟通与可持续投入的实践记录。',reason:'你关注的「独立开发」',detail:'命中独立开发关注词；来自已订阅博客；属于你偏好的实践记录。'},
+ {id:4,title:'租房合同里，哪些条款真的值得逐字看',source:'公共法律服务',type:'生活指南',category:'生活',age:'3小时前',minutes:5,desc:'押金、维修与提前退租，把常见争议落实到合同里的具体约定。',reason:'符合「实用经验」偏好',detail:'命中生活指南方向；属于已订阅的公共服务来源。'},
+ {id:5,title:'那些没能写进产品说明书的设计取舍',source:'独立设计刊物',type:'长文',category:'生活',age:'4小时前',minutes:7,desc:'从一件日常用品出发，看看方便、成本与耐用之间的选择。',reason:'来自你选择的设计来源',detail:'命中产品设计方向；来源已启用；本轮同主题内容较少。'}
+];
+const sourceGroups=[['专业媒体','少数派、爱范儿、专题媒体','已启用'],['独立作者','个人博客、RSS 订阅','已启用'],['社区讨论','知乎、V2EX、虎扑','已启用'],['原始信息','机构网站、官方公告','已启用'],['更多来源','添加网站或 RSS 地址','可扩展']];
+const savedState=window.openai?.widgetState?.privateContent||{};
+const state={saved:new Set(Array.isArray(savedState.saved)?savedState.saved:[]),filter:'全部',page:'feed',focus:null,hideEntertainment:true,practical:true,sort:'适合我',expandedSources:false};
+const design={details:true,spacing:17};
+const icon=(name)=>'<i data-lucide="'+name+'" aria-hidden="true"></i>';
+function remember(){window.openai?.setWidgetState?.({modelContent:{preview:'多来源阅读列表',sort:state.sort,filter:state.filter},privateContent:{saved:[...state.saved]}})?.catch(()=>{});}
+function rows(phone){let pool=articles.filter(a=>state.filter==='全部'||a.category===state.filter);if(state.page==='saved')pool=articles.filter(a=>state.saved.has(a.id));const order=state.sort==='最新'?[1,2,3,4,5]:state.practical?[1,3,2,4,5]:[2,3,5,1,4];pool=[...pool].sort((a,b)=>order.indexOf(a.id)-order.indexOf(b.id));const isCards=phone.dataset.layout==='cards';const visible=isCards?pool.slice(0,3):pool;return visible.length?visible.map((a,i)=>'<article class="nd-row"><span class="nd-rank">'+String(i+1).padStart(2,'0')+'</span><div><button class="nd-open cursor-interaction" data-open="'+a.id+'">'+a.title+'</button>'+(isCards&&design.details?'<p class="nd-desc">'+a.desc+'</p>':'')+'<div class="nd-meta"><span>'+a.source+'</span><span>· '+a.age+'</span><span>· '+a.minutes+'分钟</span></div>'+(i===0||isCards?'<button class="nd-why cursor-interaction" data-why="'+a.id+'">'+icon('corner-down-right')+a.reason+'</button>':'')+'</div></article>').join(''):'<div class="nd-notice">打开一篇文章，点击「稍后读」即可加入。</div>';}
+function panel(){const a=articles.find(a=>a.id===state.focus);if(state.page==='article')return '<div class="nd-panel"><button class="nd-back cursor-interaction" data-action="back">'+icon('arrow-left')+'返回列表</button><div class="nd-detail-tag">'+a.source+' · '+a.type+'</div><div class="nd-detail-title">'+a.title+'</div><div class="nd-meta">预计阅读 '+a.minutes+' 分钟</div><hr style="border:0;border-top:1px solid var(--nd-line);margin:24px 0"><p>'+a.desc+'</p><p>这里进入原文阅读，保留来源、图片和阅读位置。</p><div class="nd-notice">概念预览，未加载真实文章正文</div><button class="nd-action cursor-interaction" data-save="'+a.id+'">'+(state.saved.has(a.id)?'已加入稍后读 · 点击移除':'加入稍后读')+'</button></div>';
+if(state.page==='why')return '<div class="nd-panel"><button class="nd-back cursor-interaction" data-action="back">'+icon('arrow-left')+'返回列表</button><h3>这篇为什么排在这里</h3><p>'+a.title+'</p><div class="nd-setting"><div>匹配你的方向<small>'+a.detail+'</small></div></div><div class="nd-setting"><div>不把多处转载当作更热<small>相同内容保留一个阅读入口。</small></div></div><div class="nd-setting"><div>不是全网热度排名<small>顺序取决于你的设置与本次取得的内容。</small></div></div><button class="nd-action cursor-interaction" data-action="preferences">调整我的阅读偏好</button></div>';
+if(state.page==='preferences')return '<div class="nd-panel"><button class="nd-back cursor-interaction" data-action="back">'+icon('arrow-left')+'返回列表</button><h3>按你的方式排列</h3><label class="nd-setting"><div>默认顺序<small>随时可以切回发布时间</small></div><select data-option="sort" aria-label="默认顺序"><option'+(state.sort==='适合我'?' selected':'')+'>适合我</option><option'+(state.sort==='最新'?' selected':'')+'>最新</option></select></label><label class="nd-setting"><div>实用经验优先<small>指南、教程和亲历记录</small></div><input type="checkbox" data-option="practical" '+(state.practical?'checked':'')+'></label><label class="nd-setting"><div>减少明星动态<small>保留影视作品与文化讨论</small></div><input type="checkbox" data-option="hideEntertainment" '+(state.hideEntertainment?'checked':'')+'></label><div class="nd-setting"><div>已选择的方向<small>科技 · 社会 · 生活</small></div></div><button class="nd-action cursor-interaction" data-action="apply">应用到阅读列表</button></div>';
+return '<div class="nd-panel"><h3>不止你熟悉的平台</h3>'+sourceGroups.map(s=>'<div class="nd-source"><div>'+s[0]+'<small>'+s[1]+'</small></div><span>'+s[2]+'</span></div>').join('')+'</div>';}
+function render(){root.querySelectorAll('.nd-phone').forEach(phone=>{const isFeed=state.page==='feed'||state.page==='saved';phone.style.setProperty('--nd-row-space',design.spacing+'px');phone.innerHTML='<div class="nd-status"><span>9:41</span><span>'+icon('signal')+icon('wifi')+icon('battery-full')+'</span></div><header class="nd-header"><span class="nd-brand">News</span><button class="cursor-interaction" aria-label="阅读偏好" data-action="preferences">偏好</button></header>'+(isFeed?'<div class="nd-titleline"><h2>'+(state.page==='saved'?'稍后读':'发现值得读的')+'</h2>'+(state.page==='feed'?'<button class="cursor-interaction" data-action="preferences">'+state.sort+' '+icon('chevron-down')+'</button>':'')+'</div><p class="nd-summary">'+(state.page==='saved'?'留给有时间的时候':'多种来源，一个阅读顺序')+'</p>'+(state.page==='feed'?'<div class="nd-filters">'+['全部','科技','社会','生活'].map(f=>'<button class="cursor-interaction" data-filter="'+f+'" aria-pressed="'+(state.filter===f)+'">'+f+'</button>').join('')+'</div>':''):'')+'<main class="nd-main" aria-live="polite">'+(isFeed?rows(phone):panel())+'</main><nav class="nd-bottom" aria-label="应用导航">'+[['feed','compass','发现'],['sources','panels-top-left','来源'],['saved','bookmark','稍后读']].map(n=>'<button class="cursor-interaction" data-page="'+n[0]+'" aria-selected="'+(state.page===n[0])+'">'+icon(n[1])+'<span>'+n[2]+(n[0]==='saved'&&state.saved.size?' · '+state.saved.size:'')+'</span></button>').join('')+'</nav><div class="nd-homebar"></div>';phone.querySelectorAll('.nd-row').forEach(row=>{if(phone.dataset.layout==='list')row.style.paddingTop=row.style.paddingBottom=design.spacing+'px';});});if(globalThis.lucide)lucide.createIcons({attrs:{width:20,height:20}});}
+root.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.filter){state.filter=b.dataset.filter;state.page='feed';}if(b.dataset.page){state.page=b.dataset.page;state.filter='全部';}if(b.dataset.open){state.focus=Number(b.dataset.open);state.page='article';}if(b.dataset.why){state.focus=Number(b.dataset.why);state.page='why';}if(b.dataset.save){const id=Number(b.dataset.save);state.saved.has(id)?state.saved.delete(id):state.saved.add(id);}if(b.dataset.action==='preferences')state.page='preferences';if(['back','apply'].includes(b.dataset.action))state.page='feed';render();remember();});
+root.addEventListener('change',e=>{const key=e.target.dataset.option;if(!key)return;state[key]=e.target.type==='checkbox'?e.target.checked:e.target.value;remember();});
+window.addEventListener('openai:set_globals',e=>{const v=e.detail?.globals?.widgetState?.privateContent;if(v&&Array.isArray(v.saved)){state.saved=new Set(v.saved);render();}});
+render();
+if(globalThis.Tweak){const tweak=new Tweak({container:root,onChange:render});tweak.addToggle(design,'details',{label:'卡片显示导读'});tweak.addSlider(design,'spacing',{label:'列表行间留白',min:12,max:22,unit:'px'});}
+})();
+</script>

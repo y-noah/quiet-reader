@@ -4,6 +4,31 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.*;
 
 public class SourceParserTest {
+    @Test public void renderedV2exImageDoesNotLeaveEmptyMarkdownSyntax()throws Exception{
+        String html;try(java.io.InputStream in=getClass().getResourceAsStream("/fixtures/v2ex-hybrid-image-fragment-20261027.html")){assertNotNull(in);html=new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
+        Document d=SourceParser.article(Source.V2EX,html,"https://www.v2ex.com/t/1251768");
+        assertEquals(1,d.sections.size());assertEquals("v2ex-main",d.sections.get(0).id);
+        assertEquals(2,d.blocks.size());assertEquals("补充说明",d.blocks.get(0).value);
+        assertEquals("image",d.blocks.get(1).type);assertEquals("https://i.imgur.com/eJmm0o8.jpeg",d.blocks.get(1).value);
+    }
+    @Test public void hybridImageCleanupPreservesProseRepliesAndImageOrder(){
+        String image="<a href='https://i.imgur.com/one.jpg'><img src='https://i.imgur.com/one.jpg'></a>";
+        String html="<div class=topic_content>前文![]("+image+")后文![](<img src='https://i.imgur.com/two.jpg'>)末尾</div><div class=cell id=r_10><strong><a href='/member/example'>回复作者</a></strong><div class=reply_content>回复前文![]("+image+")回复后文</div></div>";
+        Document d=SourceParser.article(Source.V2EX,html,"https://www.v2ex.com/t/123");
+        assertEquals(2,d.sections.size());assertEquals("v2ex-r_10",d.sections.get(1).id);assertTrue(d.sections.get(1).label.contains("回复作者"));
+        assertEquals(java.util.List.of("前文","https://i.imgur.com/one.jpg","后文","https://i.imgur.com/two.jpg","末尾"),d.sections.get(0).blocks.stream().map(b->b.value).toList());
+        assertEquals(java.util.List.of("回复前文","https://i.imgur.com/one.jpg","回复后文"),d.sections.get(1).blocks.stream().map(b->b.value).toList());
+    }
+    @Test public void hybridImageCleanupNeverGuessesAtLiteralOrUnmatchedSyntax(){
+        String image="<a href='https://i.imgur.com/one.jpg'><img src='https://i.imgur.com/one.jpg'></a>";
+        for(String fragment:new String[]{"<pre>![]("+image+")</pre>","<code>![]("+image+")</code>","![原始说明]("+image+")","![]("+image,"文字"+image+")","![](<a href='https://example.org/article'><img src='https://i.imgur.com/one.jpg'></a>)","![](<img src='javascript:bad'>)","![](<span>说明</span>"+image+")","![]("+image+"<br>)"}){
+            Document d=SourceParser.article(Source.V2EX,"<div class=topic_content>"+fragment+"</div>","https://www.v2ex.com/t/123");
+            String text=d.blocks.stream().filter(b->b.type.equals("text")).map(b->b.value).collect(java.util.stream.Collectors.joining());
+            assertTrue(fragment,text.contains(fragment.startsWith("文字")?")":fragment.startsWith("![原始")?"![原始说明](":"![]("));
+        }
+        Document other=SourceParser.article(Source.IFANR,"<article class=c-article-content>![]("+image+")</article>","https://www.ifanr.com/article/123/");
+        assertTrue(other.blocks.stream().anyMatch(b->b.value.contains("![](")));
+    }
     @Test public void rejectsActiveAndLocalSchemes() {
         assertFalse(UrlPolicy.https("javascript:alert(1)"));
         assertFalse(UrlPolicy.belongs(Source.WEIBO,"https://weibo.com.evil.test/post"));
@@ -42,7 +67,7 @@ public class SourceParserTest {
     }
     @Test public void videoPlaceholderIsNotArticleText() {
         Document d=SourceParser.article(Source.IFANR,"<article class=c-article-content><div>视频加载中...</div><video src='x'></video><p>视频的文字介绍</p></article>","https://www.ifanr.com/article/123/");
-        assertEquals(1,d.blocks.size());assertEquals("视频的文字介绍",d.blocks.get(0).value);assertTrue(d.notice.contains("包含视频"));
+        assertEquals(1,d.blocks.stream().filter(b->b.type.equals("text")).count());assertEquals("视频的文字介绍",d.blocks.stream().filter(b->b.type.equals("text")).findFirst().get().value);assertTrue(d.notice.contains("包含视频"));
     }
     @Test public void nextPageMustRemainInSameThread() {
         String base="https://bbs.hupu.com/123.html";

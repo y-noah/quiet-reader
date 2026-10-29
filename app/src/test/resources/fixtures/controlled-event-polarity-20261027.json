@@ -1,0 +1,287 @@
+{
+  "schema": 1,
+  "corpus_sha256": "d2eed6a272b084111298aee853f59c57d0f2a16818dfb127723516573ee0ec89",
+  "provenance": "Controlled synthetic predicate claims, fixed before actual model scores. No observed news, personal labels or real accounts. corpus_sha256 hashes the PowerShell compact UTF-8 pairs serialization.",
+  "pairs": [
+    {
+      "label": "different",
+      "admission": "CONFLICT",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/polarity/0/a",
+        "title": "该候选人成功连任地方议会主席",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      },
+      "right": {
+        "source": "WEIBO",
+        "url": "https://example.org/polarity/0/b",
+        "title": "该候选人未能连任地方议会主席",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "admission": "CONFLICT",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/polarity/1/a",
+        "title": "该候选人当选地方议会主席",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      },
+      "right": {
+        "source": "WEIBO",
+        "url": "https://example.org/polarity/1/b",
+        "title": "该候选人未当选地方议会主席",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "admission": "CONFLICT",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/polarity/2/a",
+        "title": "该候选人当选地方议会主席",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      },
+      "right": {
+        "source": "WEIBO",
+        "url": "https://example.org/polarity/2/b",
+        "title": "该候选人没能当选地方议会主席",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "admission": "CONFLICT",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/polarity/3/a",
+        "title": "该公司发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      },
+      "right": {
+        "source": "WEIBO",
+        "url": "https://example.org/polarity/3/b",
+        "title": "该公司未发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "admission": "CONFLICT",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/polarity/4/a",
+        "title": "该公司发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      },
+      "right": {
+        "source": "WEIBO",
+        "url": "https://example.org/polarity/4/b",
+        "title": "该公司计划发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "admission": "CONFLICT",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/polarity/5/a",
+        "title": "该公司发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      },
+      "right": {
+        "source": "WEIBO",
+        "url": "https://example.org/polarity/5/b",
+        "title": "该公司是否发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "admission": "CONFLICT",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/polarity/6/a",
+        "title": "该公司未发布新款手机并开售平板电脑",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      },
+      "right": {
+        "source": "WEIBO",
+        "url": "https://example.org/polarity/6/b",
+        "title": "该公司发布新款手机但未开售平板电脑",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "admission": "CONFLICT",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/polarity/7/a",
+        "title": "该公司计划发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      },
+      "right": {
+        "source": "WEIBO",
+        "url": "https://example.org/polarity/7/b",
+        "title": "该公司是否发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "same",
+      "admission": "CANDIDATE",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/polarity/8/a",
+        "title": "该公司未能发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      },
+      "right": {
+        "source": "WEIBO",
+        "url": "https://example.org/polarity/8/b",
+        "title": "该公司没能发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "same",
+      "admission": "CANDIDATE",
+      "left": {
+        "source": "ZHIHU",
+        "url": "https://example.org/polarity/9/a",
+        "title": "该公司计划发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      },
+      "right": {
+        "source": "WEIBO",
+        "url": "https://example.org/polarity/9/b",
+        "title": "该公司拟发布新款折叠屏手机",
+        "rank": 1,
+        "publishedAt": null,
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "right": {
+        "title": "该公司不能发布新款折叠屏手机",
+        "source": "WEIBO",
+        "publishedAt": null,
+        "rank": 1,
+        "url": "https://example.org/polarity/10/b",
+        "observedAt": 1793066400000
+      },
+      "admission": "CONFLICT",
+      "left": {
+        "title": "该公司发布新款折叠屏手机",
+        "source": "ZHIHU",
+        "publishedAt": null,
+        "rank": 1,
+        "url": "https://example.org/polarity/10/a",
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "right": {
+        "title": "该候选人未能成功连任地方议会主席",
+        "source": "WEIBO",
+        "publishedAt": null,
+        "rank": 1,
+        "url": "https://example.org/polarity/11/b",
+        "observedAt": 1793066400000
+      },
+      "admission": "CONFLICT",
+      "left": {
+        "title": "该候选人成功连任地方议会主席",
+        "source": "ZHIHU",
+        "publishedAt": null,
+        "rank": 1,
+        "url": "https://example.org/polarity/11/a",
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "right": {
+        "title": "该公司是否已经发布新款折叠屏手机",
+        "source": "WEIBO",
+        "publishedAt": null,
+        "rank": 1,
+        "url": "https://example.org/polarity/12/b",
+        "observedAt": 1793066400000
+      },
+      "admission": "CONFLICT",
+      "left": {
+        "title": "该公司发布新款折叠屏手机",
+        "source": "ZHIHU",
+        "publishedAt": null,
+        "rank": 1,
+        "url": "https://example.org/polarity/12/a",
+        "observedAt": 1793066400000
+      }
+    },
+    {
+      "label": "different",
+      "right": {
+        "title": "该公司能否成功发布新款折叠屏手机",
+        "source": "WEIBO",
+        "publishedAt": null,
+        "rank": 1,
+        "url": "https://example.org/polarity/13/b",
+        "observedAt": 1793066400000
+      },
+      "admission": "CONFLICT",
+      "left": {
+        "title": "该公司发布新款折叠屏手机",
+        "source": "ZHIHU",
+        "publishedAt": null,
+        "rank": 1,
+        "url": "https://example.org/polarity/13/a",
+        "observedAt": 1793066400000
+      }
+    }
+  ]
+}

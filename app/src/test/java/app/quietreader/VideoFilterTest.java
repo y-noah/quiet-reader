@@ -45,12 +45,12 @@ public class VideoFilterTest {
     @Test public void videoQuestionRetainsTextAnswersAndMore(){
         Document d=SourceParser.article(Source.ZHIHU,"<div class='QuestionRichText'><video></video></div>"+answer("text","<p>文字回答</p>","")+answer("video","<p>视频配文</p><video></video>","VideoAnswer"),Z);
         assertFalse(d.filteredVideo);assertTrue(d.unsupportedVideo);assertEquals(1,d.filteredVideos);assertEquals(1,AnswerStream.answers(d));assertEquals("text",d.sections.get(0).id);
-        assertTrue(ReaderHtml.render(d,Source.ZHIHU,19).contains("加载下一批回答"));
+        assertTrue(ReaderHtml.render(d,Source.ZHIHU,19).contains("data-continuation='ready'"));
     }
     @Test public void entirelyVideoAnswersStillExposeContinuation(){
         Document d=SourceParser.article(Source.ZHIHU,answer("v","<video></video>",""),Z);
         assertEquals(1,d.filteredVideos);assertFalse(d.hasContent());assertTrue(d.canPresent());assertFalse(d.filteredVideo);
-        assertTrue(ReaderHtml.render(d,Source.ZHIHU,19).contains("加载下一批回答"));
+        assertTrue(ReaderHtml.render(d,Source.ZHIHU,19).contains("data-continuation='ready'"));
     }
     @Test public void proseAnswerWithEmbeddedClipRemainsReadable(){
         Document d=SourceParser.article(Source.ZHIHU,answer("text","<p>分析正文第一段</p><div class='VideoCard'><video></video></div><p>分析正文第二段</p>",""),Z);
