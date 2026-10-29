@@ -30,7 +30,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private Map<Source,JSONObject> sources=new EnumMap<>(Source.class);
     private String page="feed",sourcesReturnPage="feed";
     private int feedPosition,feedOffset;
-    private int ink,muted,bg,paper,line,accent,soft;
+    private int ink,muted,bg,paper,line,accent;
     private TextView brand,updates,settingsButton;
     private RefreshIndicatorDrawable refreshIndicator;
     private boolean refreshing;
@@ -60,7 +60,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         java.lang.ref.WeakReference<DiscoveryActivity> startupOwner=new java.lang.ref.WeakReference<>(this);
         ReaderStartup.defer(getApplicationContext(),()->{DiscoveryActivity owner=startupOwner.get();if(owner!=null&&!owner.isDestroyed()&&owner.controller!=null)owner.controller.readerReady();});
         boolean dark=Theme.dark(this);ink=Theme.ink(this);bg=Theme.background(this);accent=Theme.accent(this);
-        muted=dark?0xffa5a9b3:0xff717680;paper=dark?0xff1b1d22:0xffffffff;line=dark?0xff2b2d33:0xffe9eaed;soft=dark?0xff1b2630:0xffedf4fa;
+        muted=dark?0xffa5a9b3:0xff717680;paper=dark?0xff1b1d22:0xffffffff;line=dark?0xff2b2d33:0xffe9eaed;
         if(state!=null){page=state.getString("page","feed");restoreAnchor=state.getString("feedAnchor");restorePosition=state.getInt("feedPosition");restoreOffset=state.getInt("feedOffset");try{String source=state.getString("loginReturn");if(source!=null)loginReturn=Source.valueOf(source);}catch(Exception ignored){}}
         if(state!=null)try{String candidate=state.getString("sourceReadCandidate");if(candidate!=null)sourceReadCandidate=HotCandidate.fromJson(new JSONObject(candidate));}catch(Exception ignored){}
         if(state!=null)sourcesReturnPage="settings".equals(state.getString("sourcesReturnPage"))?"settings":"feed";
@@ -349,7 +349,9 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     @Override public void onTrimMemory(int level){super.onTrimMemory(level);if(app.quietreader.ai.RecommendationPolicy.memoryPressure(level)&&controller!=null)controller.memoryPressure();}
     @Override public void state(boolean loading,boolean updateAvailable){boolean changed=this.loading!=loading;this.loading=loading;this.updateAvailable=updateAvailable;updateToolbar();updateStatusDescription();if(changed&&feed.isEmpty()&&"feed".equals(page))adapter.notifyDataSetChanged();}
     @Override public void error(String message){nativeFeedReady=true;readerAfterNativeDraw();Toast.makeText(this,message,Toast.LENGTH_SHORT).show();}
-    private void back(){if("sources".equals(page))show(sourcesReturnPage);else if(settingsPage()&&!"settings".equals(page))show("settings");else if(!"feed".equals(page))show("feed");else finish();}
+    // Leaving the home feed exits this app task, including any older home entry.
+    // Inner settings/source pages still return within the current activity.
+    private void back(){if("sources".equals(page))show(sourcesReturnPage);else if(settingsPage()&&!"settings".equals(page))show("settings");else if(!"feed".equals(page))show("feed");else finishAffinity();}
     @Override public void onBackPressed(){back();}
     @Override protected void onResume(){super.onResume();exposureForeground=true;startupForeground=true;openingReader=false;if(!ReaderStartup.pending()){java.lang.ref.WeakReference<DiscoveryActivity> ownerRef=new java.lang.ref.WeakReference<>(this);ReaderStartup.defer(getApplicationContext(),()->{DiscoveryActivity owner=ownerRef.get();if(owner!=null&&!owner.isDestroyed()&&owner.controller!=null)owner.controller.readerReady();});}readerAfterNativeDraw();if(trialEvaluation!=null)trialEvaluation.foreground();if(controller!=null){controller.feedPage("feed".equals(page));if(loginReturn!=null){Repository cache=new Repository(this);cache.invalidateArticles();cache.close();}controller.start();if(loginReturn!=null){Source source=loginReturn;loginReturn=null;controller.refresh(Collections.singletonList(source));}}if(list!=null)list.post(reportExposure);}
     @Override protected void onPostResume(){super.onPostResume();updateRefreshAnimation();}
@@ -406,7 +408,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         void bind(FeedStore.Row row,int index){
             content(row,index);
             HotCandidate candidate=row.candidate;
-            setBackground(surface(index==0?soft:paper));
+            setBackground(surface(paper));
             setOnClickListener(v->open(candidate));setOnLongClickListener(v->{cardMenu(row);return true;});menu.setContentDescription("话题选项："+candidate.title);menu.setOnClickListener(v->cardMenu(row));
         }
         void content(FeedStore.Row row,int index){

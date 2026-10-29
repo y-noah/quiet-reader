@@ -21,6 +21,7 @@ public final class FeedStoreInstrumentation extends Instrumentation {
     @Override public void onCreate(Bundle args){super.onCreate(args);if(args!=null){restartPhase=args.getString("mode");restartId=args.getString("probeId");liveSource=args.getString("source");liveTarget=args.getString("target","");}modelRepair=args!=null&&"model-repair".equals(args.getString("mode"));semantic=args!=null&&"semantic".equals(args.getString("mode"));liveSources=args!=null&&"live-sources".equals(args.getString("mode"));liveBrowser=args!=null&&"live-browser".equals(args.getString("mode"));discoveryUi=args!=null&&"discovery-ui".equals(args.getString("mode"));start();}
     private static HotCandidate fixture(Models.Source source,int id,long now){return new HotCandidate(source,"https://example.org/topic/"+id,"合成中文话题"+id,"验证事务与缓存的合成内容","热度不参与跨平台相加",false,id+1,null,now);}
     @Override public void onStart(){String database="test-discovery-"+UUID.randomUUID()+".db";
+        if("home-exit".equals(restartPhase)){new HomeExitProbe(this).run();return;}
         if("zhihu-slow-expansion".equals(restartPhase)){new ZhihuExpansionProbe(this).run();return;}
         if("dynamic-deadline".equals(restartPhase)||"dynamic-deadline-baseline".equals(restartPhase)){new DynamicDeadlineProbe(this).run("dynamic-deadline-baseline".equals(restartPhase));return;}
         if("login-extraction-worker".equals(restartPhase)){new LoginExtractionWorkerProbe(this).run();return;}
