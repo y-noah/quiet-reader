@@ -116,7 +116,7 @@ final class ReleaseNormalUpgradeProbe {
         try{
             if(!context().getPackageName().equals("app.quietreader")||!Build.HARDWARE.equals("ranchu")||!Build.PRODUCT.startsWith("sdk_gphone")||Build.VERSION.SDK_INT!=36)throw new IllegalStateException("Dedicated API36 emulator and normal package required");
             ApplicationInfo info=context().getApplicationInfo();check((info.flags&ApplicationInfo.FLAG_DEBUGGABLE)==0,"actual normal-package target is non-debuggable");
-            PackageInfo pkg=context().getPackageManager().getPackageInfo(context().getPackageName(),0);check((seed?pkg.getLongVersionCode()==46:pkg.getLongVersionCode()==47||pkg.getLongVersionCode()==48)&&info.targetSdkVersion==(seed?35:36),"expected original v46, retained trial v47 or candidate v48 and target SDK are installed");
+            PackageInfo pkg=context().getPackageManager().getPackageInfo(context().getPackageName(),0);check((seed?pkg.getLongVersionCode()==46:pkg.getLongVersionCode()==47||pkg.getLongVersionCode()==48||pkg.getLongVersionCode()==49)&&info.targetSdkVersion==(seed?35:36),"expected original v46, retained v47/v48 or current v49 and target SDK are installed");
             if(renewExpiredCookie)renewExpiredCookie();else if(originalVerify){if(!marker().contains("nonce"))throw new IllegalStateException("Original fixture missing");verifyPreferences();}else if(seed)seed();else verify();
         }catch(Throwable error){failures++;report.append("ERROR ").append(error.getClass().getSimpleName()).append(':').append(error.getMessage()).append('\n');}
         finally{if(activity!=null){ui(activity::finish);test.waitForIdleSync();}}

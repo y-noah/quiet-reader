@@ -8,8 +8,8 @@ android {
         applicationId 'app.quietreader'
         minSdk 26
         targetSdk 36
-        versionCode 48
-        versionName '0.4.0'
+        versionCode 49
+        versionName '1.0.0'
         buildConfigField 'boolean', 'RANKING_MEASUREMENT_ENABLED', project.hasProperty('isolatedReleaseFlowProbe') ? 'true' : 'false'
         testInstrumentationRunner 'app.quietreader.FiveSourceInstrumentation'
         externalNativeBuild { cmake { arguments "-DSENTENCEPIECE_SOURCE=${project.findProperty('sentencepieceSource') ?: rootProject.file('.tools/native/sources/sentencepiece-31646a467d2051eb904e0b45de3a73e91fe1c1e3')}", '-DANDROID_STL=c++_static'; targets 'quietreader_sentencepiece' } }
