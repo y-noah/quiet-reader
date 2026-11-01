@@ -53,8 +53,9 @@ final class WorkFailureScopeProbe {
             },false,new HotSourceCollector.Transport(){public boolean offline(){return true;}public boolean browserFallback(Source source){return false;}public HotSourceCollector.Request start(Source source,boolean browser,Repository.Result<List<Item>> result){throw new IllegalStateException("No source request permitted");}});controller.start();controller.interacting(true);});workers.add((ExecutorService)field(controller,"storage"));
             if(!await(()->(boolean)field(controller,"ready")&&feeds>0))throw new IllegalStateException("Controlled controller not ready");drained();
 
+            ui(()->{for(Runnable draw:new ArrayList<>(draws))draw.run();draws.clear();});
             int beforeFeeds=feeds,errorsBefore=errors.size();CountDownLatch stale=blockedFailure();
-            ui(controller::refreshRecommendations);long request=(long)field(controller,"explicitRefreshEpoch");stale.countDown();boolean published=await(()->!draws.isEmpty());
+            ui(controller::refreshRecommendations);long request=(long)field(controller,"explicitRefreshEpoch");stale.countDown();boolean published=await(()->feeds>beforeFeeds&&!draws.isEmpty());
             check(published,"obsolete storage failure does not discard the newer real refresh publication");
             check(onUi(()->errors.size()==errorsBefore&&(long)field(controller,"explicitRefreshEpoch")==request),"obsolete error neither reports a current failure nor cancels its request identity");
             check(onUi(()->published&&refreshing&&feeds==beforeFeeds+1),"new refresh remains busy until its newly published list is drawn even when the unchanged snapshot is reused");

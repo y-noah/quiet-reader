@@ -48,10 +48,10 @@ final class ArticleCookies {
         List<String> fields=new ArrayList<>();
         for(String field:raw.split(";")){
             int at=field.indexOf('=');if(at<=0)continue;String name=field.substring(0,at).trim().toUpperCase(Locale.ROOT);
-            // Observed anonymous topic -> new-PC-post navigation rotates these
+            // Search and anonymous topic -> new-PC-post navigation rotate these
             // visitor/analytics fields. HMACCOUNT even contains the substring
             // ACCOUNT, but is a statistics identifier, not an account session.
-            if(tieba&&Set.of("BAIDUID","BAIDUID_BFESS","BAIDU_WISE_UID","HMACCOUNT").contains(name))continue;
+            if(Set.of("BAIDUID","BAIDUID_BFESS","BAIDU_WISE_UID","HMACCOUNT").contains(name))continue;
             if(name.matches("BDUSS.*|[PS]TOKEN.*|PASSID.*|.*(?:SESSION|AUTH|TOKEN|LOGIN|USER|ACCOUNT).*|.*UID|SID|SSON"))fields.add(field.trim());
         }
         Collections.sort(fields);return (tieba?"tieba-account-v2;":"baidu-account-v1;")+String.join("; ",fields);

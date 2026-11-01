@@ -24,13 +24,15 @@ final class SourceSession {
         // rotates request cookies in WebView; the same shared-cookie native read
         // obtains its complete current page without changing the session.
         // Failed/restricted extraction still falls back to the shared WebView.
-        if(source==Source.V2EX||source==Source.HUPU)return false;
+        // BBC public article state is present in the native response; a past source-page
+        // visit must not force the generic DOM route which lacks its structured body.
+        if(source==Source.V2EX||source==Source.HUPU||source==Source.NYT||source==Source.BBC)return false;
         return source==Source.ZHIHU||context.getSharedPreferences("source-session",0).getBoolean(source.name()+"-web",false);
     }
     static boolean nativeDocumentReady(Source source,Document document){
         // Hupu may hydrate the authenticated response after the server-rendered
         // shell. Try the existing shared WebView before presenting its login gate.
-        return document.canPresent()&&(source!=Source.HUPU||!document.loginRequired);
+        return document.canPresent()&&(source!=Source.HUPU||!document.loginRequired&&!document.sourceUnavailable);
     }
     static String userAgent(Context context,Source source){return desktop(context,source)?Repository.DESKTOP_UA:WebSettings.getDefaultUserAgent(context);}
     static void configure(Context context,Source source,WebView web){

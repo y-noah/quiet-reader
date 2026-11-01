@@ -20,7 +20,16 @@ public final class FeedStoreInstrumentation extends Instrumentation {
     private void check(boolean good,String label){checks++;if(!good)failures++;report.append(good?"PASS ":"FAIL ").append(label).append('\n');}
     @Override public void onCreate(Bundle args){super.onCreate(args);if(args!=null){restartPhase=args.getString("mode");restartId=args.getString("probeId");liveSource=args.getString("source");liveTarget=args.getString("target","");}modelRepair=args!=null&&"model-repair".equals(args.getString("mode"));semantic=args!=null&&"semantic".equals(args.getString("mode"));liveSources=args!=null&&"live-sources".equals(args.getString("mode"));liveBrowser=args!=null&&"live-browser".equals(args.getString("mode"));discoveryUi=args!=null&&"discovery-ui".equals(args.getString("mode"));start();}
     private static HotCandidate fixture(Models.Source source,int id,long now){return new HotCandidate(source,"https://example.org/topic/"+id,"合成中文话题"+id,"验证事务与缓存的合成内容","热度不参与跨平台相加",false,id+1,null,now);}
-    @Override public void onStart(){String database="test-discovery-"+UUID.randomUUID()+".db";
+    @Override public void onStart(){if("read-history-stress".equals(restartPhase)){new ReadHistoryStressProbe(this).run();return;}if("read-facts-restart".equals(restartPhase)){new ReadFactsProbe(this).restart(restartId);return;}if("read-facts".equals(restartPhase)){new ReadFactsProbe(this).run();return;}String database="test-discovery-"+UUID.randomUUID()+".db";
+        if("read-storage-reliability".equals(restartPhase)){new ReadStorageReliabilityProbe(this).run();return;}
+        if("dynamic-reliability".equals(restartPhase)){new DynamicReliabilityProbe(this).run();return;}
+        if("read-reliability-scope".equals(restartPhase)){new ReadReliabilityProbe(this).run(false,1,9);return;}
+        if("read-reliability-baseline".equals(restartPhase)||"read-reliability".equals(restartPhase)){boolean baseline="read-reliability-baseline".equals(restartPhase);new ReadReliabilityProbe(this).run(baseline,baseline?3:200);return;}
+        if("persona-experience".equals(restartPhase)){new PersonaExperienceProbe(this).run(Integer.parseInt(restartId));return;}
+        if("persona-prepare".equals(restartPhase)){new PersonaCorpusProbe(this).run();return;}
+        if("source-balance".equals(restartPhase)){new SourceBalanceStoreProbe(this).run();return;}
+        if("presentation-store".equals(restartPhase)){new PresentationStoreProbe(this).run();return;}
+        if("presentation-stability".equals(restartPhase)){new PresentationStabilityProbe(this).run();return;}
         if("home-exit".equals(restartPhase)){new HomeExitProbe(this).run();return;}
         if("zhihu-slow-expansion".equals(restartPhase)){new ZhihuExpansionProbe(this).run();return;}
         if("dynamic-deadline".equals(restartPhase)||"dynamic-deadline-baseline".equals(restartPhase)){new DynamicDeadlineProbe(this).run("dynamic-deadline-baseline".equals(restartPhase));return;}
@@ -65,6 +74,9 @@ public final class FeedStoreInstrumentation extends Instrumentation {
         if("feed-startup-no-stacks".equals(restartPhase)){new FeedStartupProbe(this,false).run();return;}
         if("repository-migration".equals(restartPhase)){new RepositoryMigrationProbe(this).run();return;}
         if("reader-native-cancel".equals(restartPhase)||"reader-native-explicit".equals(restartPhase)){new ReaderNativeFrameProbe(this,"reader-native-cancel".equals(restartPhase)).run();return;}
+        if("reserve-feed-cold-lifecycle".equals(restartPhase)){new ReserveFeedProbe(this,false,true).run();return;}
+        if("reserve-feed-failure".equals(restartPhase)){new ReserveFeedProbe(this,true).run();return;}
+        if("reserve-feed".equals(restartPhase)){new ReserveFeedProbe(this).run();return;}
         if("feed-navigation".equals(restartPhase)){new FeedNavigationProbe(this).run();return;}
         if("legacy-navigation-removal".equals(restartPhase)){new LegacyNavigationRemovalProbe(this).run();return;}
         if("minimal-reader-dark".equals(restartPhase)||"minimal-reader-light".equals(restartPhase)){new ReaderActionsProbe(this,"minimal-reader-dark".equals(restartPhase)).run();return;}
@@ -295,7 +307,7 @@ public final class FeedStoreInstrumentation extends Instrumentation {
                 store.getWritableDatabase().execSQL("DROP TABLE feed_exposure");store.getWritableDatabase().execSQL("DROP TABLE article_progress");store.getWritableDatabase().setVersion(1);
             }
             try(FeedStore store=new FeedStore(getTargetContext(),database)){
-                check(store.getWritableDatabase().getVersion()==9&&store.sourceState(Models.Source.ZHIHU).getLong("retryAt")==0,"v1 database upgrades retry, expiry, rerank cache and source provenance without destructive reset");
+                check(store.getWritableDatabase().getVersion()==11&&store.sourceState(Models.Source.ZHIHU).getLong("retryAt")==0,"v1 database upgrades retry, expiry, rerank cache and source provenance without destructive reset");
                 check(store.candidates(100,0).size()==1&&store.readSnapshot(snapshot,50,0).get(0).candidate.id.equals(first.id),"process-style reopen restores source and frozen feed");
                 store.clearDerivedCache();
                 check(store.candidates(100,0).isEmpty()&&store.latestSnapshot()==0&&app.quietreader.discovery.LegacySavedFixture.saved(store).size()==1,"clear derived cache preserves explicit saved metadata");
@@ -419,7 +431,7 @@ public final class FeedStoreInstrumentation extends Instrumentation {
                 store.getWritableDatabase().execSQL("DROP TABLE reranks");store.getWritableDatabase().execSQL("ALTER TABLE feedback DROP COLUMN source");store.getWritableDatabase().execSQL("DROP TABLE feed_exposure");store.getWritableDatabase().execSQL("DROP TABLE article_progress");store.getWritableDatabase().setVersion(2);
             }
             try(FeedStore store=new FeedStore(getTargetContext(),database)){
-                check(store.getWritableDatabase().getVersion()==9&&app.quietreader.discovery.LegacySavedFixture.saved(store).size()==1&&store.activeFeedback(10).length()==1&&store.vector(FeedStore.vectorKey("keep","model","tokenizer"),10)!=null,"v2 upgrade creates rerank cache/provenance and preserves saved feedback and vectors");
+                check(store.getWritableDatabase().getVersion()==11&&app.quietreader.discovery.LegacySavedFixture.saved(store).size()==1&&store.activeFeedback(10).length()==1&&store.vector(FeedStore.vectorKey("keep","model","tokenizer"),10)!=null,"v2 upgrade creates rerank cache/provenance and preserves saved feedback and vectors");
                 store.putRerank("valid",-1.25f,10);check(Float.valueOf(-1.25f).equals(store.rerank("valid",20)),"finite negative rerank score round trips");
                 boolean rejected=false;try{store.putRerank("nan",Float.NaN,20);}catch(IllegalArgumentException expected){rejected=true;}check(rejected&&store.rerank("nan",21)==null,"nonfinite rerank write is rejected");
                 store.getWritableDatabase().execSQL("UPDATE reranks SET logit='broken' WHERE key='valid'");check(store.rerank("valid",22)==null,"corrupt text score is not silently interpreted as zero");

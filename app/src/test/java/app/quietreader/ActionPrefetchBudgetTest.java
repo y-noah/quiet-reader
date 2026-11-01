@@ -4,13 +4,17 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class ActionPrefetchBudgetTest {
-    @Test public void fullBatchHasOneFiniteLeaseAndOrdinaryGesturesCannotShortenIt(){
-        ActionPrefetchBudget budget=new ActionPrefetchBudget();budget.batch(1000,8);
-        assertEquals(80_000,budget.remaining(1000));budget.action(2000);
-        assertEquals(79_000,budget.remaining(2000));assertFalse(budget.active(81_000));
-        budget.batch(90_000,20);assertEquals(120_000,budget.remaining(90_000));
-        budget.batch(91_000,1);assertEquals(20_000,budget.remaining(91_000));
-        budget.clear();assertFalse(budget.active(91_001));
+    @Test public void ordinaryGesturesCannotShortenTheCurrentReserveLease(){
+        ActionPrefetchBudget budget=new ActionPrefetchBudget();budget.reserve(1000,75);
+        budget.action(2000);assertEquals(269_000,budget.remaining(2000));
+        budget.reserve(400_000,1);assertEquals(20_000,budget.remaining(400_000));
+        budget.clear();assertFalse(budget.active(400_001));
+    }
+    @Test public void reserveLeaseIsFiniteAndClearsOnBackground(){
+        ActionPrefetchBudget budget=new ActionPrefetchBudget();budget.reserve(100,75);
+        assertEquals(270_000,budget.remaining(100));assertFalse(budget.active(270_100));
+        budget.reserve(500_000,10000);assertEquals(270_000,budget.remaining(500_000));
+        budget.clear();assertEquals(0,budget.remaining(500_001));
     }
     @Test public void passiveChecksCannotStartOrExtendWork(){
         ActionPrefetchBudget budget=new ActionPrefetchBudget();

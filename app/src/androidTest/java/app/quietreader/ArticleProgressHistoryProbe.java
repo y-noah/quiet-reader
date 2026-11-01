@@ -28,7 +28,7 @@ final class ArticleProgressHistoryProbe {
             }
             try(FeedStore store=new FeedStore(test.getTargetContext(),name)){
                 SQLiteDatabase db=store.getWritableDatabase();ArticleProgressHistory history=new ArticleProgressHistory(db);long source=store.version("sources"),profile=store.version("profile");
-                check(db.getVersion()==9&&number(db,"SELECT COUNT(*) FROM article_progress")==0,"actual synthetic schema8 upgrades to9 with empty body progress table");
+                check(db.getVersion()==11&&number(db,"SELECT COUNT(*) FROM article_progress")==0,"actual synthetic schema8 upgrades to11 with empty body progress table");
                 check(store.activeSnapshot()==active&&store.readSnapshot(active,10,0).size()==1&&store.recentExposure(store.readSnapshot(active,10,0),now).get("shown").shownAt==shown,"upgrade preserves accepted list and actual exposure facts");
                 history.observe(old,now);history.observe(fresh,now);check(history.progress(old.identity,SCOPE,shown,now)==0,"fetching old then new bodies without presentation never fabricates a baseline");
                 db.delete("article_progress",null,null);history.observe(old,now);history.presented(old.identity,SCOPE,shown,now);history.observe(fresh,now);

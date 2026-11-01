@@ -20,13 +20,16 @@ final class ArticlePreloader implements AutoCloseable {
     private Runnable onIdle;
     private java.util.function.BiConsumer<Item,Document> onPrepared=(item,doc)->{};
     void observePrepared(java.util.function.BiConsumer<Item,Document> observer){onPrepared=observer;}
+    private java.util.function.Consumer<Item> onFailure=item->{};
+    void observeFailure(java.util.function.Consumer<Item> observer){onFailure=observer;}
     private boolean reserved;
+    private boolean speculationAllowed;
     private static final class Attempt {
-        final long at;final String scope;
-        Attempt(long at,String scope){this.at=at;this.scope=scope;}
+        final long until;final String scope;final int count;final boolean retryPending;
+        Attempt(long until,String scope,int count,boolean retryPending){this.until=until;this.scope=scope;this.count=count;this.retryPending=retryPending;}
     }
     private final Map<String,Attempt> attempted=new LinkedHashMap<String,Attempt>(){
-        @Override protected boolean removeEldestEntry(Map.Entry<String,Attempt> entry){return size()>64;}
+        @Override protected boolean removeEldestEntry(Map.Entry<String,Attempt> entry){return size()>128;}
     };
     private final Deque<Item> queue=new ArrayDeque<>();
     private Item active;
@@ -35,15 +38,17 @@ final class ArticlePreloader implements AutoCloseable {
     private boolean retainedForeground,deferredNetwork,deferredDynamic,bufferedAcquired=true;
     private ArticleSession activeSession;
     private Document bufferedResult;
-    private String bufferedFailure;
+    private ArticleFailure bufferedFailure;
     private int revision;
+    private long requestStarted;
+    private void trace(String state){if(active!=null)android.util.Log.d("NewPrefetch",active.source.name()+" "+state+" ms="+(SystemClock.elapsedRealtime()-requestStarted));}
     private boolean closed;
     private app.quietreader.ai.RecommendationPolicy.Watch policyWatch;
 
     ArticlePreloader(Activity activity,Runnable onVideo){this(activity,onVideo,null);}
     ArticlePreloader(Activity activity,Runnable onVideo,Loader loader){this(activity,onVideo,loader,3,()->{});}
     ArticlePreloader(Activity activity,Runnable onVideo,Loader loader,int windowSize,Runnable onIdle){this(activity,onVideo,loader,windowSize,onIdle,false);}
-    ArticlePreloader(Activity activity,Runnable onVideo,Loader loader,int windowSize,Runnable onIdle,boolean revalidateHidden){this.activity=activity;this.onVideo=onVideo;this.loader=loader;this.revalidateHidden=revalidateHidden;this.windowSize=Math.max(1,Math.min(40,windowSize));this.onIdle=onIdle;repo=new Repository(activity);}
+    ArticlePreloader(Activity activity,Runnable onVideo,Loader loader,int windowSize,Runnable onIdle,boolean revalidateHidden){this.activity=activity;this.onVideo=onVideo;this.loader=loader;this.revalidateHidden=revalidateHidden;this.windowSize=Math.max(1,Math.min(75,windowSize));this.onIdle=onIdle;repo=new Repository(activity);}
     boolean busy(){return active!=null||!queue.isEmpty();}
     private static String attemptKey(Item item){return item.source.name()+"|"+item.url+"@"+ArticleVersion.hash(item)+"|"+item.selectedTopicPost;}
 
@@ -55,9 +60,10 @@ final class ArticlePreloader implements AutoCloseable {
     }
     void offer(List<Item> candidates,int limit,boolean immediate){
         if(closed||reserved||foreground!=null||retainedForeground)return;
+        speculationAllowed=true;
         queue.clear();
         Set<String> seen=new HashSet<>();
-        int bounded=Math.max(1,Math.min(40,limit));
+        int bounded=Math.max(1,Math.min(75,limit));
         for(Item item:candidates){if(seen.add(item.url))queue.add(item);if(queue.size()==bounded)break;}
         if(active!=null&&queue.stream().noneMatch(i->ArticleVersion.sameRequest(i,active)))cancelActive();
         if(policyWatch==null){policyWatch=new app.quietreader.ai.RecommendationPolicy.Watch(activity,reason->pause());policyWatch.start();}
@@ -66,8 +72,10 @@ final class ArticlePreloader implements AutoCloseable {
     private final Runnable pump=this::next;
     private void next(){
         if(closed||reserved||active!=null||foreground!=null||retainedForeground)return;
-        if(repo.offline()||!app.quietreader.ai.RecommendationPolicy.restriction(activity).isEmpty()){queue.clear();idle();return;}
-        while(!queue.isEmpty()){
+        if(!app.quietreader.ai.RecommendationPolicy.restriction(activity).isEmpty()){queue.clear();idle();return;}
+        if(!queue.isEmpty()&&!ArticleDiskCache.acceptsPrefetch()){main.postDelayed(pump,100);return;}
+        int remaining=queue.size();long earliest=Long.MAX_VALUE;
+        while(remaining-->0&&!queue.isEmpty()){
             Item item=queue.removeFirst();Attempt previous=attempted.get(attemptKey(item));
             if(!item.source.readable()||!item.source.unifiedReading()||item.video||VideoPolicy.url(item.source,item.url)||!UrlPolicy.belongs(item.source,item.url)||item.url.equals(item.source.login)||item.url.equals(item.source.endpoint)||(!revalidateHidden&&repo.hiddenVideo(item)))continue;
             ArticleSession session=new ArticleSession(activity,item);
@@ -77,16 +85,21 @@ final class ArticlePreloader implements AutoCloseable {
             Document cached=refreshHidden?null:repo.cachedArticle(item,session);
             if(cached!=null&&(!revalidateHidden||ArticleVersion.matches(item,cached))){onPrepared.accept(item,cached);continue;}
             long now=SystemClock.elapsedRealtime();
-            if(previous!=null&&previous.scope.equals(session.scopeIdentity())&&now>=previous.at&&now-previous.at<5*60*1000)continue;
-            active=item;activeSession=session;attempted.put(attemptKey(item),new Attempt(now,session.scopeIdentity()));int request=++revision;
+            if(previous!=null&&!previous.scope.equals(session.scopeIdentity()))previous=null;
+            if(previous!=null&&now<previous.until){if(previous.retryPending){queue.addLast(item);earliest=Math.min(earliest,previous.until);}continue;}
+            int count=previous!=null&&previous.retryPending?previous.count+1:1;
+            active=item;requestStarted=now;trace("start");activeSession=session;attempted.put(attemptKey(item),new Attempt(now+5*60_000,session.scopeIdentity(),count,false));int request=++revision;
             if(loader!=null)loader.load(item,new Repository.Result<Document>(){
                 public void success(Document doc){if(valid(request))complete(item,doc);}
                 public void failure(String why){failed(request,why);}
+                public void failure(String why,int status,long retryAt){failed(request,ArticleFailure.http(why,status,retryAt));}
+                public void failure(ArticleFailure failure){failed(request,failure);}
             });
             else if(refreshHidden)loadNetwork(item,request);
             else repo.restoreArticle(item,restored->{if(!valid(request))return;if(restored!=null&&(!revalidateHidden||ArticleVersion.matches(item,restored)))complete(item,restored,false);else loadNetwork(item,request);});
             return;
         }
+        if(!queue.isEmpty()&&earliest!=Long.MAX_VALUE){main.postDelayed(pump,Math.max(1,earliest-SystemClock.elapsedRealtime()));return;}
         idle();
     }
     /** Must be called before replacing the board. A true result now owns the callback. */
@@ -96,7 +109,7 @@ final class ArticlePreloader implements AutoCloseable {
         // Explicit reading cannot promote a hidden-video acquisition; stop() cancels it before reopening.
         if(revalidateHidden&&repo.hiddenVideo(item))return false;
         reserved=true;stopWatch();queue.clear();main.removeCallbacks(pump);
-        onIdle=()->{};onVideo=()->{};onPrepared=(ignoredItem,ignoredDoc)->{};
+        onIdle=()->{};onVideo=()->{};onPrepared=(ignoredItem,ignoredDoc)->{};onFailure=ignoredItem->{};
         return true;
     }
     void adopt(Activity owner,Runnable video){activity=owner;onVideo=video;windowSize=3;reserved=false;}
@@ -115,7 +128,7 @@ final class ArticlePreloader implements AutoCloseable {
     void detachForeground(){
         if(closed||active==null||(foreground==null&&!retainedForeground))return;
         retainedForeground=true;foreground=null;activity=null;stopWatch();queue.clear();main.removeCallbacks(pump);
-        onVideo=()->{};onIdle=()->{};onPrepared=(item,doc)->{};
+        onVideo=()->{};onIdle=()->{};onPrepared=(item,doc)->{};onFailure=item->{};
         if(dynamic!=null)dynamic.detach();
     }
     void resumeForeground(Activity owner,Item item,Repository.Result<Document> callback,Runnable video){
@@ -123,7 +136,7 @@ final class ArticlePreloader implements AutoCloseable {
         if(!canRetainForeground(item)){close();callback.failure("登录或缓存状态已变化，请重新读取");return;}
         adopt(owner,video);retainedForeground=false;foreground=callback;
         if(dynamic!=null){dynamic.attach(owner,dynamicResult(item,revision));return;}
-        Document result=bufferedResult;String failure=bufferedFailure;boolean acquired=bufferedAcquired;bufferedResult=null;bufferedFailure=null;bufferedAcquired=true;
+        Document result=bufferedResult;ArticleFailure failure=bufferedFailure;boolean acquired=bufferedAcquired;bufferedResult=null;bufferedFailure=null;bufferedAcquired=true;
         if(result!=null)complete(item,result,acquired);
         else if(failure!=null)failed(revision,failure);
         else if(deferredDynamic){deferredDynamic=false;loadDynamic(item,revision);}
@@ -132,38 +145,62 @@ final class ArticlePreloader implements AutoCloseable {
     private void loadNetwork(Item item,int request){
         if(!valid(request))return;
         if(retainedForeground){deferredNetwork=true;return;}
+        if(repo.offline()){failed(request,"当前离线且正文尚未缓存",false);return;}
+        trace("native-route");
         if(SourceSession.usesWeb(activity,item.source)){loadDynamic(item,request);return;}
         repo.article(item,new Repository.Result<Document>(){
             public void success(Document doc){
                 if(!valid(request))return;
                 // Repository.article has already saved this session-checked acquisition.
-                if(SourceSession.nativeDocumentReady(item.source,doc))complete(item,doc,false);else loadDynamic(item,request);
+                if(SourceSession.nativeDocumentReady(item.source,doc)&&!doc.loginRequired&&!doc.sourceUnavailable)complete(item,doc,false);else loadDynamic(item,request);
             }
             public void failure(String why){if(valid(request))loadDynamic(item,request);}
+            public void failure(ArticleFailure failure){if(!valid(request))return;if(failure.mayFallback())loadDynamic(item,request);else failed(request,failure);}
         });
     }
     private void loadDynamic(Item item,int request){
         if(!valid(request))return;
         if(retainedForeground){deferredDynamic=true;return;}
         activeSession=new ArticleSession(activity,item);
-        dynamic=new DynamicReader(activity,item,dynamicResult(item,request),foreground!=null||retainedForeground);
+        trace("browser-route");
+        try{dynamic=new DynamicReader(activity,item,dynamicResult(item,request),foreground!=null||retainedForeground);}
+        catch(RuntimeException|LinkageError unavailable){failed(request,"来源阅读器暂不可用，请稍后重试");}
     }
     private Repository.Result<Document> dynamicResult(Item item,int request){
         return new Repository.Result<Document>(){
             public void success(Document doc){if(valid(request))complete(item,doc);}
             public void failure(String why){failed(request,why);}
+            public void failure(ArticleFailure failure){failed(request,failure);}
         };
     }
-    private void failed(int request,String why){
+    private void failed(int request,String why){failed(request,ArticleFailure.unknown(why));}
+    private void failed(int request,String why,boolean sourceFailure){
+        failed(request,sourceFailure?ArticleFailure.unknown(why):new ArticleFailure(ArticleFailure.Kind.OFFLINE,why));
+    }
+    private void failed(int request,ArticleFailure failure){
         if(!valid(request))return;
-        if(retainedForeground){bufferedFailure=why;return;}
-        Repository.Result<Document> cb=foreground;foreground=null;active=null;activeSession=null;dynamic=null;
-        if(cb!=null)cb.failure(why);else main.post(pump);
+        if(retainedForeground){bufferedFailure=failure;return;}
+        boolean obsoleteScope=failure.kind==ArticleFailure.Kind.SESSION_CHANGED||activeSession!=null&&!activeSession.current();
+        trace("failed");Item failedItem=active;Repository.Result<Document> cb=foreground;foreground=null;active=null;activeSession=null;dynamic=null;
+        String key=attemptKey(failedItem);Attempt previous=attempted.get(key);long now=SystemClock.elapsedRealtime();
+        boolean offline=failure.kind==ArticleFailure.Kind.OFFLINE;
+        long serverDelay=Math.max(0,failure.retryAt-System.currentTimeMillis());
+        // One delayed retry within the existing action window; unaffected items go first.
+        // Long server cooldowns never keep an idle timer alive or start a WebView bypass.
+        boolean retry=cb==null&&!reserved&&speculationAllowed&&!obsoleteScope&&failure.retryable()&&previous!=null&&previous.count<2&&serverDelay<=1500;
+        // The home observer resolves the current account scope. Never attribute a
+        // late old-account failure to that new scope or impose its cooldown there.
+        if(offline||obsoleteScope)attempted.remove(key);
+        else if(previous!=null){long delay=retry?1500:failure.retryable()?60_000:5*60_000;attempted.put(key,new Attempt(now+Math.max(delay,serverDelay),previous.scope,previous.count,retry));}
+        if(retry){if(queue.stream().noneMatch(i->ArticleVersion.sameRequest(i,failedItem)))queue.addLast(failedItem);}
+        else if(cb==null&&!offline&&!obsoleteScope)onFailure.accept(failedItem);
+        if(cb!=null)cb.failure(obsoleteScope?ArticleFailure.session():failure);else main.post(pump);
     }
     private void complete(Item item,Document doc){complete(item,doc,true);}
     private void complete(Item item,Document doc,boolean acquired){
         if(!ArticleSession.contentCurrent(doc)){failed(revision,"登录或缓存状态已变化，请重新读取");return;}
         if(retainedForeground){bufferedResult=doc;bufferedAcquired=acquired;return;}
+        trace(doc.hasContent()&&!doc.filteredVideo&&!doc.loginRequired&&!doc.sourceUnavailable?"body-ready":"invalid-body");
         if(doc.title.trim().isEmpty())doc.title=item.title;
         // restoreArticle already validated session/namespace and populated memory.
         // A disk hit is not a new acquisition: keep its file and original freshness.
@@ -173,6 +210,7 @@ final class ArticlePreloader implements AutoCloseable {
         // Let a later window restore it from disk after its RAM entry is evicted.
         // Keep cooldowns for failures, permission shells and video-only results.
         if(doc.hasContent()&&!doc.filteredVideo&&!doc.loginRequired&&!doc.sourceUnavailable)attempted.remove(attemptKey(item));
+        if(!doc.hasContent()||doc.filteredVideo||doc.loginRequired||doc.sourceUnavailable)onFailure.accept(item);
         onPrepared.accept(item,doc);
         Repository.Result<Document> cb=foreground;foreground=null;active=null;activeSession=null;
         // Keep the delivering DynamicReader reachable while the foreground
@@ -183,15 +221,15 @@ final class ArticlePreloader implements AutoCloseable {
         } finally {dynamic=null;}
     }
     private void cancelActive(){
-        revision++;repo.cancelPending();if(loader!=null)loader.cancel();if(dynamic!=null){dynamic.close();dynamic=null;}
+        trace("cancelled");revision++;repo.cancelPending();if(loader!=null)loader.cancel();if(dynamic!=null){dynamic.close();dynamic=null;}
         if(active!=null)attempted.remove(attemptKey(active));active=null;foreground=null;activeSession=null;
         retainedForeground=false;bufferedResult=null;bufferedFailure=null;bufferedAcquired=true;deferredNetwork=false;deferredDynamic=false;
     }
     private void stopWatch(){if(policyWatch!=null){policyWatch.close();policyWatch=null;}}
     private void idle(){stopWatch();onIdle.run();}
-    void pause(){stopWatch();queue.clear();main.removeCallbacks(pump);cancelActive();}
+    void pause(){speculationAllowed=false;stopWatch();queue.clear();main.removeCallbacks(pump);cancelActive();}
     /** Stop launching new speculative work without throwing away a nearly ready page. */
-    void finishWindow(){queue.clear();main.removeCallbacks(pump);if(active==null)idle();}
+    void finishWindow(){speculationAllowed=false;queue.clear();main.removeCallbacks(pump);if(active==null)idle();}
     void trim(){if(foreground==null&&!retainedForeground)pause();}
     void reattach(){if(dynamic!=null&&activity!=null)dynamic.reattach(activity);}
     android.webkit.WebView takeSource(){return dynamic==null?null:dynamic.takeSource();}

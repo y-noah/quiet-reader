@@ -6,10 +6,12 @@ import java.util.*;
 /** Captures evidence for the requested snapshot, including newly pending members.
  * Invoked on the storage worker; only possible evidence returns to UI for scopes. */
 final class ArticleProgressPreparation {
+    long snapshot;
     final Map<String,HotCandidate> candidates=new LinkedHashMap<>();
     List<ArticleFollowupEvidence.Proof> followups=Collections.emptyList();
     static ArticleProgressPreparation read(FeedStore store,long snapshot,long now)throws Exception{
         ArticleProgressPreparation result=new ArticleProgressPreparation();
+        result.snapshot=snapshot;
         Map<String,HotCandidate> eligible=new LinkedHashMap<>();List<FeedStore.Row> rows=new ArrayList<>();
         for(int start=0;start<5000&&eligible.size()<128;start+=200){
             List<FeedStore.Row> page=store.readSnapshot(snapshot,200,start);rows.addAll(page);

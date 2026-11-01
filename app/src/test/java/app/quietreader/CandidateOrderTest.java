@@ -14,12 +14,13 @@ public class CandidateOrderTest {
         assertEquals(disliked.id,CandidateOrder.arrange(List.of(disliked,unknown),feedback,true).get(0).candidate.id);
         assertEquals(disliked.id,CandidateOrder.arrange(List.of(disliked,unknown),new JSONArray(),false).get(0).candidate.id);
     }
-    @Test public void videoMetadataIsExcludedBeforeGroupingAcrossAllSources(){
+    @Test public void videoMetadataIsExcludedExceptExplicitOptInBoards(){
         List<HotCandidate> input=new ArrayList<>();
         for(Models.Source source:Models.Source.values())input.add(new HotCandidate(source,"https://example.org/video/"+source.name(),"中文视频标题"+source.name(),"","",true,1,null,1));
         HotCandidate article=row(Models.Source.ZHIHU,2,"图文标题",null,1);input.add(article);
         List<FeedStore.Row> result=CandidateOrder.arrange(input,new JSONArray(),false);
-        assertEquals(1,result.size());assertEquals(article.id,result.get(0).candidate.id);
+        assertEquals(3,result.size());assertTrue(result.stream().anyMatch(r->r.candidate.id.equals(article.id)));
+        assertTrue(result.stream().allMatch(r->!r.candidate.video||r.candidate.source==Models.Source.BILIBILI||r.candidate.source==Models.Source.DOUYIN));
     }
     @Test public void permanentBlockSurvivesTextChangesButDoesNotBlockSimilarItems()throws Exception{
         HotCandidate original=row(Models.Source.ZHIHU,1,"一个事件",null,1),changed=row(Models.Source.ZHIHU,1,"更新后的事件",null,2),similar=row(Models.Source.ZHIHU,2,"一个事件的新角度",null,1);

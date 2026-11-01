@@ -67,7 +67,8 @@ public final class ReaderHtml {
             // Adding a comment must not suddenly collapse an otherwise readable body.
             // Short replies are already complete cards; only substantial content needs a toggle.
             boolean independentPost=part.label.equals("微博")||part.label.startsWith("微博 · ");
-            boolean fold=!entry&&(part.answer||(independentPost&&sections.size()>1)||text.length()>900||imageCount>1);
+            boolean singleArticle=sections.size()==1&&!part.answer&&!discussion(part);
+            boolean fold=!entry&&!singleArticle&&(part.answer||(independentPost&&sections.size()>1)||text.length()>900||imageCount>1);
             boolean open=!fold||expanded.contains(part.id);
             boolean comment=discussion(part);
             if(comment&&!discussionHeading){h.append("<h2 class='discussion-heading'>讨论</h2>");discussionHeading=true;}

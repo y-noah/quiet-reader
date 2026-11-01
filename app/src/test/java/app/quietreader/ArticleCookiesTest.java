@@ -67,4 +67,13 @@ public class ArticleCookiesTest {
         for(String url:new String[]{"https://tieba.baidu.com/","https://tieba.baidu.com/f","https://tieba.baidu.com.evil.test/p/123"})
             assertNotEquals(url,ArticleCookies.fingerprint(url,"HMACCOUNT=one"),ArticleCookies.fingerprint(url,"HMACCOUNT=two"));
     }
+    @Test public void baiduVisitorRotationCannotInvalidateAccountScopedSearchBodies(){
+        String url="https://www.baidu.com/s?wd=test",visitor="BAIDUID=one; BAIDUID_BFESS=one; BAIDU_WISE_UID=one; HMACCOUNT=one";
+        assertEquals(ArticleCookies.fingerprint(url,"BDUSS=account; "+visitor),ArticleCookies.fingerprint(url,"BDUSS=account; "+visitor.replace("one","two")));
+        assertEquals(ArticleCookies.fingerprint(url,null),ArticleCookies.fingerprint(url,visitor));
+        for(String key:new String[]{"BDUSS","BDUSS_BFESS","PTOKEN","STOKEN","PASSID","unknown_auth","some_uid","session_id","USER_JUMP"})
+            assertNotEquals(key,ArticleCookies.fingerprint(url,key+"=one; "+visitor),ArticleCookies.fingerprint(url,key+"=two; "+visitor));
+        for(String other:new String[]{"https://www.baidu.com/","https://www.baidu.com/login","https://www.baidu.com.evil.test/s"})
+            assertNotEquals(other,ArticleCookies.fingerprint(other,"BAIDUID=one"),ArticleCookies.fingerprint(other,"BAIDUID=two"));
+    }
 }

@@ -69,10 +69,10 @@ public class ReaderHtmlTest {
             assertTrue(html.contains("default-src 'none'"));
         }
     }
-    @Test public void shortImageCollectionsFoldAcrossPlatforms(){
+    @Test public void singleImageCollectionsStayOpenAcrossPlatforms(){
         Document d=new Document();d.title="Pictures";d.url="https://bbs.hupu.com/1.html";
         d.blocks.add(new Block("text","Short caption"));for(int i=0;i<12;i++)d.blocks.add(new Block("image","https://example.com/"+i+".png"));
-        for(Source source:Source.values()){String html=ReaderHtml.render(d,source,19);assertTrue(html.contains("展开阅读"));assertTrue(html.contains("包含 12 张图片"));assertFalse(html.contains("<img "));}
+        for(Source source:Source.values()){String html=ReaderHtml.render(d,source,19);assertFalse(html.contains("展开阅读"));assertEquals(12,org.jsoup.Jsoup.parse(html).select("img").size());}
     }
     @Test public void readingAnchorsSurviveGrowthOfEarlierSection(){
         Document d=new Document();d.url="https://www.zhihu.com/question/1";
@@ -91,5 +91,12 @@ public class ReaderHtmlTest {
         Document d=new Document();d.notice="部分内容";d.title="Test";d.url="https://www.zhihu.com/question/1";
         assertTrue(ReaderHtml.render(d,Source.ZHIHU,100).contains("部分内容"));
         assertFalse(ReaderHtml.render(d,Source.ZHIHU,100).contains("font-size:100px"));
+    }
+    @org.junit.Test public void singleLongArticleIsReadableWithoutANumberedCollapseControl(){
+        app.quietreader.Models.Document document=new app.quietreader.Models.Document();document.url="https://cn.nytimes.com/china/20261101/test-story/";document.title="测试文章";
+        app.quietreader.Models.Block block=new app.quietreader.Models.Block("text","完整正文段落。".repeat(200));document.blocks.add(block);
+        app.quietreader.Models.Section section=new app.quietreader.Models.Section("main","正文",false);section.blocks.add(block);document.sections.add(section);
+        String html=ReaderHtml.render(document,app.quietreader.Models.Source.NYT,19,false,java.util.Collections.emptySet(),false);
+        org.junit.Assert.assertTrue(html.contains(block.value));org.junit.Assert.assertFalse(html.contains("toggle?index="));
     }
 }

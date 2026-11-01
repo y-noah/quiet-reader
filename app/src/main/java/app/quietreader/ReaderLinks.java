@@ -34,6 +34,7 @@ public final class ReaderLinks {
                 case V2EX: pattern="/t/\\d+/?";break;
                 case ITHOME: return IthomeSource.articleUrl(url)?source:null;
                 case THEPAPER: return !ThepaperSource.articleId(url).isEmpty()?source:null;
+                case NYT:return NytChineseSource.articleUrl(url)?source:null;
                 case BBC: return !BbcChineseSource.articleId(url).isEmpty()?source:null;
                 case SSPAI: pattern="/post/\\d+/?";break;
                 case TIEBA: pattern="/p/\\d+/?";break;

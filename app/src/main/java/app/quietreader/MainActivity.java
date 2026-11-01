@@ -25,6 +25,7 @@ public final class MainActivity extends Activity {
     private app.quietreader.discovery.HotCandidate discoveryCandidate;
     private Item previousTopicPost;
     private boolean readingResumed;
+    private String readPresentedPage="";
     private ReadingHistory readingHistory;
     private boolean forceSourceRead;
     private boolean videoFallbackRequested;
@@ -65,6 +66,9 @@ public final class MainActivity extends Activity {
     private PendingArticle pendingArticle;
     private ReaderImageOwner imageOwner;
     private LinearLayout root, content;
+    private FrameLayout readerSurface;
+    private LinearLayout readerBar;
+    private ReaderToolbar readerToolbar;
     private ScrollView scroll;
     private int generation=0, font=19;
     private Item current;
@@ -207,16 +211,18 @@ public final class MainActivity extends Activity {
         root.setPadding(dp(18),0,dp(18),0); setContentView(root);
         if(preloader!=null)preloader.reattach();
         root.setOnApplyWindowInsetsListener((v,insets)-> { root.setPadding(dp(18)+insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),dp(18)+insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom()); return insets; });
-        LinearLayout bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);bar.setPadding(0,dp(6),0,dp(6));
-        if(current!=null){TextView back=button("返回",this::goBack);back.setSingleLine(true);back.setPadding(dp(10),0,dp(10),0);back.setBackgroundColor(Color.TRANSPARENT);bar.addView(back,new LinearLayout.LayoutParams(dp(Math.max(56,28*getResources().getConfiguration().fontScale+20)),dp(48)));}
+        readerSurface=new FrameLayout(this);root.addView(readerSurface,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout bar=new LinearLayout(this);readerBar=bar;bar.setBackgroundColor(BG);bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.addView(new android.widget.Space(this),new LinearLayout.LayoutParams(0,1,1));
         ImageButton more=icon(R.drawable.ic_more_horiz,"更多选项",()->{});more.setOnClickListener(v->options());
-        bar.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));root.addView(bar);
+        bar.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        readerSurface.addView(bar,new FrameLayout.LayoutParams(-1,dp(48),Gravity.TOP));readerToolbar=new ReaderToolbar(bar);
         root.setFocusableInTouchMode(true);root.requestFocus();
     }
     private void scroller() {
         scroll=new ScrollView(this); scroll.setFillViewport(true); scroll.setClipToPadding(false); scroll.setVerticalScrollBarEnabled(false);
-        content=column(); content.setPadding(0,0,0,dp(26)); scroll.addView(content); root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        content=column(); content.setPadding(0,dp(48),0,dp(26)); scroll.addView(content); readerSurface.addView(scroll,0,new FrameLayout.LayoutParams(-1,-1));
+        scroll.setOnScrollChangeListener((v,x,y,ox,oy)->readerToolbar.scroll(y,oy));
     }
     private void status(String title,String message) {
         content.removeAllViews(); space(content,30);
@@ -269,6 +275,13 @@ public final class MainActivity extends Activity {
     private Repository.Result<Document> promotedResult(Item item,int request){return new Repository.Result<Document>(){
         public void success(Document doc){if(request==generation)renderSource(item,doc,!doc.filteredVideo&&(doc.hasContent()||doc.unsupportedVideo||doc.filteredVideos>0)?preloader.takeSource():null,false);}
         public void failure(String why){if(request==generation){status("暂时没读到正文",why);content.addView(button("重试",()->open(item,false)));content.addView(button("来源 / 登录",()->login(item)));}}
+        public void failure(ArticleFailure failure){
+            if(request!=generation)return;
+            // A speculative request may be near its deadline when tapped. Give the
+            // explicit read one fresh acquisition; its failure does not recurse here.
+            if(readingResumed&&!isFinishing()&&!isDestroyed()&&(failure.retryable()||failure.kind==ArticleFailure.Kind.SESSION_CHANGED)&&failure.retryAt<=System.currentTimeMillis())loadArticleAfterCache(item,request);
+            else failure(failure.message);
+        }
     };}
     private void loadArticleAfterCache(Item item,int request){
         if(repo.offline()){status("当前没有网络","此篇正文尚未缓存在本机。连接网络后可重试。");content.addView(button("重试",()->open(item,false)));return;}
@@ -280,6 +293,11 @@ public final class MainActivity extends Activity {
         pending.attach(new Repository.Result<Document>(){
             public void success(Document doc){if(pendingArticle!=pending||request!=generation)return;pendingArticle=null;if(doc.title.trim().isEmpty())doc.title=item.title;if(SourceSession.nativeDocumentReady(item.source,doc))renderCached(doc);else dynamic(item,request);}
             public void failure(String reason){if(pendingArticle!=pending||request!=generation)return;pendingArticle=null;dynamic(item,request);}
+            public void failure(ArticleFailure failure){
+                if(pendingArticle!=pending||request!=generation)return;pendingArticle=null;
+                if(failure.mayFallback())dynamic(item,request);
+                else{status("暂时没读到正文",failure.message);content.addView(button("重试",()->open(item,false)));content.addView(button("来源 / 登录",()->login(item)));}
+            }
         });
     }
     private void cancelPendingArticle(){if(pendingArticle!=null){pendingArticle.close();pendingArticle=null;}}
@@ -405,11 +423,12 @@ public final class MainActivity extends Activity {
                     catch(Exception e) { return new WebResourceResponse("text/plain","utf-8",404,"Unavailable",java.util.Collections.emptyMap(),new ByteArrayInputStream(new byte[0])); }
                 }
             });
-            root.addView(readerWeb,new LinearLayout.LayoutParams(-1,0,1)); readerFooter();
+            readerSurface.addView(readerWeb,0,new FrameLayout.LayoutParams(-1,-1)); readerFooter();
             readerWeb.setOnLongClickListener(v->{WebView.HitTestResult hit=readerWeb.getHitTestResult();String url=hit==null?null:hit.getExtra();if(url==null||!ReaderLinks.allowed(url)||reading.containsImage(url)||url.startsWith(ReaderHtml.ACTION))return false;
                 new AlertDialog.Builder(this).setTitle("链接地址").setMessage(url).setNegativeButton("取消",null).setNeutralButton("复制链接",(d,n)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("链接",url));toast("已复制链接");}).setPositiveButton("打开",(d,n)->openContentLink(url)).show();return true;});
             reloadReader(doc);
             readerWeb.setOnScrollChangeListener((v,x,y,ox,oy)->{
+                readerToolbar.scroll(y,oy);
                 if(y!=oy)scheduleViewportSample();
                 if(y!=oy)readerPrefetch.settled();
                 if(y!=oy&&System.currentTimeMillis()>suppressAutoUntil)engagement.scroll(android.os.SystemClock.elapsedRealtime());
@@ -431,6 +450,7 @@ public final class MainActivity extends Activity {
     private void readerReady(WebView web,String url){
         if(web!=readerWeb||!url.equals(readerPageUrl))return;
         engagement.ready(reading!=null&&reading.hasContent()&&!reading.loginRequired&&!reading.sourceUnavailable&&!reading.unsupportedVideo,android.os.SystemClock.elapsedRealtime());
+        if(ArticleReadHistory.readable(reading)){int revision=readerRevision;web.postVisualStateCallback(revision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){if(web==readerWeb&&revision==readerRevision&&url.equals(readerPageUrl)){readPresentedPage=url;recordReadFact();}}});}
         readerPrefetch.ready();
     }
     private static WebResourceResponse imageResponse(ReaderImageOwner owner,String url,String referer)throws Exception {
@@ -600,7 +620,7 @@ public final class MainActivity extends Activity {
         closeVideo();
         suppressAutoUntil=System.currentTimeMillis()+1500;
         sampledViewport=null;sampledViewportPage="";viewportRestoreRunning=false;preloadHandler.removeCallbacks(sampleViewport);
-        if(readerWeb!=null){readerWeb.getSettings().setTextZoom(Math.round(font*100f/19));readerHtml=ReaderHtml.render(doc,current.source,19,dark,expanded,loadingMore,font,Theme.style(this));readerPageUrl=ReaderHtml.ACTION+"?render="+System.nanoTime()+"-"+(++readerRevision)+(!streamAnchor.isEmpty()?"#"+streamAnchor:pendingAnchor>=0?"#part-"+pendingAnchor:"");pendingAnchor=-1;readerWeb.loadUrl(readerPageUrl);}
+        if(readerWeb!=null){readerWeb.getSettings().setTextZoom(Math.round(font*100f/19));readerHtml=ReaderHtml.render(doc,current.source,19,dark,expanded,loadingMore,font,Theme.style(this)).replace("<main>","<main style=\"padding-top:60px\">");readerPageUrl=ReaderHtml.ACTION+"?render="+System.nanoTime()+"-"+(++readerRevision)+(!streamAnchor.isEmpty()?"#"+streamAnchor:pendingAnchor>=0?"#part-"+pendingAnchor:"");pendingAnchor=-1;readerWeb.loadUrl(readerPageUrl);}
     }
     private void settleReaderImages(WebView web,String failedUrl){
         if(web!=readerWeb||reading==null||wasStopped||isFinishing()||isDestroyed()||failedUrl!=null&&!reading.containsImage(failedUrl))return;
@@ -762,6 +782,11 @@ public final class MainActivity extends Activity {
         if(reading==null)return;loadingMore=false;morePaused=true;reading.moreStatus="error";reading.notice=reason;
         atReadingPosition(()->reloadReader(reading),()->{});
     }
+    private void recordReadFact(){
+        if(!readingVisible()||readerWeb==null||!readPresentedPage.equals(readerPageUrl)||!ArticleReadHistory.displayed(current,reading)||!ArticleSession.contentCurrent(reading))return;
+        ArticleReadHistory history=new ArticleReadHistory(this,ArticleReadHistory.database(this,getIntent().getStringExtra("test_database")));
+        if(!history.seen(current.source,current.url))history.mark(current.source,current.url,System.currentTimeMillis());
+    }
     private void recordReadingInterest(){if(discoveryCandidate!=null&&current!=null&&reading!=null&&ArticleSession.contentCurrent(reading)&&current.url.equals(discoveryCandidate.originalUrl)&&ArticleVersion.matches(discoveryCandidate.readerItem(),reading)&&engagement.take(android.os.SystemClock.elapsedRealtime()))ReadingInterestRecorder.record(this,getIntent().getStringExtra("test_database"),discoveryCandidate,reading);}
     private void recordQuickExit(){
         if(discoveryCandidate==null||current==null||reading==null||!ArticleSession.contentCurrent(reading)||!current.url.equals(discoveryCandidate.originalUrl)||!ArticleVersion.matches(discoveryCandidate.readerItem(),reading)||reading.loginRequired||reading.sourceUnavailable||reading.unsupportedVideo)return;
@@ -775,7 +800,7 @@ public final class MainActivity extends Activity {
     @Override public boolean dispatchKeyEvent(android.view.KeyEvent event){if(event.getAction()==android.view.KeyEvent.ACTION_DOWN&&event.getKeyCode()!=android.view.KeyEvent.KEYCODE_BACK)interruptViewportRestore();return super.dispatchKeyEvent(event);}
     @Override public boolean dispatchGenericMotionEvent(android.view.MotionEvent event){if(event.getActionMasked()==android.view.MotionEvent.ACTION_SCROLL){interruptViewportRestore();if(readerPrefetch!=null){readerPrefetch.defer();readerPrefetch.action();}}return super.dispatchGenericMotionEvent(event);}
     @Override public void onUserInteraction(){super.onUserInteraction();engagement.touch(android.os.SystemClock.elapsedRealtime());}
-    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);engagement.visible(readingResumed&&focused,android.os.SystemClock.elapsedRealtime());if(readerPrefetch!=null){if(focused)readerPrefetch.settled();else readerPrefetch.defer();}}
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)recordReadFact();engagement.visible(readingResumed&&focused,android.os.SystemClock.elapsedRealtime());if(readerPrefetch!=null){if(focused)readerPrefetch.settled();else readerPrefetch.defer();}}
     @Override protected void onPause(){cancelDeferredContinuation();continuationGestureWeb=null;if(readerPrefetch!=null)readerPrefetch.pause();closeVideo();readingResumed=false;engagement.visible(false,android.os.SystemClock.elapsedRealtime());recordReadingInterest();rememberReading();super.onPause();}
     @Override protected void onStop(){
         dismissReaderActions();wasStopped=true;

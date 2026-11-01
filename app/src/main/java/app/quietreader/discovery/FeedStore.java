@@ -6,6 +6,7 @@ import android.database.sqlite.*;
 import android.os.Looper;
 import app.quietreader.Models.Source;
 import app.quietreader.ArticleProgressHistory;
+import app.quietreader.ArticleReadHistory;
 import org.json.*;
 import java.nio.*;
 import java.util.*;
@@ -17,8 +18,11 @@ public final class FeedStore extends SQLiteOpenHelper {
     public static final String DATABASE="personalized-hot-topics-v1.db";
     public static final long BODY_LANGUAGE_TTL=10*60_000L;
     public static final long VIDEO_EVIDENCE_TTL=7L*24*60*60*1000;
+    private final ArticleReadHistory readHistory;
+    private final Context context;
+    private final String databaseName;
     public FeedStore(Context context){this(context,DATABASE);}
-    public FeedStore(Context context,String databaseName){super(context,databaseName,null,9);setWriteAheadLoggingEnabled(true);}
+    public FeedStore(Context context,String databaseName){super(context,databaseName,null,11);this.context=context.getApplicationContext();this.databaseName=databaseName;readHistory=new ArticleReadHistory(context,databaseName);setWriteAheadLoggingEnabled(true);}
     @Override public void onConfigure(SQLiteDatabase db){db.setForeignKeyConstraintsEnabled(true);}
     @Override public void onCreate(SQLiteDatabase db){
         db.execSQL("CREATE TABLE meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)");
@@ -33,6 +37,7 @@ public final class FeedStore extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, source_version INTEGER NOT NULL, profile_version INTEGER NOT NULL, created_at INTEGER NOT NULL, mode TEXT NOT NULL, filter TEXT NOT NULL, anchor TEXT NOT NULL DEFAULT '', offset INTEGER NOT NULL DEFAULT 0)");
         db.execSQL("CREATE TABLE snapshot_rows (snapshot INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE, position INTEGER NOT NULL, event_id TEXT NOT NULL, payload TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(snapshot,position), UNIQUE(snapshot,event_id))");
         db.execSQL("CREATE TABLE saved (id TEXT PRIMARY KEY, event_id TEXT NOT NULL, payload TEXT NOT NULL, saved_at INTEGER NOT NULL)");
+        createPresentations(db);
         FeedExposureHistory.create(db);
         ArticleProgressHistory.create(db);
         for(Source source:Source.values()){
@@ -52,7 +57,44 @@ public final class FeedStore extends SQLiteOpenHelper {
         if(oldVersion<7){ContentValues source=new ContentValues();source.put("id",Source.BBC.name());source.put("enabled",1);db.insertWithOnConflict("sources",null,source,SQLiteDatabase.CONFLICT_IGNORE);}
         if(oldVersion<8)FeedExposureHistory.create(db);
         if(oldVersion<9)ArticleProgressHistory.create(db);
-        if(newVersion>9)throw new IllegalStateException("Explicit data migration required");
+        if(oldVersion<10)createPresentations(db);
+        if(oldVersion<11){ContentValues source=new ContentValues();source.put("id",Source.NYT.name());source.put("enabled",1);db.insertWithOnConflict("sources",null,source,SQLiteDatabase.CONFLICT_IGNORE);}
+        if(newVersion>11)throw new IllegalStateException("Explicit data migration required");
+    }
+    private static void createPresentations(SQLiteDatabase db){db.execSQL("CREATE TABLE IF NOT EXISTS presentations (candidate_id TEXT PRIMARY KEY, at INTEGER NOT NULL)");}
+    /** Whole delivered batch, deliberately independent from viewport exposure and taste. */
+    public long balanceTurn(){return scalar(db(),"SELECT value FROM meta WHERE key='balance_turn'");}
+    public void recordPresentation(Collection<Row> visible,long now){recordPresentation(visible,now,false);}
+    public void recordPresentation(Collection<Row> visible,long now,boolean balanced){
+        SQLiteDatabase db=db();db.beginTransaction();try{
+            if(balanced&&!visible.isEmpty()){
+                StringBuilder identity=new StringBuilder();for(Row row:visible)identity.append(row.eventId).append(':').append(row.candidate.id).append('@').append(row.candidate.textHash).append('\n');
+                long fingerprint=Long.parseLong(HotCandidate.hash(identity.toString()).substring(0,15),16);
+                if(scalar(db,"SELECT value FROM meta WHERE key='balance_last_batch'")!=fingerprint){
+                    db.execSQL("INSERT OR IGNORE INTO meta VALUES ('balance_turn',0)");
+                    db.execSQL("UPDATE meta SET value=value+1 WHERE key='balance_turn'");
+                    db.execSQL("INSERT OR REPLACE INTO meta VALUES ('balance_last_batch',?)",new Object[]{fingerprint});
+                }
+            }
+            for(Row row:visible)for(HotCandidate member:row.entries){ContentValues value=new ContentValues();value.put("candidate_id",member.id);value.put("at",now);db.insertWithOnConflict("presentations",null,value,SQLiteDatabase.CONFLICT_REPLACE);}
+            db.delete("presentations","at<?",new String[]{""+(now-7L*86400000)});
+            db.execSQL("DELETE FROM presentations WHERE candidate_id IN (SELECT candidate_id FROM presentations ORDER BY at DESC,candidate_id LIMIT -1 OFFSET 2500)");db.setTransactionSuccessful();
+        }finally{db.endTransaction();}
+    }
+    private Map<String,Long> delivered(long now){
+        Map<String,Long> result=new HashMap<>();try(Cursor cursor=db().rawQuery("SELECT candidate_id,at FROM presentations WHERE at<=? AND at>=?",new String[]{""+now,""+(now-7L*86400000)})){while(cursor.moveToNext())result.put(cursor.getString(0),cursor.getLong(1));}return result;
+    }
+    /** Local-only next batch; source/profile epochs validate saved membership once. */
+    public long presentationSnapshot(long id,String filter,List<Row> preferred,long now){
+        SQLiteDatabase db=db();db.beginTransaction();try{
+            JSONObject info=snapshotInfo(id),profile=profile(now);
+            if(info==null||!SourceFilter.normalize(filter).equals(info.optString("filter"))||info.optLong("sourceVersion")!=version("sources")||info.optLong("profileVersion")!=profile.optLong("version"))return -1;
+            List<Row> original=new ArrayList<>();for(int start=0;start<info.optInt("count");start+=200)original.addAll(readSnapshot(id,200,start));
+            List<Row> eligible=SourceFilter.apply(unread(original),filter);
+            List<Row> ordered=FeedPresentationOrder.arrange(FeedReserve.promotePrepared(eligible,preferred),delivered(now),now,new PlatformPreference(profile.getJSONArray("feedback")),balanceTurn());
+            Set<String> selected=new HashSet<>();for(Row row:ordered)selected.add(row.eventId);for(Row row:unread(original))if(!selected.contains(row.eventId))ordered.add(row);
+            long result=commitRanking(info.getLong("sourceVersion"),info.getLong("profileVersion"),now,info.getString("mode"),filter,ordered);db.setTransactionSuccessful();return result;
+        }catch(JSONException error){throw new IllegalStateException(error);}finally{db.endTransaction();}
     }
     private static void createReranks(SQLiteDatabase db){db.execSQL("CREATE TABLE IF NOT EXISTS reranks (key TEXT PRIMARY KEY, logit REAL NOT NULL, used_at INTEGER NOT NULL)");}
     public Float rerank(String key,long at){SQLiteDatabase db=db();try(Cursor c=db.rawQuery("SELECT logit FROM reranks WHERE key=?",new String[]{key})){
@@ -315,11 +357,22 @@ public final class FeedStore extends SQLiteOpenHelper {
     }
     /** Display history is separate from interest learning and does not change its version. */
     public int recordExposed(long snapshot,Collection<String> events,long at){return FeedExposureHistory.exposed(db(),snapshot,events,at);}
-    public void recordConsumed(HotCandidate candidate,long at){FeedExposureHistory.consumed(db(),candidate,at);}
+    public void recordConsumed(HotCandidate candidate,long at){FeedExposureHistory.consumed(db(),candidate,at);readHistory.mark(candidate,at);}
+    public List<Row> unread(List<Row> rows){
+        worker();
+        if(!readHistory.migrated()){
+            if(DATABASE.equals(databaseName))readHistory.migrateBodies(context);
+            try(Cursor cursor=db().rawQuery("SELECT c.payload,e.read_at FROM feed_exposure e JOIN candidates c ON e.key='member:'||c.id WHERE e.read_at>0",null)){
+                while(cursor.moveToNext())try{readHistory.mark(HotCandidate.fromJson(new JSONObject(cursor.getString(0))),cursor.getLong(1));}catch(JSONException ignored){}
+            }
+            readHistory.migrated(true);
+        }
+        return readHistory.unread(rows);
+    }
     public Map<String,FeedRefreshOrder.Recent> recentExposure(Collection<Row> rows,long now){return FeedExposureHistory.recent(db(),rows,now);}
     public List<HotCandidate> recordExposedMembers(long snapshot,Collection<String> events,long at){Map<String,HotCandidate> members=new LinkedHashMap<>();FeedExposureHistory.exposed(db(),snapshot,events,at,members);return new ArrayList<>(members.values());}
     public boolean currentCandidate(HotCandidate expected){try(Cursor c=db().rawQuery("SELECT c.payload FROM candidates c JOIN sources s ON s.id=c.source WHERE c.id=? AND c.text_hash=? AND c.active=1 AND s.enabled=1",new String[]{expected.id,expected.textHash})){
-        if(!c.moveToFirst())return false;HotCandidate actual=parse(c.getString(0));return !actual.video&&ContentLanguage.eligible(actual.title,actual.snippet,actual.bodyLanguage);
+        if(!c.moveToFirst())return false;HotCandidate actual=parse(c.getString(0));return HotSourceCatalog.contentEligible(actual)&&ContentLanguage.eligible(actual.title,actual.snippet,actual.bodyLanguage);
     }}
     public boolean recordQuickExit(HotCandidate candidate,long at){return recordReading(candidate,at,true);}
     private boolean recordReading(HotCandidate candidate,long at,boolean quickExit){
@@ -366,7 +419,7 @@ public final class FeedStore extends SQLiteOpenHelper {
             expireFeedback(db,at);
             if(scalar(db,"SELECT value FROM meta WHERE key='sources'")!=sourceVersion||scalar(db,"SELECT value FROM meta WHERE key='profile'")!=profileVersion){db.setTransactionSuccessful();return -1;}
             ContentValues v=new ContentValues();v.put("source_version",sourceVersion);v.put("profile_version",profileVersion);v.put("created_at",at);v.put("mode",mode);v.put("filter",filter);long id=db.insertOrThrow("snapshots",null,v);
-            int position=0;for(Row row:rows){ContentValues item=new ContentValues();item.put("snapshot",id);item.put("position",position++);item.put("event_id",row.eventId);item.put("payload",row.payload().toString());item.put("reason",HotCandidate.clean(row.reason,120));db.insertOrThrow("snapshot_rows",null,item);}
+            int position=0;for(Row row:unread(rows)){ContentValues item=new ContentValues();item.put("snapshot",id);item.put("position",position++);item.put("event_id",row.eventId);item.put("payload",row.payload().toString());item.put("reason",HotCandidate.clean(row.reason,120));db.insertOrThrow("snapshot_rows",null,item);}
             long active=scalar(db,"SELECT value FROM meta WHERE key='active_snapshot'");
             if(active>0)db.execSQL("DELETE FROM snapshots WHERE id<>? AND id NOT IN (SELECT id FROM snapshots ORDER BY id DESC LIMIT 2)",new Object[]{active});
             else db.execSQL("DELETE FROM snapshots WHERE id NOT IN (SELECT id FROM snapshots ORDER BY id DESC LIMIT 3)");db.setTransactionSuccessful();return id;
@@ -393,11 +446,47 @@ public final class FeedStore extends SQLiteOpenHelper {
             if(progress!=null){int lookups=0;for(Row row:baseline){FeedRefreshOrder.Recent seen=recent.get(row.eventId);if(seen==null||++lookups>128)continue;
                 try{long proof=progress.progress(row,seen,now);if(proof>Math.max(seen.shownAt,seen.readAt)&&proof<=now)recent.put(row.eventId,new FeedRefreshOrder.Recent(seen.shownAt,seen.readAt,proof));}catch(RuntimeException unavailable){/* Optional derivative evidence cannot interrupt refresh. */}
             }}
-            List<Row> ordered=FeedRefreshOrder.forRows(baseline,recent,now);
-            boolean changed=false;for(int n=0;n<original.size();n++)if(!original.get(n).eventId.equals(ordered.get(n).eventId)){changed=true;break;}
+            Map<String,Long> delivery=delivered(now);
+            for(Row row:baseline){FeedRefreshOrder.Recent seen=recent.get(row.eventId);if(seen!=null&&seen.verifiedProgressAt>Math.max(seen.shownAt,seen.readAt))for(HotCandidate member:row.entries)delivery.remove(member.id);}
+            List<Row> ordered=FeedPresentationOrder.arrange(unread(FeedRefreshOrder.forRows(baseline,recent,now)),delivery,now,new PlatformPreference(profile.getJSONArray("feedback")),balanceTurn());
+            boolean changed=original.size()!=ordered.size();for(int n=0;!changed&&n<original.size();n++)if(!original.get(n).eventId.equals(ordered.get(n).eventId)||!original.get(n).candidate.id.equals(ordered.get(n).candidate.id)||original.get(n).entries.size()!=ordered.get(n).entries.size()){changed=true;}
             long result=changed?commitRanking(info.optLong("sourceVersion"),profile.getLong("version"),now,info.optString("mode"),filter,ordered):id;
             db.setTransactionSuccessful();return result;
         }catch(JSONException failure){throw new IllegalStateException(failure);}finally{db.endTransaction();}
+    }
+    /** A reserve only changes presentation, after refreshSnapshot has validated membership. */
+    public long promoteReserve(long id,String filter,List<Row> preferred,long now){
+        if(preferred.isEmpty())return id;
+        try{
+            JSONObject info=snapshotInfo(id);if(info==null)return -1;
+            List<Row> original=new ArrayList<>();for(int start=0;start<info.getInt("count");start+=200)original.addAll(readSnapshot(id,200,start));
+            List<Row> eligible=SourceFilter.apply(unread(original),filter);
+            List<Row> promoted=FeedPresentationOrder.arrange(FeedReserve.promotePrepared(eligible,preferred),delivered(now),now,new PlatformPreference(profile(now).getJSONArray("feedback")),balanceTurn());
+            if(promoted==eligible)return id;
+            Set<String> selected=new HashSet<>();List<Row> ordered=new ArrayList<>();
+            // Preserve the complete prepared queue. If a first-screen body fails,
+            // its replacement must come from the next prepared screen, not an old
+            // visible row near the top of the original ranking.
+            for(Row row:promoted){ordered.add(row);selected.add(row.eventId);}
+            for(Row row:unread(original))if(!selected.contains(row.eventId))ordered.add(row);
+            boolean unchanged=ordered.size()==original.size();
+            for(int n=0;unchanged&&n<ordered.size();n++)unchanged=ordered.get(n).eventId.equals(original.get(n).eventId)&&ordered.get(n).candidate.id.equals(original.get(n).candidate.id)&&ordered.get(n).entries.size()==original.get(n).entries.size();
+            if(unchanged)return id;
+            return commitRanking(info.getLong("sourceVersion"),info.getLong("profileVersion"),now,info.getString("mode"),filter,ordered);
+        }catch(JSONException failure){throw new IllegalStateException(failure);}
+    }
+    /** Freeze the verified first screen; language evidence may advance the source version. */
+    public long admitPrepared(long profileVersion,String mode,String filter,List<Row> ranked,List<Row> target,long now){
+        try{
+            JSONObject profile=profile(now);if(profile.getLong("version")!=profileVersion||target.isEmpty())return -1;
+            Map<String,String> allowed=new HashMap<>();
+            for(Row row:CandidateOrder.forModels(candidates(5000,0),profile.getJSONArray("feedback")))for(HotCandidate member:row.entries)allowed.put(member.id,member.textHash);
+            for(Row row:target)for(HotCandidate member:row.entries)if(!member.textHash.equals(allowed.get(member.id)))return -1;
+            Set<String> selected=new HashSet<>();List<Row> ordered=new ArrayList<>();
+            for(Row row:target){ordered.add(row);selected.add(row.eventId);}
+            for(Row row:ranked)if(!selected.contains(row.eventId))ordered.add(row);
+            return commitRanking(version("sources"),profileVersion,now,mode,filter,ordered);
+        }catch(JSONException failure){throw new IllegalStateException(failure);}
     }
     public long latestSnapshot(){return scalar(db(),"SELECT MAX(id) FROM snapshots");}
     public long activeSnapshot(){long id=scalar(db(),"SELECT value FROM meta WHERE key='active_snapshot'");return scalar(db(),"SELECT COUNT(*) FROM snapshots WHERE id=?",""+id)>0?id:latestSnapshot();}

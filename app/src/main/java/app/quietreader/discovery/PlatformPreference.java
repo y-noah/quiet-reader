@@ -43,6 +43,8 @@ public final class PlatformPreference {
     private static Source parse(String name){try{return Source.valueOf(name);}catch(Exception ignored){return null;}}
     public boolean empty(){return values.isEmpty();}
     public double score(Source source){return values.getOrDefault(source,0.0);}
+    /** Neutral=1; explicit LESS=0.25, MORE=1.75; weak reading evidence stays within 0.74..1.27. */
+    public double exposureWeight(Source source){return 1+0.75*score(source);}
     public List<FeedStore.Row> apply(List<FeedStore.Row> rows){return apply(rows,Collections.emptyMap());}
     public List<FeedStore.Row> apply(List<FeedStore.Row> rows,Map<String,Integer> categories){
         List<FeedStore.Row> result=new ArrayList<>();Map<String,Integer> order=new HashMap<>();int index=0;

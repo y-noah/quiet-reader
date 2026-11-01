@@ -48,7 +48,7 @@ public final class CandidateOrder {
         }
         Map<String,HotCandidate> identities=new HashMap<>();
         for(HotCandidate c:candidates){
-            if(c.video)continue;
+            if(!HotSourceCatalog.contentEligible(c))continue;
             if(!ContentLanguage.eligible(c.title,c.snippet,c.bodyLanguage))continue;
             if(sources.contains(c.source.name()))continue;
             HotCandidate previous=identities.get(c.id);if(previous==null||c.observedAt>previous.observedAt)identities.put(c.id,c);

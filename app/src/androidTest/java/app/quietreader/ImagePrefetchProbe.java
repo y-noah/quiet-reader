@@ -78,10 +78,10 @@ final class ImagePrefetchProbe {
                 check(!onUi(()->((ImagePreloader)field(controller,"imagePreloader")).busy()),"low battery signal cancels image speculation during an actual blocked request");
                 int before=requested.size();Thread.sleep(600);check(requested.size()==before,"low battery does not start further image requests");
                 shell("dumpsys battery reset");batteryChanged=false;Thread.sleep(500);check(requested.size()==before,"battery recovery alone does not wake speculative downloads");
-                ui(()->controller.viewport(0));
+                ui(()->{controller.scrollState(1);controller.scrollState(0);controller.viewport(0);});
             }else{ui(()->controller.viewport(rows().size()-1));await("old viewport disconnected",disconnected::get);release.set(true);}
             await("shifted viewport image requests",()->requested.size()>=6);
-            if(batteryPolicy){check(requested.get(3).equals(abandoned),"next eligible viewport retries the cancelled image without a five-minute false failure penalty");}
+            if(batteryPolicy){check(requested.get(3).equals(abandoned),"next user scroll retries the cancelled image without a five-minute false failure penalty");}
             else{
                 HotCandidate[] expectedViewport={null};ui(()->expectedViewport[0]=rows().get(rows().size()-1).candidate);
                 check(onUiCandidate(requested.get(3)).id.equals(expectedViewport[0].id),"moving to the end of the finite batch reprioritizes its actual viewport");

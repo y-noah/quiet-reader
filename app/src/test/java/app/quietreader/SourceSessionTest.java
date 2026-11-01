@@ -12,9 +12,9 @@ public class SourceSessionTest {
         assertFalse(SourceSession.nativeDocumentReady(Source.HUPU,shell));
         shell.loginRequired=false;assertTrue(SourceSession.nativeDocumentReady(Source.HUPU,shell));
     }
-    @Test public void emptyHupuStillFallsBackButActualUnavailableStatusIsPreserved(){
+    @Test public void malformedNativeHupuStateGetsOneBrowserAcquisitionBeforeShowingUnavailable(){
         Document document=new Document();assertFalse(SourceSession.nativeDocumentReady(Source.HUPU,document));
-        document.sourceUnavailable=true;assertTrue(SourceSession.nativeDocumentReady(Source.HUPU,document));
+        document.sourceUnavailable=true;assertFalse(SourceSession.nativeDocumentReady(Source.HUPU,document));
     }
     @Test public void existingOtherSourcePermissionStatusesKeepTheirEstablishedRoute(){
         Document shell=new Document();shell.loginRequired=true;

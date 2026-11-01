@@ -8,8 +8,8 @@ android {
         applicationId 'app.quietreader'
         minSdk 26
         targetSdk 36
-        versionCode 49
-        versionName '1.0.0'
+        versionCode 50
+        versionName '1.0.1'
         buildConfigField 'boolean', 'RANKING_MEASUREMENT_ENABLED', project.hasProperty('isolatedReleaseFlowProbe') ? 'true' : 'false'
         testInstrumentationRunner 'app.quietreader.FiveSourceInstrumentation'
         externalNativeBuild { cmake { arguments "-DSENTENCEPIECE_SOURCE=${project.findProperty('sentencepieceSource') ?: rootProject.file('.tools/native/sources/sentencepiece-31646a467d2051eb904e0b45de3a73e91fe1c1e3')}", '-DANDROID_STL=c++_static'; targets 'quietreader_sentencepiece' } }
@@ -89,5 +89,5 @@ if (project.hasProperty('releaseDiscoveryUi')) android.defaultConfig.testInstrum
 if (project.hasProperty('isolatedReleaseProbe')) android.defaultConfig.applicationId = 'app.quietreader.installprobe'
 if (project.hasProperty('isolatedReleaseFlowProbe')) android.defaultConfig.applicationId = 'app.quietreader.flowprobe'
 // normalUpgradeProbe remains a packaging-script selector; normal and trial
-// artifacts now share the actual 0.4.0/version48 upgrade identity.
+// artifacts share the normal application identity and monotonic version code.
 if (project.hasProperty('isolatedDiscoveryProbe')) android.defaultConfig.applicationId = 'app.quietreader.discoveryprobe'

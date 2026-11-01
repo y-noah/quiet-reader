@@ -34,9 +34,10 @@ final class RefreshPresentationProbe {
         int seenCount=Math.min(10,rows.size()-1);List<String> seen=new ArrayList<>();for(int n=0;n<seenCount;n++)seen.add(rows.get(n).eventId);serial.submit(()->store.recordExposed(original,seen,System.currentTimeMillis())).get(5,TimeUnit.SECONDS);
         int generation=(int)field(controller,"feedGeneration");long epoch=(long)field(controller,"explicitRefreshEpoch");ui(()->state(original,true));
         check(onUi(()->(boolean)field(home,"loading")&&(boolean)field(home,"updateAvailable")),"actual home exposes an available pending batch while source collection is still loading");
+        String nextUndelivered=((List<FeedStore.Row>)field(controller,"allRows")).get(rows.size()).eventId;
         pull(false);Thread.sleep(600);boolean accepted=onUi(()->(long)field(controller,"explicitRefreshEpoch")>epoch);check(accepted,"real top pull accepts already available recommendations during collection");if(!accepted)return;
         await("pulled batch applied",()->!(boolean)field(controller,"explicitRefreshRunning")&&(long)field(controller,"snapshot")!=original);
-        check(onUi(()->((List<FeedStore.Row>)field(home,"feed")).get(0).eventId.equals(rows.get(seenCount).eventId)),"pull presents the first same-quality unseen item through the real controller");
+        check(onUi(()->((List<FeedStore.Row>)field(home,"feed")).get(0).eventId.equals(nextUndelivered)),"pull presents the first undelivered batch without reusing unseen cards from the prior batch");
         check(onUi(()->(boolean)field(controller,"loading")&&(int)field(controller,"feedGeneration")==generation),"accepting pending content does not cancel or restart source collection");
         long after=(long)field(controller,"explicitRefreshEpoch");pull(false);await("loading-time local refresh ends",()->!(boolean)field(controller,"explicitRefreshRunning"));check(onUi(()->(long)field(controller,"explicitRefreshEpoch")==after+1&&(boolean)field(controller,"loading")&&(int)field(controller,"feedGeneration")==generation),"with no pending batch a loading-time pull refreshes locally without restarting collection");
         final long cancelledEpoch=(long)field(controller,"explicitRefreshEpoch");
@@ -133,13 +134,29 @@ final class RefreshPresentationProbe {
         await("local publication during collection",()->!(boolean)field(controller,"explicitRefreshRunning"));
         check(onUi(()->(long)field(controller,"explicitRefreshEpoch")==nextEpoch+1&&(boolean)field(home,"loading")&&!indicator.animating()&&!(boolean)field(indicator,"busy")),"real local publication stops its ring without waiting for ongoing source collection");
     }
+    @SuppressWarnings("unchecked") private void queuedRebuildCase()throws Exception{
+        serial.submit(()->{}).get(5,TimeUnit.SECONDS);test.waitForIdleSync();
+        long current=(long)field(controller,"snapshot");List<FeedStore.Row> ranked=new ArrayList<>((List<FeedStore.Row>)field(controller,"allRows"));
+        CountDownLatch gate=new CountDownLatch(1),entered=new CountDownLatch(1);long[] staged={0};
+        ui(()->state(0,true));
+        serial.submit(()->{entered.countDown();try{gate.await(5,TimeUnit.SECONDS);org.json.JSONObject info=store.snapshotInfo(current);staged[0]=store.commitRanking(info.getLong("sourceVersion"),info.getLong("profileVersion"),System.currentTimeMillis(),info.getString("mode"),info.getString("filter"),ranked);home.runOnUiThread(()->state(staged[0],true));}catch(Exception e){throw new IllegalStateException(e);}});
+        if(!entered.await(3,TimeUnit.SECONDS))throw new IllegalStateException("queued rebuild gate");
+        ui(()->((View)field(home,"updates")).performClick());gate.countDown();
+        await("refresh adopts queued rebuild",()->!(boolean)field(controller,"explicitRefreshRunning")&&(long)field(controller,"snapshot")!=current);
+        long latest=serial.submit(store::latestSnapshot).get(5,TimeUnit.SECONDS);
+        report.append("queued rebuild: before=").append(current).append(" staged=").append(staged[0]).append(" final=").append(latest).append('\n');
+        // One presentation plus at most one genuine reserve promotion; never
+        // another pair for the obsolete snapshot that preceded the rebuild.
+        check(staged[0]>current&&latest>staged[0]&&latest<=staged[0]+2,"refresh uses the queued rebuild once without recomputing an obsolete presentation");
+        check(onUi(()->!(boolean)field(home,"refreshing")&&(long)field(controller,"pending")==0),"queued rebuild leaves no stale pending update or spinner");
+    }
     @SuppressWarnings("unchecked") void run(){String database="test-ui-refresh-boundary-"+UUID.randomUUID()+".db";try{
         if(animation&&(!test.getTargetContext().getPackageName().equals("app.quietreader.discoveryprobe")||!Build.MODEL.startsWith("sdk_gphone")))throw new IllegalStateException("Animation fixture requires isolated emulator");
         int count=pull||animation||batch?70:3;long now=System.currentTimeMillis();List<HotCandidate> items=new ArrayList<>();for(int n=0;n<count;n++)items.add(new HotCandidate(Source.THEPAPER,"https://www.thepaper.cn/newsDetail_forward_"+(99800000+n),"刷新展示边界受控中文话题"+n,"","",false,n+1,null,now));
         try(FeedStore seed=new FeedStore(test.getTargetContext(),database)){for(Source source:Source.values())seed.enable(source,source==Source.THEPAPER);seed.upsertSnapshot(Source.THEPAPER,seed.beginRefresh(Source.THEPAPER),items,now);seed.finishInterestSetup(List.of(),Map.of(),now);}
         home=(DiscoveryActivity)test.startActivitySync(new Intent(test.getTargetContext(),DiscoveryActivity.class).putExtra("test_database",database).putExtra("test_skip_fetch",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));controller=(DiscoveryController)field(home,"controller");list=(ListView)field(home,"list");serial=(ExecutorService)field(controller,"storage");store=(FeedStore)field(controller,"store");
         await("actual focused list",()->home.hasWindowFocus()&&(boolean)field(controller,"ready")&&!((List<?>)field(home,"feed")).isEmpty()&&list.getChildCount()>=3);ui(()->controller.interacting(true));List<FeedStore.Row> rows=new ArrayList<>((List<FeedStore.Row>)field(home,"feed"));long original=(long)field(controller,"snapshot");
-        if(batch)batchCase(rows,original);else if(animation)animationCase(original);else if(pull)pullCase(rows,original);else exposureCase(rows,original);
+        if(batch)batchCase(rows,original);else if(animation)animationCase(original);else if(pull){pullCase(rows,original);queuedRebuildCase();}else exposureCase(rows,original);
     }catch(Throwable error){failures++;report.append("ERROR ").append(android.util.Log.getStackTraceString(error)).append('\n');}
     finally{release.countDown();ui(()->{if(home!=null)home.finish();});test.waitForIdleSync();if(serial!=null)try{serial.awaitTermination(8,TimeUnit.SECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}test.getTargetContext().deleteDatabase(database);}
     report.append("checks=").append(checks).append(" failures=").append(failures).append('\n');Bundle result=new Bundle();result.putString("stream",report.toString());test.finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);}

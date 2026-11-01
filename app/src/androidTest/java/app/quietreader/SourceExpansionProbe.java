@@ -21,7 +21,7 @@ final class SourceExpansionProbe {
                 store.getWritableDatabase().delete("sources","id=?",new String[]{Source.BBC.name()});store.getWritableDatabase().execSQL("DROP TABLE feed_exposure");store.getWritableDatabase().execSQL("DROP TABLE article_progress");store.getWritableDatabase().setVersion(oldVersion);
             }
             try(FeedStore store=new FeedStore(test.getTargetContext(),name)){
-                check.accept(store.getWritableDatabase().getVersion()==9&&store.sourceState(Source.ITHOME).getBoolean("enabled")&&store.sourceState(Source.THEPAPER).getBoolean("enabled")&&store.sourceState(Source.BBC).getBoolean("enabled"),"schema"+oldVersion+" upgrade inserts absent text source rows without resetting the database");
+                check.accept(store.getWritableDatabase().getVersion()==11&&store.sourceState(Source.ITHOME).getBoolean("enabled")&&store.sourceState(Source.THEPAPER).getBoolean("enabled")&&store.sourceState(Source.BBC).getBoolean("enabled"),"schema"+oldVersion+" upgrade inserts absent text source rows without resetting the database");
                 check.accept(!store.sourceState(Source.WEIBO).getBoolean("enabled")&&store.sourceState(Source.DOUYIN).getBoolean("enabled")&&app.quietreader.discovery.LegacySavedFixture.saved(store).size()==1&&store.activeFeedback(102).length()==2,"source expansion preserves old toggles, bookmarks and both saved/explicit feedback");
                 store.enable(Source.BBC,false);
                 store.enable(Source.ITHOME,false);

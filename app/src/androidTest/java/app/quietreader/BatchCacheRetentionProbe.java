@@ -46,6 +46,35 @@ final class BatchCacheRetentionProbe {
             ArticleDiskCache.Retention[] newer={null};test.runOnMainSync(()->newer[0]=disk.retainBatch(Set.of(fresh.url)));
             check(disk.pruneBatch(retained[0])&&disk.read(shared.url,namespace,ArticleDiskCache.session(shared.url),false,now+3)!=null,"superseded cleanup cannot delete files using an old keep set");
             check(disk.pruneBatch(newer[0])&&disk.read(shared.url,namespace,ArticleDiskCache.session(shared.url),false,now+3)==null&&disk.read(fresh.url,namespace,ArticleDiskCache.session(fresh.url),false,now+3)!=null,"latest retention replaces the keep set while retaining its new body");
+            Item versioned=new Item(Source.THEPAPER,"新版本标题",fresh.url,"");Document versionedDoc=body(fresh.url,versioned.title);
+            ArticleVersion.capture(versioned,versionedDoc);ArticleSession[] inflight={null};
+            test.runOnMainSync(()->{inflight[0]=new ArticleSession(context,versioned);repo[0].retainItems(List.of(versioned));});
+            test.runOnMainSync(()->{
+                check(inflight[0].current(),"batch retention does not invalidate an in-flight acquisition from the same account");
+                check(inflight[0].stamp(versionedDoc),"retained valid acquisition can still stamp its original identity");
+            });
+            disk.write(versionedDoc,namespace,ArticleDiskCache.session(versioned.url),versionedDoc.cachedAt);
+            Document obsolete=body(fresh.url,"旧版本标题");ArticleVersion.capture(new Item(Source.THEPAPER,obsolete.title,fresh.url,""),obsolete);
+            disk.write(obsolete,namespace,ArticleDiskCache.session(versioned.url),versionedDoc.cachedAt+1);
+            ArticleDiskCache.Hit current=disk.read(versioned.url,namespace,ArticleDiskCache.session(versioned.url),false,System.currentTimeMillis());
+            check(current!=null&&ArticleVersion.matches(versioned,current.document),"late same-URL old metadata cannot overwrite the retained body version");
+            CountDownLatch verified=new CountDownLatch(1);boolean[] durable={false};
+            test.runOnMainSync(()->disk.verify(versionedDoc,hit->{durable[0]=hit!=null&&ArticleVersion.matches(versioned,hit.document);verified.countDown();}));
+            check(verified.await(5,TimeUnit.SECONDS)&&durable[0],"ready receipt follows a successful serialized write and readback");
+            // A verification job is a writer too: capture its original retention owner.
+            Document retired=body(old.url,"已离开窗口的验证正文");ArticleVersion.capture(new Item(Source.THEPAPER,retired.title,old.url,""),retired);
+            test.runOnMainSync(()->{disk.retainBatch(Set.of(old.url));new ArticleSession(context,new Item(Source.THEPAPER,retired.title,old.url,"")).stamp(retired);});
+            CountDownLatch blockedWriter=new CountDownLatch(1),releaseWriter=new CountDownLatch(1),retiredReceipt=new CountDownLatch(1);boolean[] resurrected={false};
+            writer.submit(()->{blockedWriter.countDown();try{releaseWriter.await(5,TimeUnit.SECONDS);}catch(InterruptedException error){Thread.currentThread().interrupt();}});
+            if(!blockedWriter.await(5,TimeUnit.SECONDS))throw new IllegalStateException("writer barrier");
+            try{test.runOnMainSync(()->{disk.verify(retired,hit->{resurrected[0]=hit!=null;retiredReceipt.countDown();});disk.retainItems(List.of(versioned));});}finally{releaseWriter.countDown();}
+            check(retiredReceipt.await(5,TimeUnit.SECONDS)&&!resurrected[0]&&disk.read(old.url,namespace,ArticleDiskCache.session(old.url),false,System.currentTimeMillis())==null,"a queued durable-verification job cannot resurrect a body after it leaves the window");
+            test.runOnMainSync(()->disk.publishItems(List.of(versioned)));
+            ArticleDiskCache.Hit pinned=disk.read(versioned.url,namespace,ArticleDiskCache.session(versioned.url),false,versionedDoc.cachedAt+11*60_000);
+            check(pinned!=null&&pinned.at==versionedDoc.cachedAt,"displayed body remains readable beyond online TTL without forging a new acquisition time");
+            check(disk.read(versioned.url,namespace,"changed-account",false,versionedDoc.cachedAt+11*60_000)==null,"a published pin never crosses an account fingerprint");
+            test.runOnMainSync(()->{disk.publishItems(List.of());repo[0].invalidateArticles();check(!inflight[0].current()&&!inflight[0].stamp(versionedDoc),"real namespace invalidation still rejects the older in-flight session");});
+            context.getSharedPreferences("article-cache",0).edit().putString("namespace",namespace).commit();
             List<Document> burst=new ArrayList<>();Set<String> urls=new HashSet<>();for(int n=0;n<20;n++){Document doc=body("https://www.thepaper.cn/newsDetail_forward_"+(998860+n),"快速完成缓存第"+n+"条");burst.add(doc);urls.add(doc.url);}
             ArticleDiskCache.Retention[] full={null};test.runOnMainSync(()->full[0]=disk.retainBatch(urls));disk.pruneBatch(full[0]);
             synchronized(lockField.get(null)){test.runOnMainSync(()->{for(Document doc:burst)disk.enqueue(doc,namespace,ArticleDiskCache.session(doc.url),now);});}
@@ -60,7 +89,7 @@ final class BatchCacheRetentionProbe {
             saved=0;for(Document doc:replacement)if(disk.read(doc.url,namespace,ArticleDiskCache.session(doc.url),false,now+5)!=null)saved++;
             check(saved==20,"rapid replacement frees old queued work so the entire new batch can still persist");
         }catch(Throwable error){failures++;report.append("ERROR ").append(android.util.Log.getStackTraceString(error));}
-        finally{test.runOnMainSync(()->{if(repo[0]!=null)repo[0].close();});File root=new File(parent,"article-bodies-v1");File[] files=root.listFiles();if(files!=null)for(File file:files)file.delete();root.delete();parent.delete();context.getSharedPreferences("article-cache",0).edit().clear().apply();context.getSharedPreferences("reading-history",0).edit().clear().apply();}
+        finally{test.runOnMainSync(()->{if(repo[0]!=null)repo[0].close();});File root=new File(parent,"article-bodies-v1");File[] files=root.listFiles();if(files!=null)for(File file:files)file.delete();root.delete();parent.delete();context.getSharedPreferences("source-session",0).edit().clear().apply();context.getSharedPreferences("article-cache",0).edit().clear().apply();context.getSharedPreferences("reading-history",0).edit().clear().apply();}
         report.append("scope=isolated controlled bodies and real queue/disk, not remote acquisition or phone energy\nchecks=").append(checks).append(" failures=").append(failures).append('\n');Bundle result=new Bundle();result.putString("stream",report.toString());test.finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);
     }
 }

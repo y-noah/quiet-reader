@@ -25,6 +25,7 @@ public final class UrlPolicy {
             case V2EX:return domain(h,"v2ex.com");
             case ITHOME:return domain(h,"ithome.com");
             case THEPAPER:return domain(h,"thepaper.cn");
+            case NYT:return h.equals("cn.nytimes.com");
             case BBC:return h.equals("www.bbc.com");
             case SSPAI:return domain(h,"sspai.com");
             case BAIDU:return domain(h,"baidu.com")&&!h.equals("tieba.baidu.com")&&!h.equals("passport.baidu.com")&&!h.equals("wappass.baidu.com");

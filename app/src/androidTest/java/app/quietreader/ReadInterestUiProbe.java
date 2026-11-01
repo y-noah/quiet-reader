@@ -45,6 +45,7 @@ final class ReadInterestUiProbe {
             check(ready.get(),"body completion and actual window focus enable reading evidence");
             if(offlineSnapshot)test.runOnMainSync(()->{Document shown=(Document)field(activity[0],"reading");check(shown!=null&&shown.hasContent()&&!ArticleVersion.matches(candidate.readerItem(),shown),"offline real reader renders old body without relabelling it as current candidate");});
             check(store.activeFeedback(System.currentTimeMillis()).length()==0,"opening and rendering alone create no reading interest");
+            if(offlineSnapshot){ArticleReadHistory reads=new ArticleReadHistory(test.getTargetContext(),database);long readUntil=SystemClock.elapsedRealtime()+3000;while(!reads.seen(candidate)&&SystemClock.elapsedRealtime()<readUntil)Thread.sleep(30);check(reads.seen(candidate),"successful offline original is read even when its cached headline is older");}
             if(quickExit){
                 test.runOnMainSync(()->{
                     Document shown=(Document)field(activity[0],"reading");

@@ -46,7 +46,10 @@ final class HupuDiscussion {
             Element title=page.selectFirst("h1");out.title=title==null?thread.optString("title"):title.text();out.byline=author(thread);
             if(page(url)==1){
                 Element body=visibleContent(Jsoup.parseBodyFragment(thread.optString("content"),url).body());
-                if(!SourceParser.appendRegion(out,body,"hupu-main-"+id,label("主帖",out.byline),false,url))throw new IllegalArgumentException();
+                // A valid public thread can have an empty opening post while its
+                // actual discussion remains readable (e.g. 643478433). Do not
+                // discard identity-matched replies just because no main block exists.
+                SourceParser.appendRegion(out,body,"hupu-main-"+id,label("主帖",out.byline),false,url);
             }
             Set<String> seen=new HashSet<>();JSONArray lights=detail.optJSONArray("lights");
             if(page(url)==1&&lights!=null)appendReplies(out,lights,seen,url,renderedReplies);

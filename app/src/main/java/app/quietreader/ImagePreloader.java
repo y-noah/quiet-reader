@@ -28,7 +28,7 @@ final class ImagePreloader implements AutoCloseable {
     private Runnable onIdle=()->{};
     void observeIdle(Runnable observer){onIdle=observer;}
     private String activeKey;
-    private int spent;
+    private int spent,priorityCount=Integer.MAX_VALUE,priorityImages=IMAGES_PER_BODY,futureImages=IMAGES_PER_BODY;
     private final Runnable timeout=this::pause;
     private static final class Prepared {
         final String session,namespace,referer,refererSession;final List<String> urls;
@@ -41,9 +41,13 @@ final class ImagePreloader implements AutoCloseable {
     ImagePreloader(Context context,BooleanSupplier eligible){this(context,eligible,ReaderImages.shared);images.attach(context);}
     ImagePreloader(Context context,BooleanSupplier eligible,ReaderImages images){this.context=context.getApplicationContext();this.eligible=eligible;this.images=images;}
     private static String identity(Item item){return item.source.name()+'|'+item.url+'@'+ArticleVersion.hash(item);}
+    void offer(List<Item> items,int currentCount){
+        offer(items);priorityCount=Math.max(0,currentCount);priorityImages=4;futureImages=1;
+    }
     void offer(List<Item> items){
+        priorityCount=Integer.MAX_VALUE;priorityImages=IMAGES_PER_BODY;futureImages=IMAGES_PER_BODY;
         pause();window.clear();prepared.clear();
-        for(Item item:items){if(window.size()>=20)break;window.putIfAbsent(identity(item),item);}
+        for(Item item:items){if(window.size()>=app.quietreader.discovery.FeedReserve.CAPACITY)break;window.putIfAbsent(identity(item),item);}
     }
     void prepared(Item item,Document doc){
         if(closed||!window.containsKey(identity(item))||!ArticleVersion.matches(item,doc)||!ArticleSession.contentCurrent(doc)||!item.url.equals(doc.url)||doc.cachedSession==null||doc.cachedNamespace==null)return;
@@ -71,23 +75,28 @@ final class ImagePreloader implements AutoCloseable {
     }
     void start(){
         if(closed||running||!eligible.getAsBoolean()||!available())return;
-        queue.clear();long now=SystemClock.elapsedRealtime();
-        // Cover every article's first figure before continuing deeper into bodies.
-        for(int depth=0;depth<IMAGES_PER_BODY;depth++)for(Map.Entry<String,Item> entry:window.entrySet()){
-            Prepared body=prepared.get(entry.getKey());if(body==null||depth>=body.urls.size())continue;
-            Job job=new Job(entry.getValue(),body,body.urls.get(depth));Long at=attempted.get(job.key);
-            if(at==null||now-at>=5*60_000)queue.add(job);
-        }
+        long now=SystemClock.elapsedRealtime();refill(now);
         if(queue.isEmpty())return;
         running=true;spent=0;deadline=now+SLICE_MS;long epoch=++revision;
         main.postDelayed(timeout,SLICE_MS);
         watch=new RecommendationPolicy.Watch(context,reason->pause());watch.start();
         if(running&&epoch==revision)next(epoch);
     }
+    private void refill(long now){
+        queue.clear();
+        // Cover every article's first figure before continuing deeper into bodies.
+        for(int depth=0;depth<IMAGES_PER_BODY;depth++){int index=0;for(Map.Entry<String,Item> entry:window.entrySet()){
+            int cap=index++<priorityCount?priorityImages:futureImages;
+            Prepared body=prepared.get(entry.getKey());if(body==null||depth>=cap||depth>=body.urls.size())continue;
+            Job job=new Job(entry.getValue(),body,body.urls.get(depth));Long at=attempted.get(job.key);
+            if(at==null||now-at>=5*60_000)queue.add(job);
+        }}
+    }
     private boolean available(){ConnectivityManager cm=(ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);return (cm==null||cm.getActiveNetwork()!=null)&&RecommendationPolicy.restriction(context).isEmpty();}
     private boolean current(Job job,long epoch){return revision==epoch&&SystemClock.elapsedRealtime()<deadline&&job.body.session.equals(ArticleDiskCache.session(job.item.url))&&job.body.refererSession.equals(ArticleDiskCache.session(job.body.referer))&&job.body.namespace.equals(context.getSharedPreferences("article-cache",0).getString("namespace","initial"))&&available();}
     private void next(long epoch){
         if(!running||epoch!=revision)return;
+        refill(SystemClock.elapsedRealtime());
         if(!eligible.getAsBoolean()||!available()||spent>=SLICE_BYTES||queue.isEmpty()){pause();return;}
         Job job=queue.removeFirst();int limit=Math.min(IMAGE_LIMIT,SLICE_BYTES-spent);
         activeKey=job.key;

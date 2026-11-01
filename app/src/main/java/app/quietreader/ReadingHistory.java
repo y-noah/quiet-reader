@@ -24,8 +24,8 @@ final class ReadingHistory {
     JSONObject get(String url){try{JSONObject state=new JSONObject(prefs.getString(url,""));
         android.net.ConnectivityManager network=(android.net.ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);boolean offline=network!=null&&network.getActiveNetwork()==null;
         long age=System.currentTimeMillis()-state.optLong("bodyAt");
-        if(!ArticleDiskCache.session(url).equals(state.optString("session"))||!new ArticleDiskCache(context).namespace().equals(state.optString("namespace"))||age<0||age>(offline?ArticleDiskCache.MAX_AGE:10*60_000))state.remove("document");
-        if(state.has("document")){Document body=decode(state.getJSONObject("document"));if(!ArticleSession.contentCurrent(body)||!TiebaReplyRelations.canReuse(body,offline)||!HupuDiscussion.canReuse(body,offline))state.remove("document");}
+        if(state.optInt("bodyFormat")!=1||!ArticleDiskCache.session(url).equals(state.optString("session"))||!new ArticleDiskCache(context).namespace().equals(state.optString("namespace"))||age<0||age>(offline?ArticleDiskCache.MAX_AGE:10*60_000))state.remove("document");
+        if(state.has("document")){Document body=decode(state.getJSONObject("document"));if(body.loginRequired||body.sourceUnavailable||body.filteredVideo||!ArticleSession.contentCurrent(body)||!TiebaReplyRelations.canReuse(body,offline)||!HupuDiscussion.canReuse(body,offline))state.remove("document");}
         return state;
     }catch(Exception ignored){return null;}}
     void save(String url,Document doc,Set<String> expanded,int position){
@@ -38,9 +38,9 @@ final class ReadingHistory {
             state.put("bodySource",doc.sourceUrl());
             // Oversized or uncacheable bodies retain their reading marker without
             // materializing a second JSON tree/string on the UI thread.
-            if(doc.cachedAt>0&&doc.cachedSession!=null&&DocumentSize.estimate(doc)<=600_000&&DocumentSize.serializationFits(doc,300_000)){
+            if(!doc.loginRequired&&!doc.sourceUnavailable&&!doc.filteredVideo&&doc.cachedAt>0&&doc.cachedSession!=null&&DocumentSize.estimate(doc)<=600_000&&DocumentSize.serializationFits(doc,300_000)){
                 JSONObject snapshot=encode(doc);
-                if(snapshot.toString().length()<300000)state.put("document",snapshot);
+                if(snapshot.toString().length()<300000)state.put("document",snapshot).put("bodyFormat",1);
             }
             SharedPreferences.Editor edit=prefs.edit().putString(url,state.toString());
             List<String> keys=new ArrayList<>(prefs.getAll().keySet());keys.remove(url);
@@ -55,6 +55,7 @@ final class ReadingHistory {
         JSONObject o=new JSONObject().put("url",d.url).put("title",d.title).put("byline",d.byline).put("notice",d.notice).put("next",d.nextUrl).put("more",d.moreStatus)
             .put("unsupportedVideo",d.unsupportedVideo).put("videoTopic",d.videoTopic).put("videoPoster",d.videoPoster).put("videoUrl",d.videoUrl).put("filteredVideos",d.filteredVideos).put("filteredIds",new JSONArray(d.filteredSectionIds));
         o.put("metadataHash",d.metadataHash);
+        o.put("loginRequired",d.loginRequired).put("sourceUnavailable",d.sourceUnavailable).put("filteredVideo",d.filteredVideo);
         if(ArticleUpdateEvidence.VERSION.equals(d.sourceUpdateEvidence)&&d.sourceModifiedAt>0)o.put("sourceUpdateEvidence",new JSONObject().put("version",ArticleUpdateEvidence.VERSION).put("modifiedAt",d.sourceModifiedAt));
         if(d.topic!=null)o.put("topicResolution",d.topic.json());
         o.put("discussionPage",d.discussionPage);
@@ -87,6 +88,7 @@ final class ReadingHistory {
     }
     static Document decode(JSONObject o)throws JSONException{
         Document d=new Document();d.url=o.getString("url");d.title=o.optString("title");d.byline=o.optString("byline");d.notice=o.optString("notice");d.nextUrl=o.optString("next");d.moreStatus=o.optString("more");
+        d.loginRequired=o.optBoolean("loginRequired");d.sourceUnavailable=o.optBoolean("sourceUnavailable");d.filteredVideo=o.optBoolean("filteredVideo");
         if(o.has("topicResolution")){d.topic=TiebaTopic.Resolved.read(o.getJSONObject("topicResolution"));if(!d.url.equals(d.topic.topicUrl))throw new JSONException("Topic identity differs");}
         d.unsupportedVideo=o.optBoolean("unsupportedVideo");d.videoTopic=o.optBoolean("videoTopic");d.filteredVideos=o.optInt("filteredVideos");
         String metadata=o.optString("metadataHash");if(metadata.matches("[0-9a-f]{64}"))d.metadataHash=metadata;

@@ -6,6 +6,20 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.*;
 
 public class HupuDiscussionTest {
+    @Test public void emptyPublicMainStillKeepsIdentityMatchedDiscussion()throws Exception{
+        JSONObject value=state(1);detail(value).getJSONObject("thread").put("content","<p></p>");
+        Document doc=SourceParser.article(Source.HUPU,html(value),URL);
+        assertFalse(doc.sourceUnavailable);assertFalse(doc.loginRequired);assertTrue(doc.hasContent());
+        assertEquals(1,doc.sections.size());assertTrue(doc.sections.get(0).id.startsWith("hupu-reply-"));
+        assertTrue(doc.blocks.stream().anyMatch(b->b.value.contains("热门回复")));
+        assertTrue(doc.sections.stream().noneMatch(s->s.label.startsWith("主帖")));
+    }
+    @Test public void emptyMainDoesNotPermitWrongThreadOrInventAnEmptyBody()throws Exception{
+        JSONObject value=state(1);detail(value).getJSONObject("thread").put("content","<p></p>").put("tid","999");
+        assertTrue(SourceParser.article(Source.HUPU,html(value),URL).sourceUnavailable);
+        detail(value).getJSONObject("thread").put("tid","123");detail(value).put("lights",new JSONArray());detail(value).getJSONObject("replies").put("list",new JSONArray());
+        Document empty=SourceParser.article(Source.HUPU,html(value),URL);assertTrue(empty.sourceUnavailable);assertFalse(empty.hasContent());
+    }
     private static final String URL="https://bbs.hupu.com/123.html";
     private JSONObject reply(String id,String name,String text)throws Exception{return new JSONObject().put("pid",id).put("author",new JSONObject().put("puname",name)).put("content","<p>"+text+"</p>");}
     private JSONObject state(int page)throws Exception{

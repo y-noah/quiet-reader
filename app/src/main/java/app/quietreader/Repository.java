@@ -16,7 +16,7 @@ import static app.quietreader.Models.*;
 public final class Repository {
     public static final String UA="Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36";
     public static final String DESKTOP_UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
-    public interface Result<T> { void success(T result); void failure(String reason); default void failure(String reason,int httpStatus){failure(reason);} default void failure(String reason,int httpStatus,long retryAt){failure(reason,httpStatus);} }
+    public interface Result<T> { void success(T result); void failure(String reason); default void failure(String reason,int httpStatus){failure(reason);} default void failure(String reason,int httpStatus,long retryAt){failure(reason,httpStatus);} default void failure(ArticleFailure failure){failure(failure.message,failure.httpStatus,failure.retryAt);} }
     private final RequestQueue requests=new RequestQueue();
     private final Handler main=new Handler(Looper.getMainLooper());
     private final Context context;
@@ -37,7 +37,7 @@ public final class Repository {
     public Document cachedArticle(Item i){return cachedArticle(i,null);}
     Document cachedArticle(Item i,ArticleSession captured){if(!i.source.readable())return null;String session=captured==null?ArticleDiskCache.session(i.url):captured.cookieFingerprint(i.url);synchronized(Repository.class){
         Long at=articleTimes.get(i.url);long age=at==null?-1:System.currentTimeMillis()-at;
-        if(!session.equals(articleSessions.get(i.url))||age<0||age>(offline()?ArticleDiskCache.MAX_AGE:10*60_000)){articles.remove(i.url);articleTimes.remove(i.url);articleSessions.remove(i.url);return null;}CachedDocument entry=articles.get(i.url);if(entry==null)return null;if(!ArticleSession.contentCurrent(entry.document)||!TiebaReplyRelations.canReuse(entry.document,offline())||!HupuDiscussion.canReuse(entry.document,offline())){articles.remove(i.url);articleTimes.remove(i.url);articleSessions.remove(i.url);return null;}if(!ArticleVersion.selected(i,entry.document))return null;articles.put(i.url,new CachedDocument(entry.document));return articles.get(i.url)==null?null:entry.document;
+        if(!session.equals(articleSessions.get(i.url))||age<0||(age>ArticleDiskCache.MAX_AGE||age>10*60_000&&!offline()&&!disk.pinned(i.url,disk.namespace(),session,articles.get(i.url)==null?"":articles.get(i.url).document.metadataHash))){articles.remove(i.url);articleTimes.remove(i.url);articleSessions.remove(i.url);return null;}CachedDocument entry=articles.get(i.url);if(entry==null)return null;if(!ArticleSession.contentCurrent(entry.document)||!TiebaReplyRelations.canReuse(entry.document,offline())||!HupuDiscussion.canReuse(entry.document,offline())){articles.remove(i.url);articleTimes.remove(i.url);articleSessions.remove(i.url);return null;}if(!ArticleVersion.selected(i,entry.document))return null;articles.put(i.url,new CachedDocument(entry.document));return articles.get(i.url)==null?null:entry.document;
     }}
     public boolean offline(){android.net.ConnectivityManager cm=(android.net.ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);return cm!=null&&cm.getActiveNetwork()==null;}
     public void cacheArticle(Document d){
@@ -108,9 +108,15 @@ public final class Repository {
     }}
     public void releaseArticleMemory(){synchronized(Repository.class){articles.evictAll();articleTimes.evictAll();articleSessions.evictAll();}}
     ArticleDiskCache.Retention retainBatch(java.util.Collection<String> urls){synchronized(Repository.class){
-        articleEpoch++;java.util.Set<String> keep=new java.util.HashSet<>(urls);
+        java.util.Set<String> keep=new java.util.HashSet<>(urls);
         for(String url:articles.snapshot().keySet())if(!keep.contains(url)){articles.remove(url);articleTimes.remove(url);articleSessions.remove(url);}
         return disk.retainBatch(keep);
+    }}
+    ArticleDiskCache.Retention retainItems(java.util.Collection<Item> items){synchronized(Repository.class){
+        java.util.Map<String,java.util.Set<String>> keep=new java.util.HashMap<>();
+        for(Item item:items)keep.computeIfAbsent(item.url,k->new java.util.HashSet<>()).add(ArticleVersion.hash(item));
+        for(String url:articles.snapshot().keySet()){CachedDocument cached=articles.get(url);if(!keep.containsKey(url)||cached!=null&&!keep.get(url).contains(cached.document.metadataHash)){articles.remove(url);articleTimes.remove(url);articleSessions.remove(url);}}
+        return disk.retainItems(items);
     }}
     public Repository(Context context) { this.context=context.getApplicationContext();disk=new ArticleDiskCache(this.context); scheduleRetiredCleanup(this.context); }
     public void restoreArticle(Item item,java.util.function.Consumer<Document> callback){
@@ -205,7 +211,7 @@ public final class Repository {
                 ArticleVersion.capture(item,doc);
                 ticket.check();if(!cacheArticle(doc,cacheEpoch,cacheSession)){main.post(()->{if(!ticket.cancelled())cb.failure("登录或缓存状态已变化，请重新读取");});return;}Document result=doc;main.post(()->{if(!ticket.cancelled()){if(cacheEpoch==articleCacheEpoch()&&ArticleSession.contentCurrent(result)&&cacheSession.equals(ArticleDiskCache.session(item.url)))cb.success(result);else cb.failure("登录或缓存状态已变化，请重新读取");}});
             }
-            catch(Exception e) { main.post(()->{if(!ticket.cancelled())cb.failure(explain(e));}); }
+            catch(Exception e) { main.post(()->{if(!ticket.cancelled())cb.failure(ArticleFailure.from(e));}); }
         });
     }
     public static String explain(Exception e) {

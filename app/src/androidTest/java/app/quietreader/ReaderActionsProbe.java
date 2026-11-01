@@ -24,10 +24,17 @@ final class ReaderActionsProbe {
     void run(){
         SharedPreferences prefs=test.getTargetContext().getSharedPreferences("appearance",0);boolean had=prefs.contains("mode");int previous=prefs.getInt("mode",0);SettingsActivity settings=null;
         try{
-            prefs.edit().putInt("mode",dark?2:1).commit();Item item=new Item(Source.V2EX,"统一菜单合成正文","https://www.v2ex.com/t/"+System.currentTimeMillis(),"");Document body=new Document();body.url=item.url;body.title=item.title;body.byline="实际作者";body.blocks.add(new Block("text","这是已准备好的阅读正文。"));ArticleVersion.capture(item,body);
+            prefs.edit().putInt("mode",dark?2:1).commit();Item item=new Item(Source.V2EX,"统一菜单合成正文","https://www.v2ex.com/t/"+System.currentTimeMillis(),"");Document body=new Document();body.url=item.url;body.title=item.title;body.byline="实际作者";body.blocks.add(new Block("text","这是已准备好的阅读正文。".repeat(120)));ArticleVersion.capture(item,body);
             ui(()->{repo=new Repository(test.getTargetContext());repo.cacheArticle(body);});reader=(MainActivity)test.startActivitySync(new Intent(test.getTargetContext(),MainActivity.class).putExtra("discovery_item",item.json().toString()).putExtra("direct_reader",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
             long until=SystemClock.elapsedRealtime()+7000;while(field("readerWeb")==null&&SystemClock.elapsedRealtime()<until)Thread.sleep(40);
             ui(()->{check(field("readerWeb") instanceof WebView,"cached article uses the unified reader");check(find(reader.getWindow().getDecorView(),"V2EX")==null&&find(reader.getWindow().getDecorView(),"New")==null,"reader toolbar contains no source name or brand");View more=find(reader.getWindow().getDecorView(),"更多选项");check(more!=null&&more.performClick(),"actual toolbar opens reader controls");});
+            ui(()->{Dialog opened=(Dialog)field("readerActions");if(opened!=null)opened.dismiss();});
+            long renderUntil=SystemClock.elapsedRealtime()+7000;boolean[] rendered={false};
+            while(!rendered[0]&&SystemClock.elapsedRealtime()<renderUntil){ui(()->{WebView web=(WebView)field("readerWeb");rendered[0]=web.getContentHeight()*web.getScale()>web.getHeight()+200;});Thread.sleep(30);}
+            int[] readerHeight={0};ui(()->{WebView web=(WebView)field("readerWeb");readerHeight[0]=web.getHeight();check(find(reader.getWindow().getDecorView(),"返回")==null,"reader has no redundant back button");web.scrollTo(0,500);});Thread.sleep(150);
+            ui(()->{View bar=(View)field("readerBar");check(bar.getTranslationY()<0,"reader downward browsing hides toolbar");check(((WebView)field("readerWeb")).getHeight()==readerHeight[0],"hide does not resize WebView");});Thread.sleep(200);
+            ui(()->{check(((View)field("readerBar")).getTranslationY()<0,"reader idle keeps toolbar hidden");((WebView)field("readerWeb")).scrollTo(0,200);});Thread.sleep(150);
+            ui(()->{check(((View)field("readerBar")).getTranslationY()==0,"reader upward browsing restores toolbar");find(reader.getWindow().getDecorView(),"更多选项").performClick();});
             Dialog sheet=(Dialog)field("readerActions");test.waitForIdleSync();Thread.sleep(200);
             ui(()->{
                 check(sheet!=null&&sheet.isShowing(),"reader action sheet is visible");check((sheet.getWindow().getAttributes().gravity&Gravity.VERTICAL_GRAVITY_MASK)==Gravity.BOTTOM,"controls open as a bottom sheet");

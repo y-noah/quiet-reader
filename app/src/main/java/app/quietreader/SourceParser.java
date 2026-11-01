@@ -21,6 +21,7 @@ public final class SourceParser {
         if(source==Source.ITHOME)return IthomeSource.list(raw);
         if(source==Source.THEPAPER)return ThepaperSource.list(raw);
         if(source==Source.BBC)return BbcChineseSource.list(raw);
+        if(source==Source.NYT)return NytChineseSource.list(raw);
         if(AdditionalSources.supports(source))return AdditionalSources.list(source,raw);
         List<Item> out=new ArrayList<>();
         if(source==Source.WEIBO&&raw.trim().startsWith("{")) {
@@ -100,6 +101,7 @@ public final class SourceParser {
     }
     private static Document parseArticle(Source source,org.jsoup.nodes.Document d,String url,boolean explicitReading){
         if(source==Source.BBC)return BbcChineseSource.article(d,url);
+        if(source==Source.NYT)return NytChineseSource.article(d,url);
         if(source==Source.HUPU){Document structured=HupuDiscussion.article(d,url);if(structured!=null)return structured;}
         if(source==Source.THEPAPER){d=ThepaperSource.articlePage(d,url);if(d==null){Document unavailable=new Document();unavailable.url=url;unavailable.sourceUnavailable=true;unavailable.notice="尚未取得澎湃文章正文，可在来源页检查访问状态";return unavailable;}}
         if(source==Source.DOUYIN)return DouyinArticle.article(d,url);

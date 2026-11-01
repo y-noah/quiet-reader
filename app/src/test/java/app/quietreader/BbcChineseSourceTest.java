@@ -8,6 +8,17 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.*;
 
 public final class BbcChineseSourceTest {
+    @Test public void cacheReadinessCurrentPublicArticlesRetainTheirFullProse()throws Exception{
+        for(int n=0;n<6;n++){
+            JSONObject sample=state(n<3?"cache-readiness-20261031-"+n:"cache-phone-20261031-"+(n-3));String url="https://www.bbc.com"+props(sample).getString("id");
+            Document doc=SourceParser.article(Source.BBC,html(sample),url);assertTrue("current public article "+n,doc.hasContent());assertFalse(doc.sourceUnavailable);
+            String text=doc.blocks.stream().map(b->b.value).collect(java.util.stream.Collectors.joining("\n"));
+            JSONArray blocks=props(sample).getJSONObject("pageData").getJSONObject("content").getJSONObject("model").getJSONArray("blocks");
+            int paragraphs=0;for(int b=0;b<blocks.length();b++){JSONObject block=blocks.getJSONObject(b);if(!block.optString("type").equals("text"))continue;
+                JSONArray children=block.getJSONObject("model").getJSONArray("blocks");for(int i=0;i<children.length();i++){String expected=capturedText(children.getJSONObject(i));if(!expected.isBlank()){assertTrue("capture "+n+" paragraph "+paragraphs,text.contains(expected));paragraphs++;}}}
+            assertTrue(paragraphs>20);
+        }
+    }
     private String capturedText(JSONObject block)throws Exception{JSONObject model=block.optJSONObject("model");if(model==null)return "";if("fragment".equals(block.optString("type")))return model.optString("text");StringBuilder out=new StringBuilder();JSONArray children=model.optJSONArray("blocks");if(children!=null)for(int n=0;n<children.length();n++)out.append(capturedText(children.getJSONObject(n)));return out.toString();}
     private JSONObject flourish(JSONObject sample)throws Exception{JSONArray blocks=props(sample).getJSONObject("pageData").getJSONObject("content").getJSONObject("model").getJSONArray("blocks");for(int n=0;n<blocks.length();n++)if("oEmbed".equals(blocks.getJSONObject(n).optString("type")))return blocks.getJSONObject(n).getJSONObject("model").getJSONObject("oembed");throw new IllegalStateException("Captured chart missing");}
     @Test public void capturedFlourishChartKeepsEverySurroundingParagraphAndAnExplicitChartLink()throws Exception{

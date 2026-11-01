@@ -26,7 +26,7 @@ public final class DynamicReader {
     private boolean delivering=false,ownsWeb=true;
     private boolean closed;
     private Document pendingResult;
-    private String pendingFailure;
+    private ArticleFailure pendingFailure;
     private int attempts=0;
     private Document best;
     private volatile java.util.List<Item> topicChoices=java.util.Collections.emptyList();
@@ -79,13 +79,17 @@ public final class DynamicReader {
             }
             @Override public void onPageCommitVisible(WebView w,String url) { ready(w,url); }
             @Override public void onPageFinished(WebView w,String url) { ready(w,url); }
-            @Override public void onReceivedSslError(WebView w,SslErrorHandler h,android.net.http.SslError e) { h.cancel(); fail("来源证书异常，已停止读取"); }
-            @Override public void onReceivedError(WebView w,WebResourceRequest r,WebResourceError e){if(r.isForMainFrame())fail("来源连接失败，请检查网络后重试");}
+            @Override public void onReceivedSslError(WebView w,SslErrorHandler h,android.net.http.SslError e) { h.cancel(); fail(new ArticleFailure(ArticleFailure.Kind.PERMANENT,"来源证书异常，已停止读取")); }
+            @Override public void onReceivedError(WebView w,WebResourceRequest r,WebResourceError e){if(r.isForMainFrame()){
+                int code=e.getErrorCode();boolean transientError=code==WebViewClient.ERROR_HOST_LOOKUP||code==WebViewClient.ERROR_CONNECT||code==WebViewClient.ERROR_TIMEOUT||code==WebViewClient.ERROR_IO;
+                fail(new ArticleFailure(transientError?ArticleFailure.Kind.TRANSIENT:ArticleFailure.Kind.PERMANENT,"来源连接失败，请检查网络后重试"));
+            }}
             @Override public void onReceivedHttpError(WebView w,WebResourceRequest r,WebResourceResponse response){
                 if(r.isForMainFrame()&&response.getStatusCode()>=400){
                     boolean restricted=response.getStatusCode()==401||response.getStatusCode()==403;
                     if(restricted&&retryChangedSession())return;
-                    fail(restricted?"来源要求登录或限制了访问。请在来源页确认权限后重新读取。":"来源暂时返回错误，可稍后重试或打开来源页确认。");
+                    String retryAfter=null;if(response.getResponseHeaders()!=null)for(java.util.Map.Entry<String,String> header:response.getResponseHeaders().entrySet())if("Retry-After".equalsIgnoreCase(header.getKey()))retryAfter=header.getValue();
+                    fail(ArticleFailure.http(restricted?"来源要求登录或限制了访问。请在来源页确认权限后重新读取。":"来源暂时返回错误，可稍后重试或打开来源页确认。",response.getStatusCode(),app.quietreader.discovery.RefreshBackoff.retryAfter(retryAfter,System.currentTimeMillis())));
                 }
             }
         });
@@ -226,7 +230,7 @@ public final class DynamicReader {
                 &&expectedSource(web.getUrl())&&session.current()&&topicCurrent()){
             finish(best);return;
         }
-        fail("未能及时取得正文，可打开来源页确认后重试");
+        fail(new ArticleFailure(ArticleFailure.Kind.TRANSIENT,"未能及时取得正文，可打开来源页确认后重试"));
     }
     private void finish(Document doc) {
         if(ended)return;
@@ -234,7 +238,7 @@ public final class DynamicReader {
             // A source can set its first cookies while loading. Never relabel that old
             // DOM with the new session: release it and perform one fresh acquisition.
             if(retryChangedSession())return;
-            fail("登录或缓存状态已变化，请重新读取");return;
+            fail(ArticleFailure.session());return;
         }
         stopInspecting();pendingResult=doc;deliver();
     }
@@ -245,12 +249,13 @@ public final class DynamicReader {
         stopInspecting();if(ownsWeb){ownsWeb=false;SourceSurface.release(web);}
         replacement=new DynamicReader(owner,item,callback,sessionRetries-1,explicitReading,deadlineAt,startedAt);return true;
     }
-    private void fail(String reason) { if(ended)return;stopInspecting();pendingFailure=reason;if(ownsWeb){ownsWeb=false;SourceSurface.release(web);}deliver(); }
+    private void fail(String reason){fail(ArticleFailure.unknown(reason));}
+    private void fail(ArticleFailure reason) { if(ended)return;stopInspecting();pendingFailure=reason;if(ownsWeb){ownsWeb=false;SourceSurface.release(web);}deliver(); }
     private void deliver(){
         if(closed||callback==null||(pendingResult==null&&pendingFailure==null))return;
-        Repository.Result<Document> result=callback;Document document=pendingResult;String reason=pendingFailure;
+        Repository.Result<Document> result=callback;Document document=pendingResult;ArticleFailure reason=pendingFailure;
         callback=null;pendingResult=null;pendingFailure=null;delivering=true;
-        try{if(!session.current()||!topicCurrent())result.failure("登录或缓存状态已变化，请重新读取");else if(document!=null)result.success(document);else result.failure(reason);}
+        try{if(!session.current()||!topicCurrent())result.failure(ArticleFailure.session());else if(document!=null)result.success(document);else result.failure(reason);}
         finally{delivering=false;close();}
     }
     public void close() {

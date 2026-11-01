@@ -18,6 +18,7 @@ public final class Models {
         ITHOME("IT之家", "日榜", "https://www.ithome.com/", "https://www.ithome.com/"),
         THEPAPER("澎湃新闻", "热榜", "https://cache.thepaper.cn/contentapi/wwwIndex/rightSidebar", "https://www.thepaper.cn/"),
         BBC("BBC中文", "热门阅读", "https://www.bbc.com/zhongwen/popular/read/simp", "https://www.bbc.com/zhongwen/simp"),
+        NYT("纽约时报中文网", "每日热门", "https://cn.nytimes.com/async/mostviewed/all/?lang=zh-hans", "https://cn.nytimes.com/"),
         BAIDU("百度", "热搜", "https://top.baidu.com/board?tab=realtime", "https://www.baidu.com/"),
         TIEBA("贴吧", "热议", TiebaHotBoard.ENDPOINT, "https://tieba.baidu.com/"),
         SSPAI("少数派", "首页文章·非全站热榜", "https://sspai.com/", "https://sspai.com/"),
@@ -28,7 +29,7 @@ public final class Models {
         public boolean readable(){return true;}
         public boolean webReading(){return this==BAIDU||this==TIEBA||this==DOUYIN||this==BILIBILI||this==XHS;}
         public boolean unifiedReading(){return !webReading()||StructuredSources.supports(this);}
-        public String boardPage(){return this==THEPAPER?"https://www.thepaper.cn/":this==TIEBA?"https://tieba.baidu.com/":this==V2EX?"https://www.v2ex.com/?tab=hot":this==BILIBILI?"https://www.bilibili.com/v/popular/rank/all":this==WEIBO?"https://s.weibo.com/top/summary":endpoint;}
+        public String boardPage(){return this==NYT?"https://cn.nytimes.com/":this==THEPAPER?"https://www.thepaper.cn/":this==TIEBA?"https://tieba.baidu.com/":this==V2EX?"https://www.v2ex.com/?tab=hot":this==BILIBILI?"https://www.bilibili.com/v/popular/rank/all":this==WEIBO?"https://s.weibo.com/top/summary":endpoint;}
         public static Source[] displayOrder(){return new Source[]{ZHIHU,WEIBO,HUPU,CLS,V2EX};}
         public final String label, category, endpoint, login;
         Source(String label, String category, String endpoint, String login) {

@@ -6,8 +6,8 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.*;
 
 public class AdditionalSourcesTest {
-    @Test public void allFifteenSourcesRemainReadable(){
-        assertEquals(15,Source.values().length);
+    @Test public void allConfiguredSourcesRemainReadable(){
+        assertEquals(16,Source.values().length);
         for(Source source:Source.values())assertTrue(source.readable());
     }
     @Test public void ifanrListUsesObservedArticleContainersAndSkipsForeignDuplicates()throws Exception{

@@ -61,12 +61,20 @@ public final class ReleaseDiscoveryInstrumentation extends Instrumentation {
         check(done&&items>0,"actual "+kind+" inference succeeds in minified service");
     }
     @Override public void onStart(){
+        if(phase.equals("source-balance")){new ReleaseSourceBalanceProbe(this).run();return;}
+        if(phase.equals("phone-source-audit")){new ReleaseFeedSourceAudit(this).run();return;}
+        if(phase.equals("phone-key-reads")){new ReleasePhoneKeyReadProbe(this).run();return;}
+        if(phase.equals("phone-failed-hupu")){new ReleasePhoneKeyReadProbe(this).diagnoseFailedHupu();return;}
+        if(phase.equals("phone-failed-hupu-read")){new ReleasePhoneKeyReadProbe(this).verifyFailedHupu();return;}
         if(phase.equals("refresh-animation-retained")){new ReleaseRefreshAnimationProbe(this).run(runArguments);return;}
         if(phase.equals("public-tieba-times")){new ReleasePublicTiebaTimesProbe(this).run();return;}
         if(phase.equals("public-tieba-times-wide")){new ReleasePublicTiebaTimesProbe(this,true).run();return;}
         if(phase.equals("reader-early-continuation")){new ReleaseTiebaIdentityProbe(this,false,true).run();return;}
         if(phase.equals("reader-image-font")){new ReleaseTiebaIdentityProbe(this,false,true,true).run();return;}
         if(phase.equals("retained-recommendation")){new ReleaseRetainedRecommendationProbe(this).run(runArguments);return;}
+        if(phase.equals("phone-bbc-response")){new ReleasePhoneBbcResponseProbe(this).run();return;}
+        if(phase.equals("phone-presentation-stability")){new ReleasePhoneStabilityProbe(this).run();return;}
+        if(phase.equals("phone-rolling-cache")){new ReleasePhoneRollingProbe(this).run(runArguments);return;}
         if(phase.equals("phone-navigation")){new ReleasePhoneNavigationProbe(this).run(runArguments);return;}
         if(phase.equals("reader-cache-choice")){new ReleaseReaderCacheChoiceProbe(this).run();return;}
         if(phase.equals("bbc-chart")){new ReleaseBbcChartProbe(this).run();return;}
