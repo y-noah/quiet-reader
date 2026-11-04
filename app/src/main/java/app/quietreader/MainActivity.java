@@ -222,7 +222,7 @@ public final class MainActivity extends Activity {
         readerSurface=new FrameLayout(this);root.addView(readerSurface,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout bar=new LinearLayout(this);readerBar=bar;bar.setBackgroundColor(BG);bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.addView(new android.widget.Space(this),new LinearLayout.LayoutParams(0,1,1));
-        ImageButton share=icon(R.drawable.ic_share_outline,"分享原文链接",this::shareOriginal);share.setPadding(dp(14),dp(14),dp(14),dp(14));
+        ImageButton share=icon(R.drawable.ic_share_outline,"分享原文链接",this::shareOriginal);share.setPadding(dp(15),dp(15),dp(15),dp(15));
         bar.addView(share,new LinearLayout.LayoutParams(dp(48),dp(48)));
         ImageButton more=icon(R.drawable.ic_more_horiz,"更多选项",()->{});more.setOnClickListener(v->options());
         bar.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));

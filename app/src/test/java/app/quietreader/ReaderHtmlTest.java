@@ -21,7 +21,7 @@ public class ReaderHtmlTest {
         assertEquals("展开阅读 ↓",folded.selectFirst("a[href*='toggle?']").text());assertEquals("false",folded.selectFirst("a[href*='toggle?']").attr("aria-expanded"));assertEquals("甲",folded.selectFirst("#part-1 .section-label").text());
         org.jsoup.nodes.Document open=org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.V2EX,19,false,java.util.Set.of("comment"),false));
         assertEquals(1,open.select("#part-1 p:not(.preview)").size());assertEquals(1,open.select("a[href*='toggle?']").size());assertTrue(open.select("a[href*='jump?']").isEmpty());
-        assertEquals("收起 ↑",open.selectFirst("a[href*='toggle?']").text());assertEquals("true",open.selectFirst("a[href*='toggle?']").attr("aria-expanded"));assertEquals("甲",open.selectFirst("#part-1 .section-label").text());
+        assertEquals("",open.selectFirst("a[href*='toggle?']").text());assertEquals("收起当前回答",open.selectFirst("a[href*='toggle?']").attr("aria-label"));assertEquals("true",open.selectFirst("a[href*='toggle?']").attr("aria-expanded"));assertEquals("甲",open.selectFirst("#part-1 .section-label").text());
         assertEquals("a",open.selectFirst("#part-1").children().last().tagName());assertTrue(open.selectFirst("#part-1").children().last().hasClass("section-collapse"));
         Section answer=new Section("answer","回答",true);answer.blocks.add(new Block("text","后续回答"));d.sections.add(answer);
         assertTrue(org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.ZHIHU,19,false,java.util.Set.of("comment"),false)).select("a[href*='jump?']").isEmpty());

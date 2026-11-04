@@ -60,7 +60,7 @@ public final class ReaderHtml {
         }
         if(d.videos.size()>=ReaderMedia.MAX_ATTACHMENTS)h.append("<p class='meta'>本页最多整理前16个视频附件，其余请在来源页查看。</p>");
         boolean discussionHeading=false;
-        h.append("<style>.section-collapse{position:sticky;bottom:8px;z-index:1;isolation:isolate;display:flex;align-items:center;justify-content:center;width:max-content;max-width:100%;margin:8px auto 0;padding:8px 14px;min-height:48px;background:transparent;border:0;border-radius:0;text-align:center;font-size:13px;line-height:1.4}.section-collapse:before{content:'';position:absolute;inset:8px 0;z-index:-1;background:var(--card);border:1px solid var(--line);border-radius:6px}.part{overflow:visible}</style>");
+        h.append("<style>.section-collapse{position:sticky;bottom:8px;z-index:1;isolation:isolate;display:flex;align-items:center;justify-content:center;width:48px;max-width:100%;height:48px;margin:8px 0 0 auto;padding:0;min-height:48px;background:transparent;border:0;border-radius:50%;text-align:center;line-height:1}.section-collapse:before{content:'';position:absolute;inset:9px;z-index:-1;background:var(--card);border:1px solid var(--line);border-radius:50%}.section-collapse svg{width:16px;height:16px;pointer-events:none}.section-collapse:active:before{background:var(--line)}.part{overflow:visible}</style>");
         int index=0;
         for(Section part:sections){
             StringBuilder text=new StringBuilder();int imageCount=0;for(Block b:part.blocks){if(b.type.equals("text"))text.append(b.value).append(' ');if(b.type.equals("image"))imageCount++;}
@@ -89,7 +89,7 @@ public final class ReaderHtml {
             if(open){
                 int blockIndex=0;for(Block b:part.blocks)block(h,b,anchorId(part.id,blockIndex++),d);
                 if(WeiboPost.canContinue(source,d.url,part))h.append("<a class='action' href='").append(ACTION).append("post?index=").append(index).append("'>继续读取原帖 →</a>");
-                if(fold)h.append("<a class='action section-collapse' href='").append(ACTION).append("toggle?index=").append(index).append("' aria-controls='part-").append(index).append("' aria-expanded='true'>收起 ↑</a>");}
+                if(fold)h.append("<a class='action section-collapse' href='").append(ACTION).append("toggle?index=").append(index).append("' aria-controls='part-").append(index).append("' aria-expanded='true' aria-label='收起当前回答' title='收起当前回答'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m6 14 6-6 6 6M6 19l6-6 6 6'/></svg></a>");}
             else {h.append("<p class='preview'>").append(escape(text.substring(0,Math.min(130,text.length())))).append(text.length()>130?"…":"").append("</p>");if(imageCount>0)h.append("<div class='meta'>包含 ").append(imageCount).append(" 张图片 · 展开后查看</div>");}
             h.append("</section>");index++;
         }

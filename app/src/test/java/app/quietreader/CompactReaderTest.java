@@ -14,7 +14,7 @@ public final class CompactReaderTest {
         assertEquals(label,page.selectFirst("section.part").attr("data-section-label"));
         assertTrue(page.select("img").isEmpty());
         assertEquals("原文🐎仍完整保留",page.select("section.part p:not(.preview)").text());
-        assertEquals(label,page.select("section.part .section-label").text());assertEquals("收起 ↑",page.select("a.action").text());
+        assertEquals(label,page.select("section.part .section-label").text());assertEquals("收起当前回答",page.selectFirst("a.action").attr("aria-label"));assertEquals(1,page.select("a.action svg").size());
     }
 
     @Test public void shortUnfoldedSectionKeepsExplicitMainOrReplyIdentity() {
@@ -51,7 +51,7 @@ public final class CompactReaderTest {
         assertEquals(2,closed.select("p.preview").size());
         org.jsoup.nodes.Document open=org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.ZHIHU,19,true,Collections.singleton("a1"),false));
         assertEquals("回答正文1",open.select("#part-1 p:not(.preview)").text());
-        assertTrue(open.select("#part-1 a").text().contains("收起"));
+        assertEquals("收起当前回答",open.selectFirst("#part-1 a.section-collapse").attr("aria-label"));assertTrue(open.select("#part-1 a.section-collapse").text().isEmpty());
         assertFalse(open.body().text().contains("收藏"));
     }
 
