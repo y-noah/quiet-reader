@@ -11,7 +11,7 @@ public class ReadingImprovementsTest {
         Set<String> expanded=new HashSet<>();ReaderHtml.expandPrimary(d,expanded);
         assertEquals(Collections.singleton("main"),expanded);
         String html=ReaderHtml.render(d,Source.HUPU,19,true,expanded,false);
-        assertTrue(html.contains("jump?index=1"));assertEquals("回复",org.jsoup.Jsoup.parse(html).selectFirst("#part-1 .section-label").text());assertTrue(html.contains("2 · 展开阅读"));
+        assertFalse(html.contains("jump?index=1"));assertEquals("回复",org.jsoup.Jsoup.parse(html).selectFirst("#part-1 .section-label").text());assertTrue(html.contains("展开阅读"));
         Document question=new Document();question.sections.add(answer);expanded.clear();ReaderHtml.expandPrimary(question,expanded);assertTrue(expanded.isEmpty());
     }
     @Test public void compactLinksKeepAddressAndDontSpoofDomain(){

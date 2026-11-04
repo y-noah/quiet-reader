@@ -21,20 +21,31 @@ final class ReaderCacheChoiceProbe {
     private Document body(Item item,long at,String text){Document doc=new Document();doc.url=item.url;doc.title=item.title;doc.cachedAt=at;Section section=new Section("cache-choice-main","正文",false);section.blocks.add(new Block("text",text));doc.sections.add(section);doc.blocks.addAll(section.blocks);ArticleVersion.capture(item,doc);return doc;}
     void run(){Context context=test.getTargetContext();String database="test-ui-cache-choice-"+UUID.randomUUID()+".db";List<String> urls=new ArrayList<>();Repository[] repo={null};
         try{
-            for(int mode=0;mode<4;mode++){
+            for(int mode=0;mode<6;mode++){
                 final int scenario=mode;long now=System.currentTimeMillis();String url="https://www.thepaper.cn/newsDetail_forward_"+now+mode;urls.add(url);
                 HotCandidate candidate=new HotCandidate(Source.THEPAPER,url,"缓存正文选择测试","","",false,1,null,now);Item item=candidate.readerItem();
                 Document history=body(item,now-2000,"阅读历史正文"),memory=body(item,mode==2?now-2000:mode==3?now-3000:now-1000,"提前准备的新正文");
-                if(mode==1)history.metadataHash="old";
+                if(mode==1||mode>=4)history.metadataHash="old";
+                if(mode>=4)memory.metadataHash="old";
                 ui(()->{repo[0]=new Repository(context);repo[0].cacheArticle(history);new ReadingHistory(context).save(url,history,Set.of("saved-expanded"),0);repo[0].cacheArticle(memory);});
+                if(mode==5){
+                    ArticleDiskCache disk=new ArticleDiskCache(context);String[] session={null};ui(()->session[0]=ArticleDiskCache.session(url));
+                    long persistedUntil=SystemClock.elapsedRealtime()+5000;ArticleDiskCache.Hit persisted;do{persisted=disk.read(url,disk.namespace(),session[0],false,System.currentTimeMillis());if(persisted!=null&&persisted.at==memory.cachedAt)break;Thread.sleep(25);}while(SystemClock.elapsedRealtime()<persistedUntil);
+                    check(persisted!=null&&persisted.at==memory.cachedAt,"changed-metadata body really persisted before clearing RAM");
+                    ui(()->{repo[0].releaseArticleMemory();context.getSharedPreferences("reading-history",0).edit().remove(url).commit();});
+                }
+                long openedAt=SystemClock.elapsedRealtime();
                 reader=(MainActivity)test.startActivitySync(new Intent(context,MainActivity.class).putExtra("direct_reader",true).putExtra("discovery_item",item.json().toString()).putExtra("discovery_candidate",candidate.json().toString()).putExtra("test_database",database).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
                 long end=SystemClock.elapsedRealtime()+8000;boolean[] ready={false};while(SystemClock.elapsedRealtime()<end){ui(()->ready[0]=field("reading")!=null&&field("readerWeb")!=null);if(ready[0])break;Thread.sleep(40);}
+                report.append("READY_MS scenario=").append(mode).append(" ms=").append(SystemClock.elapsedRealtime()-openedAt).append('\n');
                 check(ready[0],"scenario "+mode+" actual reader becomes ready");
-                ui(()->{Document chosen=(Document)field("reading");check(scenario<2?chosen==memory:chosen!=null&&chosen.blocks.get(0).value.equals("阅读历史正文"),"scenario "+scenario+" chooses expected body before disk/network fallback");check(field("dynamic")==null&&field("pendingArticle")==null,"scenario "+scenario+" has no source reader acquisition");check(((Set<?>)field("expanded")).contains("saved-expanded"),"scenario "+scenario+" retains saved expanded state");});
-                String expected=mode<2?"提前准备的新正文":"阅读历史正文";boolean displayed=false;long domEnd=SystemClock.elapsedRealtime()+8000;
+                ui(()->{Document chosen=(Document)field("reading");check(scenario<2||scenario==4?chosen==memory:chosen!=null&&chosen.blocks.get(0).value.equals(scenario==5?"提前准备的新正文":"阅读历史正文"),"scenario "+scenario+" chooses expected body before disk/network fallback");check(field("dynamic")==null&&field("pendingArticle")==null,"scenario "+scenario+" has no source reader acquisition");check(scenario==5?!((Set<?>)field("expanded")).contains("saved-expanded"):((Set<?>)field("expanded")).contains("saved-expanded"),"scenario "+scenario+" restores only actual saved expanded state");});
+                if(mode>=4)ui(()->check(!ArticleVersion.matches(item,(Document)field("reading")),"recent changed-metadata cache is not relabelled as current interest evidence"));
+                String expected=mode<2||mode>=4?"提前准备的新正文":"阅读历史正文";boolean displayed=false;long domEnd=SystemClock.elapsedRealtime()+8000;
                 do{CountDownLatch loaded=new CountDownLatch(1);String[] text={""};ui(()->{WebView web=(WebView)field("readerWeb");web.getSettings().setJavaScriptEnabled(true);web.evaluateJavascript("document.body&&document.body.innerText",value->{text[0]=value;web.getSettings().setJavaScriptEnabled(false);loaded.countDown();});});
                     if(loaded.await(3,TimeUnit.SECONDS)&&text[0].contains(expected)){displayed=true;break;}Thread.sleep(40);
                 }while(SystemClock.elapsedRealtime()<domEnd);
+                report.append("DOM_MS scenario=").append(mode).append(" ms=").append(SystemClock.elapsedRealtime()-openedAt).append('\n');
                 check(displayed,"scenario "+mode+" actual DOM displays chosen body");
                 ui(()->{reader.finish();repo[0].close();});test.waitForIdleSync();reader=null;
             }

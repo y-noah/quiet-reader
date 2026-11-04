@@ -32,7 +32,7 @@ final class ReserveFeedProbe {
     private int completeBatch(int from,int count)throws Exception{for(int n=0;n<count;n++){int at=from+n;await("full current batch body "+n,()->bodies.size()>at);Body b=bodies.get(at);ui(()->b.result.success(body(b.item)));}return from+count;}
     void run(){String database="test-ui-reserve-"+UUID.randomUUID()+".db";
         try{
-            long now=System.currentTimeMillis();List<Item> initial=supply(now,95);
+            long now=System.currentTimeMillis();List<Item> initial=supply(now,(FeedReserve.CAPACITY+20));
             try(FeedStore seed=new FeedStore(test.getTargetContext(),database)){
                 for(Source source:Source.values())seed.enable(source,source==Source.THEPAPER);
                 List<HotCandidate> candidates=new ArrayList<>();for(int n=0;n<initial.size();n++){Item item=initial.get(n);candidates.add(new HotCandidate(item.source,item.url,item.title,"","",false,n+1,null,now));}
@@ -50,77 +50,92 @@ final class ReserveFeedProbe {
                 cache=new Repository(home);controller=new DiscoveryController(home,home,true,new HotSourceCollector.Transport(){public boolean offline(){return false;}public HotSourceCollector.Request start(Source source,boolean browser,Repository.Result<List<Item>> result){boardCalls++;board=result;return ()->{};}});
                 set(home,"controller",controller);workers.add((ExecutorService)field(controller,"storage"));
                 ((ArticlePreloader)field(controller,"preloader")).close();
-                ArticlePreloader loader=new ArticlePreloader(home,()->{},new ArticlePreloader.Loader(){public void load(Item item,Repository.Result<Document> result){bodies.add(new Body(item,result));}public void cancel(){}},75,()->{},true);
+                ArticlePreloader loader=new ArticlePreloader(home,()->{},new ArticlePreloader.Loader(){public void load(Item item,Repository.Result<Document> result){bodies.add(new Body(item,result));}public void cancel(){}},FeedReserve.CAPACITY,()->{},true);
                 loader.observeFailure(item->{try{java.lang.reflect.Method method=DiscoveryController.class.getDeclaredMethod("bodyFailed",Item.class);method.setAccessible(true);method.invoke(controller,item);}catch(Exception error){throw new IllegalStateException(error);}});
                 loader.observePrepared((item,doc)->{try{java.lang.reflect.Method method=DiscoveryController.class.getDeclaredMethod("bodyPrepared",Item.class,Document.class);method.setAccessible(true);method.invoke(controller,item,doc);}catch(Exception error){throw new IllegalStateException(error);}});
                 set(controller,"preloader",loader);controller.start();
             });
             await("initial acquisition begins",()->!bodies.isEmpty());
-            check(onUi(()->rows().size()==15),"cold native titles remain usable before optional body prefetch completes");
+            check(onUi(()->rows().size()==FeedBatch.SIZE),"cold native titles remain usable before optional body prefetch completes");
+            check(onUi(()->rows().stream().anyMatch(row->row.candidate.originalUrl.equals(bodies.get(0).item.url))),"current visible batch gets the first body acquisition before future refresh screens");
 
             if(coldLifecycle){
                 ui(controller::stop);
                 ui(()->{try{Method expiry=DiscoveryController.class.getDeclaredMethod("expireCache");expiry.setAccessible(true);expiry.invoke(controller);}catch(Exception error){throw new IllegalStateException(error);}});
-                check(onUi(()->rows().size()==15),"resource expiry before first body preserves cold native titles");
+                check(onUi(()->rows().size()==FeedBatch.SIZE),"resource expiry before first body preserves cold native titles");
                 ui(controller::start);
-                check(onUi(()->rows().size()==15),"foreground return without prepared bodies retains a usable feed");
+                check(onUi(()->rows().size()==FeedBatch.SIZE),"foreground return without prepared bodies retains a usable feed");
                 ui(()->{controller.stop();controller.start();});
-                check(onUi(()->rows().size()==15),"repeated stop and resume never empties the cold feed");
+                check(onUi(()->rows().size()==FeedBatch.SIZE),"repeated stop and resume never empties the cold feed");
             }else{
             int first=0;String failedUrl=bodies.get(0).item.url;
             if(failureFirst){int failedAt=first;ui(()->bodies.get(failedAt).result.failure("controlled inaccessible source body"));first++;}
-            completeBatch(first,15);
-            await("initial prepared fifteen",()->(boolean)field(controller,"ready")&&rows().size()==15&&field(controller,"admission")==null);
-            check(rows().size()==15,"home publishes exactly fifteen when supply permits");
+            completeBatch(first,FeedBatch.SIZE);
+            await("initial prepared twenty",()->(boolean)field(controller,"ready")&&rows().size()==FeedBatch.SIZE&&field(controller,"admission")==null);
+            check(rows().size()==FeedBatch.SIZE,"home publishes exactly twenty when supply permits");
             if(failureFirst){
                 check(onUi(()->rows().stream().noneMatch(row->row.candidate.originalUrl.equals(failedUrl))),"an actual failed acquisition is excluded without publishing a failure shell");
                 check(onUi(()->rows().get(0).candidate.originalUrl.equals(bodies.get(1).item.url)),"first readable ranked body remains first rather than arbitrary fast-source selection");
-                // All fifteen published records must still restore with RAM empty.
+                // All twenty published records must still restore with RAM empty.
                 List<Item> shownItems=new ArrayList<>();ui(()->{for(FeedStore.Row row:rows())shownItems.add(row.candidate.readerItem());cache.releaseArticleMemory();});
                 int restoredCount=0;for(Item item:shownItems){CountDownLatch latch=new CountDownLatch(1);boolean[] restored={false};ui(()->cache.restoreArticle(item,doc->{restored[0]=doc!=null&&ArticleVersion.matches(item,doc);latch.countDown();}));if(latch.await(5,TimeUnit.SECONDS)&&restored[0])restoredCount++;}
-                check(restoredCount==15,"every published body restores after RAM eviction even following an acquisition failure");
-                await("first future acquisition",()->bodies.size()>16);String failedFuture=bodies.get(16).item.url;
-                ui(()->bodies.get(16).result.failure("controlled future failure"));
-                completeBatch(17,60);await("replacement future preparation settles",()->!((ArticlePreloader)field(controller,"preloader")).busy());
-                check(onUi(()->((FeedReserve)field(controller,"reserve")).future().size()==60&&((FeedReserve)field(controller,"reserve")).future().stream().noneMatch(row->row.candidate.originalUrl.equals(failedFuture))),"failed future slot is replaced proactively before a refresh is requested");
+                check(restoredCount==FeedBatch.SIZE,"every published body restores after RAM eviction even following an acquisition failure");
+                await("first future acquisition",()->bodies.size()>(FeedBatch.SIZE+1));String failedFuture=bodies.get((FeedBatch.SIZE+1)).item.url;
+                ui(()->bodies.get((FeedBatch.SIZE+1)).result.failure("controlled future failure"));
+                completeBatch((FeedBatch.SIZE+2),(FeedBatch.SIZE*FeedReserve.ROUNDS));await("replacement future preparation settles",()->!((ArticlePreloader)field(controller,"preloader")).busy());
+                check(onUi(()->((FeedReserve)field(controller,"reserve")).future().size()==(FeedBatch.SIZE*FeedReserve.ROUNDS)&&((FeedReserve)field(controller,"reserve")).future().stream().noneMatch(row->row.candidate.originalUrl.equals(failedFuture))),"failed future slot is replaced proactively before a refresh is requested");
 
             }else{
-            await("first future body in flight",()->bodies.size()==16);
+            await("first future body in flight",()->bodies.size()==(FeedBatch.SIZE+1));
             ArticlePreloader preparing=(ArticlePreloader)field(controller,"preloader");Object inFlight=field(preparing,"active");
+            java.io.File orphan=new java.io.File(new java.io.File(home.getCacheDir(),"article-bodies-v1"),HotCandidate.hash("publication-cleanup-orphan")+".json");
+            java.nio.file.Files.write(orphan.toPath(),"{}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            Object budget=field(controller,"prefetchBudget");long lease=(long)field(budget,"deadline"),epoch=(long)field(controller,"prefetchEpoch");
+            ui(()->{set(controller,"cachePublicationChanged",true);try{Method method=DiscoveryController.class.getDeclaredMethod("cacheAcceptedBatch",boolean.class);method.setAccessible(true);method.invoke(controller,false);}catch(Exception error){throw new IllegalStateException(error);}});
+            ((ExecutorService)field(controller,"storage")).submit(()->{}).get(8,TimeUnit.SECONDS);
+            check(!orphan.exists(),"publication-only change prunes an unrelated disk body with an unchanged prefetch window");
+            check(onUi(()->(long)field(budget,"deadline")==lease&&(long)field(controller,"prefetchEpoch")==epoch&&field(preparing,"active")==inFlight&&bodies.size()==(FeedBatch.SIZE+1)),"publication cleanup does not extend the lease, interrupt the in-flight body or schedule another acquisition");
             ui(()->{try{Method method=DiscoveryController.class.getDeclaredMethod("cacheAcceptedBatch",boolean.class);method.setAccessible(true);method.invoke(controller,true);}catch(Exception error){throw new IllegalStateException(error);}});
             Thread.sleep(500);
-            check(onUi(()->field(preparing,"active")==inFlight&&bodies.size()==16),"cache window renewal preserves an eligible in-flight body instead of restarting it");
+            check(onUi(()->field(preparing,"active")==inFlight&&bodies.size()==(FeedBatch.SIZE+1)),"cache window renewal preserves an eligible in-flight body instead of restarting it");
             ui(()->controller.interacting(true));
-            check(onUi(()->field(preparing,"active")==inFlight&&bodies.size()==16),"scrolling lets the single in-flight body finish without starting another request");
+            check(onUi(()->field(preparing,"active")==inFlight&&bodies.size()==(FeedBatch.SIZE+1)),"scrolling lets the single in-flight body finish without starting another request");
             ui(()->controller.interacting(false));Thread.sleep(800);
-            check(onUi(()->field(preparing,"active")==inFlight&&bodies.size()==16),"ending a scroll resumes the same acquisition rather than restarting its source");
-            completeBatch(15,60);await("initial cache settles",()->!((ArticlePreloader)field(controller,"preloader")).busy());
+            check(onUi(()->field(preparing,"active")==inFlight&&bodies.size()==(FeedBatch.SIZE+1)),"ending a scroll resumes the same acquisition rather than restarting its source");
+            completeBatch(FeedBatch.SIZE,(FeedBatch.SIZE*FeedReserve.ROUNDS));await("initial cache settles",()->!((ArticlePreloader)field(controller,"preloader")).busy());
             Field writerField=ArticleDiskCache.class.getDeclaredField("writer");writerField.setAccessible(true);((ExecutorService)writerField.get(null)).submit(()->{}).get(8,TimeUnit.SECONDS);
             ArticleDiskCache disk=new ArticleDiskCache(home);String[] namespace={null};Map<String,String> sessions=new HashMap<>();ui(()->{namespace[0]=disk.namespace();for(Body body:bodies)sessions.put(body.item.url,ArticleDiskCache.session(body.item.url));});
             int saved=0;for(Body body:bodies)if(disk.read(body.item.url,namespace[0],sessions.get(body.item.url),false,System.currentTimeMillis())!=null)saved++;
-            check(saved==75,"all seventy-five completed bodies survive the disk writer, not just RAM");
-            check(onUi(()->bodies.size()==75),"one sequential loader warms current fifteen plus sixty reserved bodies");
-            check(onUi(()->((FeedReserve)field(controller,"reserve")).future().size()==60),"four full future screens are prepared without exposing them");
+            check(saved==FeedReserve.CAPACITY,"all one hundred completed bodies survive the disk writer, not just RAM");
+            check(onUi(()->bodies.size()==FeedReserve.CAPACITY),"one sequential loader warms current twenty plus eighty reserved bodies");
+            check(onUi(()->((FeedReserve)field(controller,"reserve")).future().size()==(FeedBatch.SIZE*FeedReserve.ROUNDS)),"four full future screens are prepared without exposing them");
             List<String> beforePoll=new ArrayList<>();ui(()->beforePoll.addAll(((FeedReserve)field(controller,"reserve")).next("all")));
             long frozen=(long)field(controller,"snapshot");ui(()->{set(controller,"lastPoolRefresh",SystemClock.elapsedRealtime()-FeedReserve.UPDATE_MS);((Runnable)field(controller,"poolUpdate")).run();});await("warm pool refresh starts",()->boardCalls==1);
             check(onUi(()->beforePoll.equals(((FeedReserve)field(controller,"reserve")).next("all"))),"starting five-minute collection does not discard already prepared screens");
             List<Item> updated=new ArrayList<>(supply(now+1000,5));updated.addAll(initial);ui(()->board.success(updated));await("real updated source commit",()->!(boolean)field(controller,"loading")&&(long)field(controller,"pending")>0);
             check(onUi(()->(long)field(controller,"snapshot")==frozen&&beforePoll.equals(((FeedReserve)field(controller,"reserve")).next("all"))),"new hotter source items stage without replacing valid prepared bodies or the visible screen");
-            Set<String> displayed=new HashSet<>();ui(()->rows().forEach(row->displayed.add(row.eventId)));
+            List<Item> firstScreen=new ArrayList<>();
+            Set<String> displayed=new HashSet<>();ui(()->rows().forEach(row->{displayed.add(row.eventId);firstScreen.add(row.candidate.readerItem());}));
             for(int round=0;round<4;round++){
                 long before=(long)field(controller,"snapshot");List<String> expected=new ArrayList<>();ui(()->expected.addAll(((FeedReserve)field(controller,"reserve")).next("all")));
                 ui(controller::refreshRecommendations);await("cached refresh "+round,()->(long)field(controller,"snapshot")!=before&&!(boolean)field(controller,"explicitRefreshRunning"));
                 ui(()->{
-                    check(rows().size()==15,"prepared refresh publishes fifteen");
+                    check(rows().size()==FeedBatch.SIZE,"prepared refresh publishes twenty");
                     for(int n=0;n<rows().size();n++){FeedStore.Row row=rows().get(n);check(row.eventId.equals(expected.get(n)),"refresh consumes the prepared sequence");check(displayed.add(row.eventId),"no previous screen repeats");check(cache.cachedArticle(row.candidate.readerItem())!=null,"published body was cached before refresh");}
                 });
+                check(onUi(()->rows().stream().allMatch(row->{Item item=row.candidate.readerItem();return disk.pinned(item.url,namespace[0],ArticleDiskCache.session(item.url),ArticleVersion.hash(item));})),"manual refresh pins every body in the actual displayed screen");
+                boolean firstLeftWindow=onUi(()->{Set<String> keep=new HashSet<>();for(FeedStore.Row row:rows())keep.add(row.candidate.originalUrl);for(FeedStore.Row row:((FeedReserve)field(controller,"reserve")).future())keep.add(row.candidate.originalUrl);return firstScreen.stream().noneMatch(item->keep.contains(item.url));});
+                check(firstLeftWindow,"initial screen leaves the current and future cache window after manual refresh");
+                long cleanupEnd=SystemClock.elapsedRealtime()+5000;boolean removed=false;
+                while(SystemClock.elapsedRealtime()<cleanupEnd){removed=true;for(Item item:firstScreen){java.io.File file=new java.io.File(new java.io.File(home.getCacheDir(),"article-bodies-v1"),HotCandidate.hash(namespace[0]+"\n"+sessions.get(item.url)+"\n"+item.url)+".json");if(file.exists()){removed=false;break;}}if(removed)break;Thread.sleep(25);}
+                check(removed,"manual refresh releases obsolete first-screen disk bodies rather than retaining stale publication pins");
             }
-            check(displayed.size()==75,"four refreshes plus initial screen cover seventy-five unique articles");
+            check(displayed.size()==FeedReserve.CAPACITY,"four refreshes plus initial screen cover one hundred unique articles");
             check(onUi(()->boardCalls==1),"rapid refreshes do not repeatedly fetch source boards");
             long visible=(long)field(controller,"snapshot");ui(()->{set(controller,"lastPoolRefresh",SystemClock.elapsedRealtime()-FeedReserve.UPDATE_MS);((Runnable)field(controller,"poolUpdate")).run();});await("due source poll",()->boardCalls==2);
             check(onUi(()->(long)field(controller,"snapshot")==visible),"five-minute source update leaves visible screen untouched");
             ui(()->board.failure("controlled offline"));await("source failure settles",()->!(boolean)field(controller,"loading"));
-            check(onUi(()->rows().size()==15&&(long)field(controller,"snapshot")==visible),"failed source poll preserves the readable cached screen");
+            check(onUi(()->rows().size()==FeedBatch.SIZE&&(long)field(controller,"snapshot")==visible),"failed source poll preserves the readable cached screen");
             ui(controller::stop);int calls=boardCalls,started=bodies.size();ui(()->{((Runnable)field(controller,"poolUpdate")).run();controller.viewport(0);});Thread.sleep(800);
             check(onUi(()->boardCalls==calls&&bodies.size()==started&&!((ArticlePreloader)field(controller,"preloader")).busy()),"background cancels both polling and speculative body acquisition");
             check(onUi(()->!((Handler)field(controller,"main")).hasCallbacks((Runnable)field(controller,"poolUpdate"))),"no five-minute callback survives background stop");

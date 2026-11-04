@@ -48,7 +48,7 @@ final class ArticlePreloader implements AutoCloseable {
     ArticlePreloader(Activity activity,Runnable onVideo){this(activity,onVideo,null);}
     ArticlePreloader(Activity activity,Runnable onVideo,Loader loader){this(activity,onVideo,loader,3,()->{});}
     ArticlePreloader(Activity activity,Runnable onVideo,Loader loader,int windowSize,Runnable onIdle){this(activity,onVideo,loader,windowSize,onIdle,false);}
-    ArticlePreloader(Activity activity,Runnable onVideo,Loader loader,int windowSize,Runnable onIdle,boolean revalidateHidden){this.activity=activity;this.onVideo=onVideo;this.loader=loader;this.revalidateHidden=revalidateHidden;this.windowSize=Math.max(1,Math.min(75,windowSize));this.onIdle=onIdle;repo=new Repository(activity);}
+    ArticlePreloader(Activity activity,Runnable onVideo,Loader loader,int windowSize,Runnable onIdle,boolean revalidateHidden){this.activity=activity;this.onVideo=onVideo;this.loader=loader;this.revalidateHidden=revalidateHidden;this.windowSize=Math.max(1,Math.min(app.quietreader.discovery.FeedReserve.CAPACITY,windowSize));this.onIdle=onIdle;repo=new Repository(activity);}
     boolean busy(){return active!=null||!queue.isEmpty();}
     private static String attemptKey(Item item){return item.source.name()+"|"+item.url+"@"+ArticleVersion.hash(item)+"|"+item.selectedTopicPost;}
 
@@ -63,7 +63,7 @@ final class ArticlePreloader implements AutoCloseable {
         speculationAllowed=true;
         queue.clear();
         Set<String> seen=new HashSet<>();
-        int bounded=Math.max(1,Math.min(75,limit));
+        int bounded=Math.max(1,Math.min(app.quietreader.discovery.FeedReserve.CAPACITY,limit));
         for(Item item:candidates){if(seen.add(item.url))queue.add(item);if(queue.size()==bounded)break;}
         if(active!=null&&queue.stream().noneMatch(i->ArticleVersion.sameRequest(i,active)))cancelActive();
         if(policyWatch==null){policyWatch=new app.quietreader.ai.RecommendationPolicy.Watch(activity,reason->pause());policyWatch.start();}

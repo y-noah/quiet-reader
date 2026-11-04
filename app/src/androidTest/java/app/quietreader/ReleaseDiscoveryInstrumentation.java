@@ -63,6 +63,13 @@ public final class ReleaseDiscoveryInstrumentation extends Instrumentation {
     @Override public void onStart(){
         if(phase.equals("source-balance")){new ReleaseSourceBalanceProbe(this).run();return;}
         if(phase.equals("phone-source-audit")){new ReleaseFeedSourceAudit(this).run();return;}
+        if(phase.equals("phone-baidu-summary")){new ReleasePhoneKeyReadProbe(this).verifyBaiduSummary();return;}
+        if(phase.equals("phone-search")){new ReleasePhoneSearchProbe(this).run();return;}
+        if(phase.equals("phone-weibo-search-diagnostic")){new ReleasePhoneSearchProbe(this).diagnoseWeibo();return;}
+        if(phase.equals("phone-weibo-samples")){new ReleasePhoneSearchProbe(this).sampleWeibo();return;}
+        if(phase.equals("phone-source-diagnostic")){new ReleasePhoneSearchProbe(this).diagnoseSources();return;}
+        if(phase.equals("phone-weibo-middle")){new ReleasePhoneSearchProbe(this).sampleWeibo(true);return;}
+        if(phase.equals("phone-reader-actions")){new ReleasePhoneReaderActionsProbe(this).run();return;}
         if(phase.equals("phone-key-reads")){new ReleasePhoneKeyReadProbe(this).run();return;}
         if(phase.equals("phone-failed-hupu")){new ReleasePhoneKeyReadProbe(this).diagnoseFailedHupu();return;}
         if(phase.equals("phone-failed-hupu-read")){new ReleasePhoneKeyReadProbe(this).verifyFailedHupu();return;}

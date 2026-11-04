@@ -32,7 +32,12 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private String page="feed",sourcesReturnPage="feed";
     private int feedPosition,feedOffset;
     private int ink,muted,bg,paper,line,accent;
-    private TextView brand,updates,settingsButton;
+    private TextView brand,updates,settingsButton,searchButton;
+    private EditText searchInput;
+    private List<FeedStore.Row> searchRows=Collections.emptyList();
+    private String searchMessage="输入关键词搜索热搜池";
+    private final android.os.Handler searchHandler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable runSearch=this::searchPool;
     private RefreshIndicatorDrawable refreshIndicator;
     private boolean refreshing;
     private ViewTreeObserver.OnPreDrawListener refreshDraw;
@@ -65,8 +70,9 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         if(state!=null){page=state.getString("page","feed");restoreAnchor=state.getString("feedAnchor");restorePosition=state.getInt("feedPosition");restoreOffset=state.getInt("feedOffset");try{String source=state.getString("loginReturn");if(source!=null)loginReturn=Source.valueOf(source);}catch(Exception ignored){}}
         if(state!=null)try{String candidate=state.getString("sourceReadCandidate");if(candidate!=null)sourceReadCandidate=HotCandidate.fromJson(new JSONObject(candidate));}catch(Exception ignored){}
         if(state!=null)sourcesReturnPage="settings".equals(state.getString("sourcesReturnPage"))?"settings":"feed";
-        if(!"sources".equals(page)&&!settingsPage())page="feed";
+        if(!"sources".equals(page)&&!"search".equals(page)&&!settingsPage())page="feed";
         layout();
+        if(state!=null)searchInput.setText(state.getString("searchQuery",""));
         if(state!=null)pendingSetup=state.getBundle("interestSetup");
         boolean testSkip=((getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0||BuildConfig.RANKING_MEASUREMENT_ENABLED&&("app.quietreader.flowprobe".equals(getPackageName())||"app.quietreader.discoveryprobe".equals(getPackageName())))&&getIntent().getBooleanExtra("test_skip_fetch",false);
         // Saved UI state must not disable foreground prefetch for the new owner.
@@ -91,7 +97,12 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         root.setOnApplyWindowInsetsListener((v,insets)->{root.setPadding(dp(18)+insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),dp(18)+insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});setContentView(root);
         LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.setBackgroundColor(bg);
         LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);heading.setBaselineAligned(false);
-        brand=text("",20,ink);brand.setTypeface(null,Typeface.BOLD);brand.setSingleLine(true);brand.setEllipsize(android.text.TextUtils.TruncateAt.END);heading.addView(brand,new LinearLayout.LayoutParams(-1,-2));top.addView(heading,new LinearLayout.LayoutParams(0,dp(48),1));
+        brand=text("",18,ink);brand.setIncludeFontPadding(false);brand.setTypeface(null,Typeface.BOLD);brand.setSingleLine(true);brand.setEllipsize(android.text.TextUtils.TruncateAt.END);heading.addView(brand,new LinearLayout.LayoutParams(-1,-2));
+        searchInput=new EditText(this);searchInput.setSingleLine(true);searchInput.setTextSize(15);searchInput.setTextColor(ink);searchInput.setHintTextColor(muted);searchInput.setHint("搜索整个热搜池");searchInput.setContentDescription("搜索整个热搜池");searchInput.setBackground(new android.graphics.drawable.InsetDrawable(surface(paper),0,dp(6),0,dp(6)));searchInput.setPadding(dp(12),0,dp(12),0);searchInput.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(HotPoolSearch.MAX_QUERY)});searchInput.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);searchInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT);heading.addView(searchInput,new LinearLayout.LayoutParams(-1,-1));
+        searchInput.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int count,int after){}public void onTextChanged(CharSequence s,int start,int before,int count){queueSearch();}public void afterTextChanged(android.text.Editable s){}});
+        searchInput.setOnEditorActionListener((v,action,event)->{if(action!=android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH)return false;searchHandler.removeCallbacks(runSearch);searchPool();hideSearchKeyboard();return true;});
+        top.addView(heading,new LinearLayout.LayoutParams(0,dp(48),1));
+        searchButton=button("搜索热搜",this::showSearch);searchButton.setTextColor(muted);searchButton.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);searchButton.setBackground(new android.graphics.drawable.InsetDrawable(surface(paper),0,dp(6),0,dp(6)));searchButton.setPadding(dp(12),0,dp(12),0);android.graphics.drawable.Drawable searchIcon=getDrawable(R.drawable.ic_search_outline).mutate();searchIcon.setTint(muted);searchIcon.setBounds(0,0,dp(16),dp(16));searchButton.setCompoundDrawables(searchIcon,null,null,null);searchButton.setCompoundDrawablePadding(dp(8));searchButton.setContentDescription("搜索热搜池");heading.addView(searchButton,new LinearLayout.LayoutParams(-1,dp(48)));
         updates=button("",this::updateAndReturnToTop);refreshIndicator=new RefreshIndicatorDrawable(accent,getResources().getDisplayMetrics().density);refreshIndicator.setBounds(0,0,dp(20),dp(20));updates.setCompoundDrawables(refreshIndicator,null,null,null);top.addView(updates,new LinearLayout.LayoutParams(dp(48),dp(48)));
         settingsButton=button("",()->{if(!"feed".equals(page))back();else preferences();});settingsButton.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,dp(24));top.addView(settingsButton,new LinearLayout.LayoutParams(dp(48),dp(48)));
         list=new ListView(this);list.setVerticalScrollBarEnabled(false);list.setDivider(null);list.setCacheColorHint(bg);list.setSelector(android.R.color.transparent);list.setClipToPadding(false);list.setPadding(0,dp(48),0,dp(12));list.setAdapter(adapter);
@@ -102,6 +113,22 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         pageHeading();
     }
     private void refreshFeed(){remember();controller.refreshRecommendations();if(list!=null)list.post(reportExposure);}
+    private void showSearch(){show("search");searchInput.requestFocus();queueSearch();searchInput.post(()->{if("search".equals(page)&&hasWindowFocus())((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).showSoftInput(searchInput,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);});}
+    private void hideSearchKeyboard(){if(searchInput!=null)((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(searchInput.getWindowToken(),0);}
+    private void queueSearch(){
+        if(!"search".equals(page)||controller==null)return;
+        searchHandler.removeCallbacks(runSearch);controller.cancelSearch();searchRows=Collections.emptyList();searchMessage="正在查找…";adapter.notifyDataSetChanged();searchHandler.postDelayed(runSearch,250);
+    }
+    private void searchPool(){
+        if(!"search".equals(page)||controller==null)return;
+        String query=searchInput.getText().toString();
+        controller.searchPool(query,result->{
+            if(!"search".equals(page))return;
+            searchRows=result.rows;searchInput.setHint("搜索热搜池 · "+result.poolSize+" 条");
+            searchMessage=result.poolSize==0?"热搜池暂无内容，请返回首页刷新":query.trim().isEmpty()?"输入关键词，在整个热搜池的 "+result.poolSize+" 条内容中查找":"热搜池里没有相关热搜";
+            adapter.notifyDataSetChanged();
+        },()->{if("search".equals(page)){searchRows=Collections.emptyList();searchMessage="暂时无法读取热搜池，请重新搜索";adapter.notifyDataSetChanged();}});
+    }
     private void pauseExposure(){if(list!=null)list.removeCallbacks(reportExposure);exposure.pause();}
     private void sampleExposure(){
         updateRefreshAnimation();
@@ -129,6 +156,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         pauseExposure();
         remember();boolean changed=!page.equals(next);int returnPosition=feedPosition,returnOffset=feedOffset;
         if(changed)cancelStartupRead();
+        if(!"search".equals(next)){searchHandler.removeCallbacks(runSearch);controller.cancelSearch();hideSearchKeyboard();}
         page=next;controller.feedPage("feed".equals(page));pageHeading();
         // Different pages have unrelated row identities. Reset ListView's sync
         // state so it cannot carry a partial card offset into the source list.
@@ -137,7 +165,8 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         if("sources".equals(page))controller.readSources();
     }
     private void pageHeading(){
-        boolean plain="feed".equals(page)||"settings".equals(page);brand.setVisibility(plain?View.GONE:View.VISIBLE);
+        boolean plain="feed".equals(page)||"settings".equals(page)||"search".equals(page);brand.setVisibility(plain?View.GONE:View.VISIBLE);
+        searchInput.setVisibility("search".equals(page)?View.VISIBLE:View.GONE);searchButton.setVisibility("feed".equals(page)?View.VISIBLE:View.GONE);updates.setVisibility("search".equals(page)?View.GONE:View.VISIBLE);
         brand.setText("sources".equals(page)?"内容来源":"preferences".equals(page)?"阅读偏好":"storage".equals(page)?"缓存与存储":"advanced".equals(page)?"高级与诊断":"");
         updateStatusDescription();
         boolean feedPage="feed".equals(page);navigation.feedPage(feedPage);
@@ -181,6 +210,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     }
     private void open(HotCandidate candidate){
         if(openingReader)return;
+        hideSearchKeyboard();
         if(ReaderStartup.failed()){new AlertDialog.Builder(this).setMessage("阅读器暂时未准备好，可以重试准备。当前列表会保留。").setNegativeButton("取消",null).setPositiveButton("重试准备",(dialog,which)->prepareReader(candidate,true)).show();return;}
         if(ReaderStartup.pending()){prepareReader(candidate,false);return;}
         openingReader=true;remember();String prefetchPlan=controller.readerPrefetchPlan(candidate);String handoff=!candidate.source.unifiedReading()?null:controller.handoff(candidate.readerItem());controller.stop();
@@ -354,7 +384,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     // Inner settings/source pages still return within the current activity.
     private void back(){if("sources".equals(page))show(sourcesReturnPage);else if(settingsPage()&&!"settings".equals(page))show("settings");else if(!"feed".equals(page))show("feed");else finishAffinity();}
     @Override public void onBackPressed(){back();}
-    @Override protected void onResume(){super.onResume();adapter.notifyDataSetChanged();exposureForeground=true;startupForeground=true;openingReader=false;if(!ReaderStartup.pending()){java.lang.ref.WeakReference<DiscoveryActivity> ownerRef=new java.lang.ref.WeakReference<>(this);ReaderStartup.defer(getApplicationContext(),()->{DiscoveryActivity owner=ownerRef.get();if(owner!=null&&!owner.isDestroyed()&&owner.controller!=null)owner.controller.readerReady();});}readerAfterNativeDraw();if(trialEvaluation!=null)trialEvaluation.foreground();if(controller!=null){controller.feedPage("feed".equals(page));if(loginReturn!=null){Repository cache=new Repository(this);cache.invalidateArticles();cache.close();}controller.start();if(loginReturn!=null){Source source=loginReturn;loginReturn=null;controller.refresh(Collections.singletonList(source));}}if(list!=null)list.post(reportExposure);}
+    @Override protected void onResume(){super.onResume();adapter.notifyDataSetChanged();exposureForeground=true;startupForeground=true;openingReader=false;if(!ReaderStartup.pending()){java.lang.ref.WeakReference<DiscoveryActivity> ownerRef=new java.lang.ref.WeakReference<>(this);ReaderStartup.defer(getApplicationContext(),()->{DiscoveryActivity owner=ownerRef.get();if(owner!=null&&!owner.isDestroyed()&&owner.controller!=null)owner.controller.readerReady();});}readerAfterNativeDraw();if(trialEvaluation!=null)trialEvaluation.foreground();if(controller!=null){controller.feedPage("feed".equals(page));if(loginReturn!=null){Repository cache=new Repository(this);cache.invalidateArticles();cache.close();}controller.start();if(loginReturn!=null){Source source=loginReturn;loginReturn=null;controller.refresh(Collections.singletonList(source));}}if(list!=null)list.post(reportExposure);if("search".equals(page))searchPool();}
     @Override protected void onPostResume(){super.onPostResume();updateRefreshAnimation();}
     @Override protected void onPause(){exposureForeground=false;updateRefreshAnimation();pauseExposure();super.onPause();}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);updateRefreshAnimation();if(focused)sampleExposure();else pauseExposure();}
@@ -374,9 +404,9 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         controller.stop();startActivity(reader);
     }
     private void cancelStartupRead(){startupReadEpoch++;startupReadCandidate=null;startupReadWaiting=false;}
-    @Override protected void onStop(){clearRefreshDraw();startupForeground=false;readerDrawQueued=false;if(list!=null){list.removeCallbacks(releaseReaderStartup);if(readerDraw!=null){list.getViewTreeObserver().removeOnPreDrawListener(readerDraw);readerDraw=null;}}cancelStartupRead();if(trialEvaluation!=null)trialEvaluation.pause();remember();if(controller!=null)controller.stop();super.onStop();}
-    @Override protected void onSaveInstanceState(Bundle out){remember();out.putString("page",page);if(controller!=null)out.putString("sourceFilter",controller.sourceFilter());out.putString("sourcesReturnPage",sourcesReturnPage);out.putInt("feedPosition",feedPosition);out.putInt("feedOffset",feedOffset);out.putString("feedAnchor",feedPosition<feed.size()?feed.get(feedPosition).eventId:"");if(loginReturn!=null)out.putString("loginReturn",loginReturn.name());if(sourceReadCandidate!=null)out.putString("sourceReadCandidate",sourceReadCandidate.json().toString());if(setupDialog!=null&&setupDialog.isShowing()&&setupCandidates!=null){Bundle setup=new Bundle();JSONArray candidates=new JSONArray();for(HotCandidate candidate:setupCandidates)candidates.put(candidate.json());setup.putString("candidates",candidates.toString());setup.putString("choices",new JSONObject(setupChoices).toString());setup.putInt("scroll",setupScroll.getScrollY());out.putBundle("interestSetup",setup);}if(trialEvaluation!=null){trialEvaluation.saveExport(out);if(trialEvaluation.activeSession()!=null)out.putString("trialSession",trialEvaluation.activeSession());}super.onSaveInstanceState(out);}
-    @Override protected void onDestroy(){clearRefreshDraw();pauseExposure();if(list!=null&&list.getViewTreeObserver().isAlive())list.getViewTreeObserver().removeOnGlobalLayoutListener(exposureLayout);if(trialEvaluation!=null)trialEvaluation.close();if(setupDialog!=null)setupDialog.dismiss();if(recommendationDialog!=null)recommendationDialog.dismiss();if(controller!=null)controller.close();super.onDestroy();}
+    @Override protected void onStop(){searchHandler.removeCallbacks(runSearch);if(controller!=null)controller.cancelSearch();clearRefreshDraw();startupForeground=false;readerDrawQueued=false;if(list!=null){list.removeCallbacks(releaseReaderStartup);if(readerDraw!=null){list.getViewTreeObserver().removeOnPreDrawListener(readerDraw);readerDraw=null;}}cancelStartupRead();if(trialEvaluation!=null)trialEvaluation.pause();remember();if(controller!=null)controller.stop();super.onStop();}
+    @Override protected void onSaveInstanceState(Bundle out){remember();out.putString("page",page);out.putString("searchQuery",searchInput.getText().toString());if(controller!=null)out.putString("sourceFilter",controller.sourceFilter());out.putString("sourcesReturnPage",sourcesReturnPage);out.putInt("feedPosition",feedPosition);out.putInt("feedOffset",feedOffset);out.putString("feedAnchor",feedPosition<feed.size()?feed.get(feedPosition).eventId:"");if(loginReturn!=null)out.putString("loginReturn",loginReturn.name());if(sourceReadCandidate!=null)out.putString("sourceReadCandidate",sourceReadCandidate.json().toString());if(setupDialog!=null&&setupDialog.isShowing()&&setupCandidates!=null){Bundle setup=new Bundle();JSONArray candidates=new JSONArray();for(HotCandidate candidate:setupCandidates)candidates.put(candidate.json());setup.putString("candidates",candidates.toString());setup.putString("choices",new JSONObject(setupChoices).toString());setup.putInt("scroll",setupScroll.getScrollY());out.putBundle("interestSetup",setup);}if(trialEvaluation!=null){trialEvaluation.saveExport(out);if(trialEvaluation.activeSession()!=null)out.putString("trialSession",trialEvaluation.activeSession());}super.onSaveInstanceState(out);}
+    @Override protected void onDestroy(){searchHandler.removeCallbacks(runSearch);clearRefreshDraw();pauseExposure();if(list!=null&&list.getViewTreeObserver().isAlive())list.getViewTreeObserver().removeOnGlobalLayoutListener(exposureLayout);if(trialEvaluation!=null)trialEvaluation.close();if(setupDialog!=null)setupDialog.dismiss();if(recommendationDialog!=null)recommendationDialog.dismiss();if(controller!=null)controller.close();super.onDestroy();}
     @Override public int feedCapacity(List<FeedStore.Row> candidates){return Math.min(FeedBatch.SIZE,candidates.size());}
     private final class Card extends LinearLayout {
         final TextView title,summary,meta,menu;final LinearLayout body;
@@ -384,8 +414,13 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
             body=column();addView(body,new LayoutParams(0,-2,1));
             title=text("",16,ink);title.setLineSpacing(dp(3),1);title.setTypeface(null,Typeface.BOLD);body.addView(title);
             summary=text("",12,muted);summary.setMaxLines(1);summary.setEllipsize(android.text.TextUtils.TruncateAt.END);summary.setPadding(0,dp(6),0,0);body.addView(summary);
-            meta=text("",11,muted);meta.setPadding(0,dp(4),0,0);body.addView(meta);menu=button("⋯",()->{});LayoutParams menuLayout=new LayoutParams(dp(48),dp(48));menuLayout.gravity=Gravity.BOTTOM;addView(menu,menuLayout);
-            setMinimumHeight(dp(64));
+            meta=text("",11,muted);meta.setPadding(0,dp(4),0,0);body.addView(meta);menu=button("",()->{});menu.setMinHeight(0);menu.setPadding(0,0,0,0);android.graphics.drawable.Drawable more=getDrawable(R.drawable.ic_more_horiz).mutate();more.setTint(accent);more.setBounds(0,0,dp(20),dp(20));menu.setCompoundDrawables(more,null,null,null);LayoutParams menuLayout=new LayoutParams(dp(48),dp(24));menuLayout.gravity=Gravity.BOTTOM;addView(menu,menuLayout);
+        }
+        @Override protected void onLayout(boolean changed,int left,int top,int right,int bottom){
+            super.onLayout(changed,left,top,right,bottom);
+            android.graphics.Rect hit=new android.graphics.Rect();menu.getHitRect(hit);
+            hit.top=Math.max(0,hit.bottom-dp(48));hit.bottom=Math.min(getHeight(),hit.top+dp(48));
+            setTouchDelegate(new android.view.TouchDelegate(hit,menu));
         }
         void bind(FeedStore.Row row,int index){
             content(row,index);
@@ -409,19 +444,20 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         SourceCard(){super(DiscoveryActivity.this);setPadding(dp(12),dp(12),dp(8),dp(12));setGravity(Gravity.CENTER_VERTICAL);setBackground(surface(paper));LinearLayout details=column();title=text("",18,ink);status=text("",12,muted);status.setPadding(0,dp(8),0,0);details.addView(title);details.addView(status);addView(details,new LayoutParams(0,-2,1));enabled=new Switch(DiscoveryActivity.this);enabled.setMinHeight(dp(48));enabled.setMinWidth(dp(48));addView(enabled);}
         void bind(Source source){JSONObject state=sources.get(source);title.setText(source.label+" · "+source.category);status.setText(sourceStatus(state));enabled.setOnCheckedChangeListener(null);enabled.setChecked(state!=null&&state.optBoolean("enabled"));enabled.setEnabled(state!=null);enabled.setContentDescription("启用"+source.label);enabled.setOnCheckedChangeListener((v,on)->{remember();controller.enable(source,on);});setOnClickListener(v->sourceMenu(source));}
     }
+    private List<FeedStore.Row> displayedRows(){return "search".equals(page)?searchRows:feed;}
     private final class Rows extends BaseAdapter {
         @Override public int getViewTypeCount(){return 4;}
-        @Override public int getItemViewType(int position){if(settingsPage())return 3;if("sources".equals(page))return 1;int count=feed.size();return count==0?2:0;}
-        @Override public int getCount(){if(settingsPage())return settingsEntries().length;if("sources".equals(page))return HotSourceCatalog.HOT.size();int count=feed.size();return count==0?1:count;}
+        @Override public int getItemViewType(int position){if(settingsPage())return 3;if("sources".equals(page))return 1;int count=displayedRows().size();return count==0?2:0;}
+        @Override public int getCount(){if(settingsPage())return settingsEntries().length;if("sources".equals(page))return HotSourceCatalog.HOT.size();int count=displayedRows().size();return count==0?1:count;}
         @Override public Object getItem(int position){return position;}
         @Override public long getItemId(int position){return position;}
         @Override public View getView(int position,View recycled,android.view.ViewGroup parent){
             int type=getItemViewType(position);LinearLayout wrapper=recycled instanceof LinearLayout?(LinearLayout)recycled:column();wrapper.setPadding(0,dp(5),0,dp(5));
             if(type==3){wrapper.removeAllViews();TextView value=button(settingsEntries()[position],()->settingAction(position));value.setTextSize(16);value.setTextColor(ink);value.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);value.setPadding(dp(14),dp(12),dp(14),dp(12));value.setMinHeight(dp(56));value.setBackground(surface(paper));wrapper.addView(value,new LinearLayout.LayoutParams(-1,-2));return wrapper;}
-            if(type==2){wrapper.removeAllViews();int count=feed.size();TextView value=text(loading?"正在获取热门话题…":(!"all".equals(controller.sourceFilter())?"这个来源暂无话题":"尚无话题"),14,muted);value.setPadding(dp(8),dp(12),dp(8),dp(12));value.setTextColor(muted);wrapper.addView(value);return wrapper;}
+            if(type==2){wrapper.removeAllViews();int count=feed.size();TextView value=text("search".equals(page)?searchMessage:loading?"正在获取热门话题…":(!"all".equals(controller.sourceFilter())?"这个来源暂无话题":"尚无话题"),14,muted);value.setPadding(dp(8),dp(12),dp(8),dp(12));value.setTextColor(muted);wrapper.addView(value);return wrapper;}
             if(type==1){SourceCard card=wrapper.getChildCount()>0&&wrapper.getChildAt(0) instanceof SourceCard?(SourceCard)wrapper.getChildAt(0):new SourceCard();wrapper.removeAllViews();wrapper.addView(card);card.bind(HotSourceCatalog.HOT.get(position));return wrapper;}
             Card card=wrapper.getChildCount()>0&&wrapper.getChildAt(0) instanceof Card?(Card)wrapper.getChildAt(0):new Card();wrapper.removeAllViews();wrapper.addView(card);
-            card.bind(feed.get(position),position);wrapper.setTag(feed.get(position).eventId);return wrapper;
+            card.bind(displayedRows().get(position),position);wrapper.setTag(displayedRows().get(position).eventId);return wrapper;
         }
     }
 }

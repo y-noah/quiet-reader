@@ -16,7 +16,7 @@ public final class ReaderHtml {
         return render(d,source,font,dark,expanded,loading,inlineFont,ReaderStyle.defaults());
     }
     static String render(Document d,Source source,int font,boolean dark,Set<String> expanded,boolean loading,int inlineFont,ReaderStyle style){
-        StringBuilder h=new StringBuilder("<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='referrer' content='no-referrer'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; img-src https:; media-src https://quiet-reader.invalid; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\"><style>");
+        StringBuilder h=new StringBuilder("<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='referrer' content='no-referrer'><meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; script-src 'none'; img-src https:; media-src https://quiet-reader.invalid; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\"><style>");
         h.insert(h.indexOf("<style>"),"<meta name='quiet-reader-source' content='"+escape(d.url)+"'>");
         // Reserve room in CSS; WebView's INSIDE_INSET shrinks the visual viewport
         // without consistently shrinking layout width, producing a horizontal scrollbar.
@@ -60,6 +60,7 @@ public final class ReaderHtml {
         }
         if(d.videos.size()>=ReaderMedia.MAX_ATTACHMENTS)h.append("<p class='meta'>本页最多整理前16个视频附件，其余请在来源页查看。</p>");
         boolean discussionHeading=false;
+        h.append("<style>.section-collapse{position:sticky;bottom:8px;z-index:1;isolation:isolate;display:flex;align-items:center;justify-content:center;width:max-content;max-width:100%;margin:8px auto 0;padding:8px 14px;min-height:48px;background:transparent;border:0;border-radius:0;text-align:center;font-size:13px;line-height:1.4}.section-collapse:before{content:'';position:absolute;inset:8px 0;z-index:-1;background:var(--card);border:1px solid var(--line);border-radius:6px}.part{overflow:visible}</style>");
         int index=0;
         for(Section part:sections){
             StringBuilder text=new StringBuilder();int imageCount=0;for(Block b:part.blocks){if(b.type.equals("text"))text.append(b.value).append(' ');if(b.type.equals("image"))imageCount++;}
@@ -82,13 +83,13 @@ public final class ReaderHtml {
             }
             if(fold){
                 if(!label.isEmpty())h.append("<div class='meta section-label'>").append(escape(label)).append("</div>");
-                h.append("<a class='action' href='").append(ACTION).append("toggle?index=").append(index).append("' aria-expanded='").append(open).append("'>").append(index+1).append(open?" · 收起 ↑":" · 展开阅读 ↓").append("</a>");
+                if(!open)h.append("<a class='action' href='").append(ACTION).append("toggle?index=").append(index).append("' aria-controls='part-").append(index).append("' aria-expanded='false'>展开阅读 ↓</a>");
             }
             else if(!label.isEmpty())h.append("<div class='meta section-label'>").append(escape(label)).append("</div>");
             if(open){
                 int blockIndex=0;for(Block b:part.blocks)block(h,b,anchorId(part.id,blockIndex++),d);
                 if(WeiboPost.canContinue(source,d.url,part))h.append("<a class='action' href='").append(ACTION).append("post?index=").append(index).append("'>继续读取原帖 →</a>");
-                if(!entry)navigation(h,index,sections);}
+                if(fold)h.append("<a class='action section-collapse' href='").append(ACTION).append("toggle?index=").append(index).append("' aria-controls='part-").append(index).append("' aria-expanded='true'>收起 ↑</a>");}
             else {h.append("<p class='preview'>").append(escape(text.substring(0,Math.min(130,text.length())))).append(text.length()>130?"…":"").append("</p>");if(imageCount>0)h.append("<div class='meta'>包含 ").append(imageCount).append(" 张图片 · 展开后查看</div>");}
             h.append("</section>");index++;
         }
@@ -124,15 +125,6 @@ public final class ReaderHtml {
         if(!first.answer&&(first.label.startsWith("主帖")||first.label.startsWith("话题介绍")||first.label.equals("正文")||first.label.startsWith("正文 · ")||first.label.equals("问题补充")||first.label.equals("视频简介")))expanded.add(first.id);
         if(doc.url.matches("https://[^/]*zhihu.com/question/.*"))
             for(Section part:parts)if(part.answer){expanded.add(part.id);break;}
-    }
-    private static void navigation(StringBuilder h,int index,List<Section> parts){
-        if(index+1>=parts.size()||!parts.get(index+1).answer)return;
-        // Answers benefit from opening the next destination; ordinary short comments
-        // follow naturally in the scroll and should not each acquire a next button.
-        h.append("<nav class='section-nav' aria-label='内容跳转'>");
-        Section next=parts.get(index+1);
-        h.append("<a href='").append(ACTION).append("jump?index=").append(index+1).append("'>").append(next.answer?"下一条回答 ↓":next.label.startsWith("回复")?"下一条回复 ↓":"下一段内容 ↓").append("</a>");
-        h.append("</nav>");
     }
     static String anchorId(String section,int block){return "reading-"+java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(section.getBytes(java.nio.charset.StandardCharsets.UTF_8))+"-"+block;}
     // Keep source paragraphs/anchors intact; only remove prose-sized gaps from image-only emoji lines.

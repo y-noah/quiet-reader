@@ -13,17 +13,18 @@ public class ReaderHtmlTest {
             assertTrue(html.select("a[href*='toggle?'],a[href*='jump?']").isEmpty());
         }
     }
-    @Test public void longCommentHasOneToggleAndAnswersKeepDestinationNavigation(){
+    @Test public void longCommentHasOneReachableToggleWithoutDuplicateNextActions(){
         Document d=new Document();Section body=new Section("body","正文",false),comment=new Section("comment","评论 · 甲",false);
         body.blocks.add(new Block("text","正文"));comment.blocks.add(new Block("text","长评论内容".repeat(220)));d.sections.add(body);d.sections.add(comment);
         org.jsoup.nodes.Document folded=org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.V2EX,19));
         assertEquals(1,folded.select("a[href*='toggle?']").size());assertTrue(folded.select("#part-1 p:not(.preview)").isEmpty());
-        assertEquals("2 · 展开阅读 ↓",folded.selectFirst("a[href*='toggle?']").text());assertEquals("false",folded.selectFirst("a[href*='toggle?']").attr("aria-expanded"));assertEquals("甲",folded.selectFirst("#part-1 .section-label").text());
+        assertEquals("展开阅读 ↓",folded.selectFirst("a[href*='toggle?']").text());assertEquals("false",folded.selectFirst("a[href*='toggle?']").attr("aria-expanded"));assertEquals("甲",folded.selectFirst("#part-1 .section-label").text());
         org.jsoup.nodes.Document open=org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.V2EX,19,false,java.util.Set.of("comment"),false));
         assertEquals(1,open.select("#part-1 p:not(.preview)").size());assertEquals(1,open.select("a[href*='toggle?']").size());assertTrue(open.select("a[href*='jump?']").isEmpty());
-        assertEquals("2 · 收起 ↑",open.selectFirst("a[href*='toggle?']").text());assertEquals("true",open.selectFirst("a[href*='toggle?']").attr("aria-expanded"));assertEquals("甲",open.selectFirst("#part-1 .section-label").text());
+        assertEquals("收起 ↑",open.selectFirst("a[href*='toggle?']").text());assertEquals("true",open.selectFirst("a[href*='toggle?']").attr("aria-expanded"));assertEquals("甲",open.selectFirst("#part-1 .section-label").text());
+        assertEquals("a",open.selectFirst("#part-1").children().last().tagName());assertTrue(open.selectFirst("#part-1").children().last().hasClass("section-collapse"));
         Section answer=new Section("answer","回答",true);answer.blocks.add(new Block("text","后续回答"));d.sections.add(answer);
-        assertEquals(1,org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.ZHIHU,19,false,java.util.Set.of("comment"),false)).select("a[href*='jump?index=2']").size());
+        assertTrue(org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.ZHIHU,19,false,java.util.Set.of("comment"),false)).select("a[href*='jump?']").isEmpty());
     }
     @Test public void sourceSummariesDoNotAddExplanatoryChromeOrClaimOriginalFullText(){
         for(String label:new String[]{"搜索结果 · 来源摘要","相关帖子 · 摘要"}){
@@ -66,7 +67,7 @@ public class ReaderHtmlTest {
             assertTrue(html.contains("aria-label='查看正文图片大图，加载失败可在大图中重试'>查看大图</a>"));
             assertFalse(html.contains("图片可能稍后显示"));
             assertFalse(html.contains("轻点图片放大"));assertFalse(html.contains("<script"));assertFalse(html.contains("onload="));
-            assertTrue(html.contains("default-src 'none'"));
+            assertTrue(html.contains("default-src 'none'"));assertTrue(html.contains("script-src 'none'"));
         }
     }
     @Test public void singleImageCollectionsStayOpenAcrossPlatforms(){
@@ -85,7 +86,7 @@ public class ReaderHtmlTest {
         Document d=new Document();d.title="<script>evil()</script>";d.url="https://www.ifanr.com/1";
         d.blocks.add(new Block("text","<img src=x onerror=evil()>"));d.blocks.add(new Block("image","javascript:evil()"));
         String html=ReaderHtml.render(d,Source.IFANR,19);
-        assertFalse(html.contains("<script>"));assertFalse(html.contains("src='javascript:"));assertTrue(html.contains("&lt;img"));assertTrue(html.contains("default-src 'none'"));
+        assertFalse(html.contains("<script>"));assertFalse(html.contains("src='javascript:"));assertTrue(html.contains("&lt;img"));assertTrue(html.contains("default-src 'none'"));assertTrue(html.contains("script-src 'none'"));
     }
     @Test public void preservesPartialContentWarning() {
         Document d=new Document();d.notice="部分内容";d.title="Test";d.url="https://www.zhihu.com/question/1";

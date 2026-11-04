@@ -124,6 +124,7 @@ final class ReadingHistory {
             }
             d.sections.add(s);
         }
+        StructuredSources.cleanStoredSearch(d);ReadingContent.cleanStored(d);
         return d;
     }
 }

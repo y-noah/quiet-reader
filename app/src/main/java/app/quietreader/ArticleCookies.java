@@ -52,9 +52,13 @@ final class ArticleCookies {
             // visitor/analytics fields. HMACCOUNT even contains the substring
             // ACCOUNT, but is a statistics identifier, not an account session.
             if(Set.of("BAIDUID","BAIDUID_BFESS","BAIDU_WISE_UID","HMACCOUNT").contains(name))continue;
+            // Baidu search's COOKIE_SESSION is per-navigation analytics context,
+            // not the passport login. Loading another prefetch must not invalidate
+            // earlier search bodies. Keep BDUSS/PTOKEN/STOKEN and unknown sessions.
+            if(!tieba&&name.equals("COOKIE_SESSION"))continue;
             if(name.matches("BDUSS.*|[PS]TOKEN.*|PASSID.*|.*(?:SESSION|AUTH|TOKEN|LOGIN|USER|ACCOUNT).*|.*UID|SID|SSON"))fields.add(field.trim());
         }
-        Collections.sort(fields);return (tieba?"tieba-account-v2;":"baidu-account-v1;")+String.join("; ",fields);
+        Collections.sort(fields);return (tieba?"tieba-account-v2;":"baidu-account-v2;")+String.join("; ",fields);
     }
     private static String cookieName(String field){int at=field.indexOf('=');return at>0?field.substring(0,at).trim():field;}
     private static boolean zhihuContent(String url){

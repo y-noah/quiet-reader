@@ -28,4 +28,12 @@ public class ArticleVersionTest {
         Item item=item("中文标题","摘要");Document doc=new Document();doc.url=item.url;String before=DocumentFingerprint.of(doc);int size=DocumentSize.estimate(doc);ArticleVersion.capture(item,doc);
         assertNotEquals(before,DocumentFingerprint.of(doc));assertTrue(DocumentSize.estimate(doc)>size);doc.url="https://bbs.hupu.com/456.html";assertFalse(ArticleVersion.matches(item,doc));
     }
+    @Test public void recentSameUrlBodyCanOpenAfterSnippetChangeWithoutBecomingNewVersion(){
+        Item before=item("旧标题","旧简介"),after=item("新标题","新简介");Document doc=new Document();doc.url=before.url;doc.cachedAt=1_000_000;doc.blocks.add(new Block("text","真实正文"));ArticleVersion.capture(before,doc);
+        assertTrue(ArticleVersion.readableCached(after,doc,1_600_000,false));assertFalse(ArticleVersion.matches(after,doc));assertTrue(ArticleVersion.matches(before,doc));
+        assertFalse(ArticleVersion.readableCached(after,doc,1_600_001,false));assertFalse(ArticleVersion.readableCached(after,doc,999_999,false));
+        assertTrue(ArticleVersion.readableCached(after,doc,1_600_001,true));
+        doc.loginRequired=true;assertFalse(ArticleVersion.readableCached(after,doc,1_000_001,true));doc.loginRequired=false;
+        doc.url="https://bbs.hupu.com/456.html";assertFalse(ArticleVersion.readableCached(after,doc,1_000_001,false));
+    }
 }

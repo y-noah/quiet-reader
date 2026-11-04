@@ -26,14 +26,31 @@ final class SourceSession {
         // Failed/restricted extraction still falls back to the shared WebView.
         // BBC public article state is present in the native response; a past source-page
         // visit must not force the generic DOM route which lacks its structured body.
-        if(source==Source.V2EX||source==Source.HUPU||source==Source.NYT||source==Source.BBC)return false;
-        return source==Source.ZHIHU||context.getSharedPreferences("source-session",0).getBoolean(source.name()+"-web",false);
+        return requiresWeb(source,context.getSharedPreferences("source-session",0).getBoolean(source.name()+"-web",false));
+    }
+    static boolean requiresWeb(Source source,boolean remembered){
+        // Visiting login does not make a server-rendered article require JavaScript.
+        // Both routes still use the shared source cookies; native failure keeps its browser fallback.
+        switch(source){
+            case ZHIHU:return true;
+            case WEIBO:case TIEBA:case DOUYIN:case XHS:return remembered;
+            default:return false;
+        }
     }
     static boolean nativeDocumentReady(Source source,Document document){
         // Hupu may hydrate the authenticated response after the server-rendered
         // shell. Try the existing shared WebView before presenting its login gate.
-        return document.canPresent()&&(source!=Source.HUPU||!document.loginRequired&&!document.sourceUnavailable);
+        if(source==Source.HUPU&&(document.loginRequired||document.sourceUnavailable))return false;
+        // A parser's missing article state is not a successfully acquired body.
+        // The existing foreground caller tries its browser once; browser results
+        // are rendered directly and never fed back into this native decision.
+        // Explicit login and video/permission statuses remain terminal.
+        if(document.sourceUnavailable&&!document.loginRequired&&!document.filteredVideo&&!document.unsupportedVideo&&!document.videoTopic&&document.filteredVideos==0
+            &&source!=Source.DOUYIN&&source!=Source.XHS&&source!=Source.BILIBILI)return false;
+        return document.canPresent();
     }
+    // Acquisition uses the mobile search response; the user's source/login viewport stays independent.
+    static String readingUserAgent(Context context,Source source){return source==Source.BAIDU?WebSettings.getDefaultUserAgent(context):userAgent(context,source);}
     static String userAgent(Context context,Source source){return desktop(context,source)?Repository.DESKTOP_UA:WebSettings.getDefaultUserAgent(context);}
     static void configure(Context context,Source source,WebView web){
         WebSettings settings=web.getSettings();

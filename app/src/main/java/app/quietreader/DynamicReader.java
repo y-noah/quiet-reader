@@ -33,6 +33,10 @@ public final class DynamicReader {
     private volatile String topicPostUrl="",topicPostSession="";
     private long topicSelectedAt;
     private String lastSnapshot="";
+    private final Runnable inspectTask=this::inspect;
+    private final Runnable snapshotTimeout=this::snapshotExpired;
+    private boolean snapshotPending;
+    private long snapshotTicket;
     private final ReadNavigation navigation=new ReadNavigation();
     private final java.util.Set<String> upgradedUrls=new java.util.HashSet<>();
     private final java.util.concurrent.ExecutorService parser=java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -55,7 +59,7 @@ public final class DynamicReader {
         deadlineAt=inheritedDeadline>0?inheritedDeadline:now+(slowForeground?40000:22000);
         this.item=item; callback=cb; session=new ArticleSession(activity,item);web=new WebView(new android.content.MutableContextWrapper(activity));
         WebSettings s=web.getSettings(); s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true); s.setAllowFileAccess(false); s.setAllowContentAccess(false);
-        SourceSession.configure(activity,item.source,web); s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); s.setMediaPlaybackRequiresUserGesture(true);
+        SourceSession.configure(activity,item.source,web); s.setUserAgentString(SourceSession.readingUserAgent(activity,item.source)); s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW); s.setMediaPlaybackRequiresUserGesture(true);
         // This surface only extracts text and image URLs; the own reader loads actual pictures.
         // Do not apply this to the explicit login view, where image challenges must stay visible.
         s.setBlockNetworkImage(true);
@@ -98,9 +102,15 @@ public final class DynamicReader {
         handler.postDelayed(deadline,Math.max(0,deadlineAt-android.os.SystemClock.elapsedRealtime()));
         // Start after construction so the owner is assigned before navigation callbacks.
         // Closing in the same UI turn cancels this pending navigation too.
-        handler.post(()->{if(!ended)web.loadUrl(item.url);});
+        handler.post(()->{if(!ended){web.loadUrl(item.url);scheduleInspection(1200);}});
     }
-    private void navigating(String url){navigation.begin(url);best=null;lastSnapshot="";}
+    private void navigating(String url){
+        navigation.begin(url);best=null;lastSnapshot="";attempts=0;
+        // A renderer navigation can abandon evaluateJavascript without delivering
+        // its callback. The replacement document must own a fresh inspection.
+        snapshotTicket++;snapshotPending=false;handler.removeCallbacks(snapshotTimeout);handler.removeCallbacks(inspectTask);
+        scheduleInspection(1200);
+    }
     /** A user opening speculative work owns the foreground policy, without reloading it. */
     void promote(){
         if(closed)return;
@@ -114,23 +124,36 @@ public final class DynamicReader {
         }
     }
     private void ready(WebView view,String url){
-        if(!ended&&navigation.ready(url,view.getUrl())&&attempts==0)inspect();
+        if(!ended&&navigation.ready(url,view.getUrl()))scheduleInspection(attempts==0?0:1200);
+    }
+    private void scheduleInspection(long delay){
+        if(ended||snapshotPending)return;
+        handler.removeCallbacks(inspectTask);handler.postDelayed(inspectTask,delay);
+    }
+    private void snapshotExpired(){
+        if(ended||!snapshotPending)return;
+        // Retry only the local snapshot, not the page/network request. Keep the
+        // original overall deadline and discard any abandoned late callback.
+        snapshotTicket++;snapshotPending=false;scheduleInspection(0);
     }
     private void inspect() {
-        if(ended)return;
-        if(navigation.pending()){handler.postDelayed(this::inspect,1200);return;}
-        attempts++;
+        if(ended||snapshotPending)return;
+        if(web.getUrl()==null||"about:blank".equals(web.getUrl())){scheduleInspection(1200);return;}
         if(!expectedSource(web.getUrl())) { fail("来源跳转到登录、其他问题或不支持的页面，请重新读取"); return; }
         final long revision=navigation.revision();
         final boolean requestedExplicit=explicitReading;
+        final long ticket=++snapshotTicket;snapshotPending=true;
+        handler.postDelayed(snapshotTimeout,2500);
         web.evaluateJavascript(SourceSnapshot.script(item.source),raw->{
-            if(ended)return;
+            if(ended||ticket!=snapshotTicket)return;
+            handler.removeCallbacks(snapshotTimeout);
             parser.execute(()->{
-            Document parsed=null;boolean wrongPage=false;
+            Document parsed=null;boolean wrongPage=false,documentReady=false;String documentUrl="";
             try {
                 Object value=new JSONTokener(raw).nextValue();
                 if(value instanceof String) {
                     org.json.JSONObject payload=new org.json.JSONObject((String)value);
+                    documentUrl=payload.optString("url");documentReady=payload.optBoolean("ready",true);
                     wrongPage=!expectedSource(payload.optString("url"));
                     if(!wrongPage&&!payload.isNull("html")) {
                         String html=payload.getString("html");
@@ -149,12 +172,19 @@ public final class DynamicReader {
                     }
                 }
             } catch(Exception ignored) {}
-            Document doc=parsed;boolean wrongSource=wrongPage;
+            Document doc=parsed;boolean wrongSource=wrongPage,readyDocument=documentReady;String sampledUrl=documentUrl;
             String snapshot=doc==null?"":DocumentFingerprint.of(doc);
             handler.post(()->{
-                if(ended)return;
-                if(!navigation.current(revision)){lastSnapshot="";handler.postDelayed(this::inspect,1200);return;}
-                if(requestedExplicit!=explicitReading){lastSnapshot="";handler.post(this::inspect);return;}
+                if(ended||ticket!=snapshotTicket)return;
+                snapshotPending=false;
+                // Some WebViews omit completion events while a subresource is stuck.
+                // Only the current, ready document may satisfy a pending navigation;
+                // a snapshot from the prior page cannot clear the navigation fence.
+                if(!readyDocument||!sampledUrl.equals(web.getUrl())){scheduleInspection(1200);return;}
+                if(navigation.pending())navigation.ready(sampledUrl,web.getUrl());
+                if(!navigation.current(revision)){lastSnapshot="";scheduleInspection(1200);return;}
+                attempts++;
+                if(requestedExplicit!=explicitReading){lastSnapshot="";scheduleInspection(0);return;}
                 if(wrongSource||!expectedSource(web.getUrl())) { fail("来源跳转到登录、其他问题或不支持的页面，请重新读取");return; }
                 if(item.source==Source.TIEBA&&TiebaTopic.isTopic(item.url)&&topicPostUrl.isEmpty()){
                     Item target=doc==null?null:TiebaTopic.target(item,doc.related);
@@ -175,7 +205,7 @@ public final class DynamicReader {
                 // An empty/failed snapshot breaks consecutiveness too.
                 lastSnapshot=snapshot;
             if(attempts>=attemptLimit) { if(best!=null)finish(best); else fail("页面未提供可提取正文，可打开来源页确认后重试"); }
-            else handler.postDelayed(this::inspect,1200);
+            else scheduleInspection(1200);
             });
             });
         });

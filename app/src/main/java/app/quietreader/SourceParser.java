@@ -100,6 +100,7 @@ public final class SourceParser {
         return result;
     }
     private static Document parseArticle(Source source,org.jsoup.nodes.Document d,String url,boolean explicitReading){
+        ReadingContent.prune(d);if(source==Source.SSPAI)ReadingContent.sspai(d);
         if(source==Source.BBC)return BbcChineseSource.article(d,url);
         if(source==Source.NYT)return NytChineseSource.article(d,url);
         if(source==Source.HUPU){Document structured=HupuDiscussion.article(d,url);if(structured!=null)return structured;}
@@ -141,7 +142,7 @@ public final class SourceParser {
             case WEIBO: selector=".card-wrap .txt, .weibo-text, [class*=detail_wbtext]"; break;
             case CLS: selector="section.content-box > .content"; break;
             case V2EX: selector=".topic_content,.reply_content"; break;
-            case SSPAI: selector=".article__main__content,.ss__article__body"; break;
+            case SSPAI: selector=".post__body__extend__item,.article__main__content,.ss__article__body"; break;
             case IFANR: selector="article.c-article-content"; break;
             case ITHOME: selector="#paragraph.post_content"; break;
             case THEPAPER: selector="#quiet-paper-body"; break;
@@ -242,7 +243,7 @@ public final class SourceParser {
         return result;
     }
     static boolean appendRegion(Document result,Element root,String id,String label,boolean answer,String base){
-        Element clean=root.clone();
+        Element clean=root.clone();ReadingContent.prune(clean);
         boolean media=!clean.select(VideoPolicy.PLAYERS).isEmpty();
         ReaderMedia.position(result,clean);
         clean.select("script,style,iframe,video,audio,form,button,input,textarea,nav,aside,.recommend,.advertisement,.ad,.comment-content,.reply-list,.tts-broadcast,"+VideoPolicy.PLAYERS).remove();

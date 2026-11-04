@@ -28,6 +28,7 @@ final class DiscoveryController implements AutoCloseable {
     private final Activity activity;
     private final Listener listener;
     private final ExecutorService storage=Executors.newSingleThreadExecutor();
+    private volatile long searchRequest;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final FeedStore store;
     private final HotSourceCollector collector;
@@ -101,7 +102,7 @@ final class DiscoveryController implements AutoCloseable {
             if(!readiness.complete(target,this::bodyScope,System.currentTimeMillis(),cacheAge())){tryAdmission();return;}
             boolean anchor=admissionAnchor;Runnable drawn=afterAdmission;admission=null;afterAdmission=()->{};
             if(explicitRefreshRunning){this.anchor="";position=0;offset=0;listener.newPresentation();}
-            List<Item> publishedItems=new ArrayList<>();for(FeedStore.Row row:target)publishedItems.add(row.candidate.readerItem());disk.publishItems(publishedItems);
+
             accepted.readyCount=target.size();publish(accepted,anchor);listener.beforeFeedDraw(drawn);
             if(bodySupplyQueued){cancelBodySupply();queueBodySupply();}
         });
@@ -133,6 +134,7 @@ final class DiscoveryController implements AutoCloseable {
     private final Runnable preparedSupply=this::flushBodySupply;
     private long prefetchEpoch,spaceCheckedAt;
     private String cacheBatchKey="";
+    private boolean cachePublicationChanged;
     private DataStorageBudget.FreeSpace storageSpace;
     private final ActionPrefetchBudget prefetchBudget=new ActionPrefetchBudget();
     private RecommendationPolicy.Watch cachePolicy;
@@ -223,6 +225,21 @@ final class DiscoveryController implements AutoCloseable {
             return read(id);
         },loaded->{ready=true;accept(loaded,false);readSources();readInterestSetup();maybeStart();if(!loading)scheduleRecommendation(false);});
     }
+    /** Search the entire enabled active pool, including read and not-yet-presented rows.
+     * No unread(), home batch, current source filter, collection, or model work here. */
+    void searchPool(String query,Consumer<HotPoolSearch.Result> then,Runnable failure){
+        if(closed)return;long request=++searchRequest;
+        storage.execute(()->{
+            if(request!=searchRequest)return;
+            try{
+                List<FeedStore.Row> pool=HotPoolSearch.pool(store.candidates(5000,0),store.profile(System.currentTimeMillis()).getJSONArray("feedback"));
+                if(request!=searchRequest)return;
+                HotPoolSearch.Result result=HotPoolSearch.search(pool,query);
+                main.post(()->{if(!closed&&request==searchRequest)then.accept(result);});
+            }catch(Exception unavailable){main.post(()->{if(!closed&&request==searchRequest)failure.run();});}
+        });
+    }
+    void cancelSearch(){searchRequest++;}
     private <T>void work(Callable<T> operation,Consumer<T> then){
         work(operation,then,()->true);
     }
@@ -269,6 +286,7 @@ final class DiscoveryController implements AutoCloseable {
     }
     private void publish(Snapshot next,boolean keepAnchor){
         if(next.info==null)return;snapshot=next.id;allRows=new ArticleReadHistory(activity,ArticleReadHistory.database(activity,activity.getIntent().getStringExtra("test_database"))).unread(next.rows);sourceFilter=SourceFilter.source(next.info.optString("filter"));List<FeedStore.Row> eligible=SourceFilter.apply(allRows,sourceFilter);rows=FeedBatch.first(eligible,next.readyCount>=0?Math.min(next.readyCount,listener.feedCapacity(eligible)):listener.feedCapacity(eligible));visibleMode=next.info.optString("mode");newest="newest".equals(visibleMode);visibleSourceVersion=next.info.optLong("sourceVersion");visibleProfileVersion=next.info.optLong("profileVersion");
+        List<Item> publishedItems=new ArrayList<>();for(FeedStore.Row row:rows)publishedItems.add(row.candidate.readerItem());new ArticleDiskCache(activity).publishItems(publishedItems);cachePublicationChanged=true;
         if(keepAnchor){int found=-1;for(int n=0;n<rows.size();n++)if(EventGroups.matches(rows.get(n),anchor)){found=n;break;}position=found<0?Math.min(position,Math.max(0,rows.size()-1)):found;}
         else{position=0;String savedAnchor=next.info.optString("anchor");for(int n=0;n<rows.size();n++)if(EventGroups.matches(rows.get(n),savedAnchor)){position=n;break;}offset=next.info.optInt("offset");}
         pending=0;long accepted=snapshot;boolean balanced="all".equals(sourceFilter)&&!newest;List<FeedStore.Row> delivered=new ArrayList<>(rows);work(()->{store.activateSnapshot(accepted);store.recordPresentation(delivered,System.currentTimeMillis(),balanced);return null;},ignored->{});
@@ -597,15 +615,23 @@ final class DiscoveryController implements AutoCloseable {
         if(!autoRefresh||closed||!foreground||!feedPage||(rows.isEmpty()&&admission==null)||ReaderStartup.pending())return;
         StringBuilder identity=new StringBuilder();Set<String> keep=new HashSet<>();List<Item> retainedItems=new ArrayList<>();
         for(FeedStore.Row row:cacheRows()){Item item=row.candidate.readerItem();identity.append(item.source.name()).append('|').append(item.url).append('@').append(ArticleVersion.hash(item)).append('\n');keep.add(item.url);retainedItems.add(item);}
-        String key=HotCandidate.hash(identity.toString());if(!force&&key.equals(cacheBatchKey))return;boolean grant=force||cacheBatchKey.isEmpty();cacheBatchKey=key;
+        String key=HotCandidate.hash(identity.toString());if(!force&&key.equals(cacheBatchKey)){
+            // Publishing releases the previous screen's disk pins even when
+            // the prefetch window is unchanged. Prune without renewing its lease.
+            if(cachePublicationChanged){cachePublicationChanged=false;retainCachedBodies(retainedItems,keep,false);}return;
+        }
+        boolean grant=force||cacheBatchKey.isEmpty();cacheBatchKey=key;cachePublicationChanged=false;
         // Replanning must not restart a still-eligible slow acquisition on each
         // language/source callback. offer() cancels only bodies outside the new window.
         prefetchEpoch++;main.removeCallbacks(preparedImages);main.removeCallbacks(prefetch);imagePreloader.pause();
         if(grant){prefetchBudget.reserve(SystemClock.elapsedRealtime(),FeedReserve.CAPACITY);watchCachePolicy();armPrefetchExpiry();}
-        Repository cache=new Repository(activity);ArticleDiskCache.Retention retained=cache.retainItems(retainedItems);cache.close();
-        Runnable pruneImages=ReaderImages.shared.retainBatch(keep);
-        storage.execute(()->{try{new ArticleDiskCache(activity).pruneBatch(retained);pruneImages.run();}catch(RuntimeException ignored){/* Derivative cleanup must not undo the accepted screen. */}});
+        retainCachedBodies(retainedItems,keep,true);
         main.post(prefetch);
+    }
+    private void retainCachedBodies(List<Item> retainedItems,Set<String> keep,boolean retainImages){
+        Repository cache=new Repository(activity);ArticleDiskCache.Retention retained=cache.retainItems(retainedItems);cache.close();
+        Runnable pruneImages=retainImages?ReaderImages.shared.retainBatch(keep):()->{};
+        storage.execute(()->{try{new ArticleDiskCache(activity).pruneBatch(retained);pruneImages.run();}catch(RuntimeException ignored){/* Derivative cleanup must not undo the accepted screen. */}});
     }
     void viewport(int first){prefetchEpoch++;imagePreloader.pause();viewport=Math.max(0,first);main.removeCallbacks(prefetch);if(autoRefresh&&feedPage&&foreground&&!interacting&&!closed)main.postDelayed(prefetch,650);}
     String handoff(Item item){
@@ -679,7 +705,8 @@ final class DiscoveryController implements AutoCloseable {
     }
     private void offerPrefetch(){
         if(!canPrefetch())return;
-        List<Item> window=new ArrayList<>();for(FeedStore.Row row:admissionPool())window.add(row.candidate.readerItem());for(int n:cacheWindow.positions(rows.size(),viewport,visibleCount,SystemClock.elapsedRealtime()))window.add(rows.get(n).candidate.readerItem());
+        List<Item> window=new ArrayList<>();for(int n:cacheWindow.positions(rows.size(),viewport,visibleCount,SystemClock.elapsedRealtime()))window.add(rows.get(n).candidate.readerItem());
+        for(FeedStore.Row row:admissionPool())window.add(row.candidate.readerItem());
         for(FeedStore.Row row:reserve.future())window.add(row.candidate.readerItem());
         imagePreloader.offer(window,rows.size());preloader.offer(window,FeedReserve.CAPACITY,true);
     }

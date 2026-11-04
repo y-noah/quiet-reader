@@ -1,6 +1,7 @@
 package app.quietreader;
 
 import android.app.*;
+import app.quietreader.discovery.FeedBatch;
 import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
@@ -32,6 +33,34 @@ final class ReleasePhoneKeyReadProbe {
     private void texts(View view,List<String> out){if(view instanceof TextView)out.add(((TextView)view).getText().toString());if(view instanceof ViewGroup)for(int n=0;n<((ViewGroup)view).getChildCount();n++)texts(((ViewGroup)view).getChildAt(n),out);}
     private long feedback(){try(SQLiteDatabase db=SQLiteDatabase.openDatabase(test.getTargetContext().getDatabasePath("personalized-hot-topics-v1.db").getPath(),null,SQLiteDatabase.OPEN_READONLY);Cursor cursor=db.rawQuery("SELECT COUNT(*) FROM feedback",null)){return cursor.moveToFirst()?cursor.getLong(0):0;}}
     private JSONObject snapshot(WebView web)throws Exception{CountDownLatch done=new CountDownLatch(1);String[] value={"null"};ui(()->{boolean was=web.getSettings().getJavaScriptEnabled();web.getSettings().setJavaScriptEnabled(true);web.evaluateJavascript("JSON.stringify({parts:document.querySelectorAll('main .part').length,chars:(document.querySelector('main')?.textContent||'').length,images:document.querySelectorAll('main img').length,overflow:document.documentElement.scrollWidth>innerWidth+2})",result->{web.getSettings().setJavaScriptEnabled(was);value[0]=result;done.countDown();});});if(!done.await(3,TimeUnit.SECONDS))throw new IllegalStateException("reader DOM timed out");Object result=new JSONTokener(value[0]).nextValue();return result instanceof String?new JSONObject((String)result):new JSONObject();}
+    void verifyBaiduSummary(){
+        try{
+            if(!test.getTargetContext().getPackageName().equals("app.quietreader")||!Build.MODEL.equals("PHY110"))throw new IllegalStateException("authorized phone only");
+            home=test.startActivitySync(new Intent().setClassName(test.getTargetContext().getPackageName(),"app.quietreader.DiscoveryActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
+            ui(()->home.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
+            String title="长鑫科技、寒武纪发声",url="https://www.baidu.com/s?wd="+java.net.URLEncoder.encode(title,"UTF-8")+"&sa=fyb_news&rsv_dl=fyb_news";
+            String item=new JSONObject().put("source","BAIDU").put("title",title).put("url",url).put("detail","").toString();
+            for(int repeat=1;repeat<=2;repeat++){
+                long start=SystemClock.elapsedRealtime();reader=test.startActivitySync(new Intent().setClassName(test.getTargetContext().getPackageName(),"app.quietreader.MainActivity").putExtra("discovery_item",item).putExtra("direct_reader",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                ui(()->reader.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON));
+                WebView[] page={null};JSONObject state=new JSONObject();long until=SystemClock.elapsedRealtime()+30000;
+                do{ui(()->page[0]=reading(reader.getWindow().getDecorView()));if(page[0]!=null){state=snapshot(page[0]);if(state.optInt("parts")>0&&state.optInt("chars")>80)break;}Thread.sleep(50);}while(SystemClock.elapsedRealtime()<until);
+                check(state.optInt("parts")>0&&state.optInt("chars")>80,"original Baidu topic has actual reader text");
+                if(page[0]==null)throw new IllegalStateException("reader absent");
+                CountDownLatch done=new CountDownLatch(1);String[] measured={"null"};
+                ui(()->page[0].evaluateJavascript("JSON.stringify({wholeLinks:[...document.querySelectorAll('main .part p')].filter(p=>[...p.querySelectorAll('a')].some(a=>a.textContent.trim()===p.textContent.trim())).length,paragraphs:document.querySelectorAll('main .part p').length,title:document.querySelector('h1')?.textContent})",value->{measured[0]=value;done.countDown();}));
+                if(!done.await(3,TimeUnit.SECONDS))throw new IllegalStateException("DOM check timed out");JSONObject layout=new JSONObject((String)new JSONTokener(measured[0]).nextValue());
+                check(layout.optInt("paragraphs")>0&&layout.optInt("wholeLinks",-1)==0,"Baidu summary paragraphs are ordinary text, not whole-body hyperlinks");
+                check(layout.optString("title").contains(title),"verified original user-reported topic");
+                report.append("BAIDU repeat=").append(repeat).append(" readyMs=").append(SystemClock.elapsedRealtime()-start).append(" layout=").append(layout).append('\n');
+                Bundle progress=new Bundle();progress.putString("stream","BAIDU repeat="+repeat+" layout="+layout+"\n");test.sendStatus(1,progress);
+                if(repeat==2){android.graphics.Bitmap screen=test.getUiAutomation().takeScreenshot();if(screen!=null){try(FileOutputStream out=new FileOutputStream(new File(test.getTargetContext().getExternalFilesDir(null),"phone-baidu-summary.png"))){screen.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}finally{screen.recycle();}}}
+                ui(reader::finish);reader=null;test.waitForIdleSync();
+            }
+        }catch(Throwable error){failures++;report.append("ERROR ").append(error).append('\n');}
+        finally{ui(()->{if(reader!=null)reader.finish();if(home!=null)home.finish();});}
+        report.append("checks=").append(checks).append(" failures=").append(failures).append('\n');Bundle result=new Bundle();result.putString("stream",report.toString());test.finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);
+    }
     void diagnoseFailedHupu(){
         try{
             if(!test.getTargetContext().getPackageName().equals("app.quietreader")||!Build.MODEL.equals("PHY110"))throw new IllegalStateException("only authorized phone");
@@ -83,9 +112,9 @@ final class ReleasePhoneKeyReadProbe {
         try{
             if(!test.getTargetContext().getPackageName().equals("app.quietreader")||!Build.MODEL.equals("PHY110"))throw new IllegalStateException("only authorized original phone app");
             long before=feedback();home=test.startActivitySync(new Intent().setClassName(test.getTargetContext().getPackageName(),"app.quietreader.DiscoveryActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
-            await(()->{list=find(home.getWindow().getDecorView(),ListView.class);return home.hasWindowFocus()&&list!=null&&list.getCount()==15&&list.getChildCount()>0;},"home did not show fifteen real topics");
+            await(()->{list=find(home.getWindow().getDecorView(),ListView.class);return home.hasWindowFocus()&&list!=null&&list.getCount()==FeedBatch.SIZE&&list.getChildCount()>0;},"home did not show twenty real topics");
             List<Integer> choices=new ArrayList<>();Set<String> sources=new HashSet<>();ui(()->{
-                for(int position=0;position<15&&choices.size()<3;position++){List<String> labels=new ArrayList<>();texts(list.getAdapter().getView(position,null,list),labels);String source="";for(String label:labels)if(label.contains("获取于")||label.contains("来源时间"))source=label.split(" · ")[0];if(!source.isEmpty()&&sources.add(source)){choices.add(position);report.append("SELECT position=").append(position).append(" source=").append(source).append(" title=").append(labels.isEmpty()?"":labels.get(0)).append('\n');}}
+                for(int position=0;position<FeedBatch.SIZE&&choices.size()<3;position++){List<String> labels=new ArrayList<>();texts(list.getAdapter().getView(position,null,list),labels);String source="";for(String label:labels)if(label.contains("获取于")||label.contains("来源时间"))source=label.split(" · ")[0];if(!source.isEmpty()&&sources.add(source)){choices.add(position);report.append("SELECT position=").append(position).append(" source=").append(source).append(" title=").append(labels.isEmpty()?"":labels.get(0)).append('\n');}}
                 for(int fallback:new int[]{14,7,0})if(choices.size()<3&&!choices.contains(fallback))choices.add(fallback);
             });
             for(int position:choices)open(position,false);open(choices.get(choices.size()-1),true);

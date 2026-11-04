@@ -5,6 +5,45 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.*;
 
 public class StructuredSourcesTest {
+    @Test public void mobileSummaryNavigationWrapperRendersAsOrdinaryProse(){
+        String body="近期，面对市场阶段性波动，公司表示持续推进产品结构升级与技术迭代。";
+        String html="<div id=results><div tpl=rel_brief_head><a class=summary_24I7N href='https://baijiahao.baidu.com/s?id=1880827045919051248'>"+body+"</a></div></div>";
+        Document doc=SourceParser.article(Source.BAIDU,html,"https://www.baidu.com/s?wd=test");
+        assertEquals(body,doc.blocks.get(0).value);assertTrue(doc.blocks.get(0).inlineLinks.isEmpty());
+        org.jsoup.nodes.Document rendered=org.jsoup.Jsoup.parse(ReaderHtml.render(doc,Source.BAIDU,19));
+        assertEquals(body,rendered.selectFirst(".part p").text());assertTrue(rendered.select(".part p a").isEmpty());
+    }
+    @Test public void persistedWholeSummaryLinkIsRepairedAndRealCitationsSurvive()throws Exception{
+        Document doc=new Document();doc.url="https://www.baidu.com/s?wd=test";Section section=new Section("search-intro","来源摘要",false);
+        String whole="这段摘要被来源整个包在跳转容器中。",partial="根据公告，事件进展如下。";
+        section.blocks.add(new Block("text",whole,java.util.List.of(),java.util.List.of(new InlineLink(0,whole.length(),"https://example.org/wrapper"))));
+        section.blocks.add(new Block("text",partial,java.util.List.of(),java.util.List.of(new InlineLink(2,4,"https://example.org/citation"))));doc.sections.add(section);doc.blocks.addAll(section.blocks);
+        Document restored=ReadingHistory.decode(ReadingHistory.encode(doc));
+        assertEquals(2,restored.blocks.size());assertTrue(restored.blocks.get(0).inlineLinks.isEmpty());assertEquals(1,restored.blocks.get(1).inlineLinks.size());
+        String html=ReaderHtml.render(restored,Source.BAIDU,19);assertFalse(html.contains("https://example.org/wrapper"));assertTrue(html.contains("https://example.org/citation"));
+        doc.url="https://sspai.com/post/123";Document other=ReadingHistory.decode(ReadingHistory.encode(doc));assertEquals(1,other.blocks.get(0).inlineLinks.size());
+    }
+    @Test public void capturedMobileEventBriefProducesReusableText()throws Exception{
+        String html;try(java.io.InputStream input=getClass().getResourceAsStream("/fixtures/baidu-mobile-event-brief-20261103.html")){html=new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
+        Document doc=SourceParser.article(Source.BAIDU,html,"https://www.baidu.com/s?wd=test");
+        assertTrue(doc.hasContent());assertEquals(1,doc.sections.size());assertTrue(doc.blocks.get(0).value.contains("6750万余元"));assertTrue(doc.related.isEmpty());
+    }
+    @Test public void mobileSearchKeepsTheEventBriefAndRejectsUnrelatedCards(){
+        String html="<title>事件 - 百度搜索</title><div id=results><div class=result tpl=rel_brief_head><article><a class='summary_24I7N cos-block'>法院一审公开宣判案件，依法作出判决。这是来源返回的事件摘要。</a></article></div><div class=result tpl=rel_entity><div class=abstract_7LFuU>人物履历</div></div><div class=result tpl=recommend_list_san><a href='https://example.org'>推荐文章</a></div></div>";
+        Document doc=SourceParser.article(Source.BAIDU,html,"https://www.baidu.com/s?wd=test");
+        assertTrue(doc.hasContent());assertEquals(1,doc.sections.size());
+        String rendered=ReaderHtml.render(doc,Source.BAIDU,19);
+        assertTrue(rendered.contains("法院一审公开宣判案件"));assertFalse(rendered.contains("人物履历"));assertFalse(rendered.contains("推荐文章"));
+        assertTrue(doc.notice.contains("不是新闻原文"));
+    }
+    @Test public void mobileSearchFallbackOnlyUsesAnOrganicTextSummary(){
+        String html="<div id=results><div tpl=rel_entity><div class=abstract_person>人物履历</div></div><div tpl=vid_recommend><span class=abstract_video>视频摘要</span></div><div tpl=www_index data-tuiguang=1><div class=c-abstract>广告</div></div><div tpl=www_index><div class=c-abstract>这才是第一条自然搜索结果摘要</div></div><div tpl=www_index><div class=c-abstract>后续推荐</div></div></div>";
+        Document doc=SourceParser.article(Source.BAIDU,html,"https://www.baidu.com/s?wd=test");
+        assertEquals(1,doc.blocks.size());assertEquals("这才是第一条自然搜索结果摘要",doc.blocks.get(0).value);assertTrue(doc.blocks.get(0).inlineLinks.isEmpty());
+    }
+    @Test public void mobileSearchDoesNotInventABodyFromEntitiesOrChallengePages(){
+        for(String html:new String[]{"<title>百度安全验证</title><div>网络不给力，请稍后重试</div>","<div id=results><div tpl=rel_entity><div class=abstract_person>人物履历</div></div></div>"})assertFalse(SourceParser.article(Source.BAIDU,html,"https://www.baidu.com/s?wd=test").hasContent());
+    }
     @Test public void desktopLoadedNestedRepliesAreSeparateAndUseStableSubPostIdentity(){
         String html="<div id=j_p_postlist><div class=l_post><a class=d_name>楼主</a><div class=d_post_content id=post_content_1>主帖</div><ul><li class=lzl_single_post data-field='{\"spid\":101}'><a class=j_user_card>甲</a><span class=lzl_content_main>楼中楼内容</span></li><li class=lzl_single_post data-field='{\"spid\":102}'><a class=j_user_card>乙</a><span class=lzl_content_main>楼中楼内容</span></li></ul></div></div>";
         Document doc=SourceParser.article(Source.TIEBA,html,"https://tieba.baidu.com/p/123");
@@ -20,16 +59,24 @@ public class StructuredSourcesTest {
         String html="<div class=pc-pb-box><div class=l_post><a class=d_name>楼主</a><div class=d_post_content id=post_content_1>主帖<li class=lzl_single_post data-field='{\"spid\":101}'><a class=j_user_card>甲</a><span class=lzl_content_main>子回复内容</span></li></div></div><div class=pc-pb-reply-list><div class=pb-comment-item><a class=head-name>乙</a><div class=comment-content><div class=pb-rich-text>现代结构回复</div></div></div></div></div>";
         Document doc=SourceParser.article(Source.TIEBA,html,"https://tieba.baidu.com/p/123");assertEquals(3,doc.sections.size());assertFalse(doc.sections.get(0).blocks.stream().anyMatch(b->b.value.contains("子回复内容")));assertTrue(doc.sections.get(2).label.contains("乙"));
     }
-    @Test public void searchResultsRemainSummariesWithTraceableLinks(){
-        String html="<title>话题_百度搜索</title><div id=content_left><div><div class=rel-baikan-content><p>来源介绍</p><button>收听</button></div></div><div><h3><a href='https://www.cls.cn/detail/12'>结果标题</a></h3><div class=c-abstract>只是摘要</div><script>秘密脚本</script></div><div class=ec-tuiguang><h3><a href='https://example.com/ad'>广告</a></h3></div></div><aside>侧栏推荐</aside>";
+    @Test public void searchShowsOnlyTopicIntroductionWithoutARecommendedLinkDirectory(){
+        String html="<title>话题_百度搜索</title><div id=content_left><div><div class=rel-baikan-content><p>来源介绍</p><button>收听</button></div></div><div><h3><a href='https://www.cls.cn/detail/12'>结果标题</a></h3><div class=c-abstract>只是摘要</div></div></div><aside>侧栏推荐</aside>";
         Document d=SourceParser.article(Source.BAIDU,html,"https://www.baidu.com/s?wd=test");
-        assertEquals("话题",d.title);assertEquals(2,d.sections.size());assertTrue(d.notice.contains("不是新闻原文"));
-        String rendered=ReaderHtml.render(d,Source.BAIDU,19,false,java.util.Set.of(d.sections.get(0).id,d.sections.get(1).id),false);
-        assertTrue(rendered.contains("https://www.cls.cn/detail/12"));assertTrue(rendered.contains("只是摘要"));
-        assertFalse(rendered.contains("秘密脚本"));assertFalse(rendered.contains("侧栏推荐"));assertFalse(rendered.contains(">广告<"));
-        assertFalse(d.sections.stream().anyMatch(ReaderHtml::discussion));
-        String immediate=ReaderHtml.render(d,Source.BAIDU,19);
-        assertTrue(immediate.contains("href='https://www.cls.cn/detail/12'"));assertFalse(immediate.contains("toggle?index=1"));assertFalse(immediate.contains("jump?index="));
+        assertEquals("话题",d.title);assertEquals(1,d.sections.size());assertTrue(d.notice.contains("不是新闻原文"));
+        String rendered=ReaderHtml.render(d,Source.BAIDU,19);
+        assertTrue(rendered.contains("来源介绍"));assertFalse(rendered.contains("cls.cn/detail/12"));assertFalse(rendered.contains("只是摘要"));assertFalse(rendered.contains("侧栏推荐"));
+    }
+    @Test public void searchWithoutIntroductionHasOnePlainSummaryAndSkipsAds(){
+        String html="<div id=content_left><div class=ec-tuiguang><div class=c-abstract>推广</div></div><div><h3><a href='https://example.org/1'>入口</a></h3><div class=c-abstract>第一条摘要</div></div><div><div class=c-abstract>第二条摘要</div></div></div>";
+        Document d=SourceParser.article(Source.BAIDU,html,"https://www.baidu.com/s?wd=test");
+        assertEquals(1,d.sections.size());assertEquals("第一条摘要",d.blocks.get(0).value);assertTrue(d.blocks.get(0).inlineLinks.isEmpty());
+    }
+    @Test public void oldPersistedSearchDirectoriesAreCleanedOnRestore()throws Exception{
+        Document old=new Document();old.url="https://www.baidu.com/s?wd=test";
+        Section intro=new Section("search-intro","话题介绍",false);intro.blocks.add(new Block("text","介绍"));old.sections.add(intro);
+        Section result=new Section("search-123","搜索结果",false);result.blocks.add(new Block("text","推荐新闻"));old.sections.add(result);old.blocks.addAll(result.blocks);
+        Document restored=ReadingHistory.decode(ReadingHistory.encode(old));
+        assertEquals(1,restored.sections.size());assertEquals("介绍",restored.blocks.get(0).value);
     }
     @Test public void topicPostsAreLinksAndNeverMasqueradeAsComments(){
         String html="<div class=topic-wrapper><h2 class=topic-title>话题</h2><div class=topic-desc>话题介绍</div><ul class=thread-list><li><a class=title href='/p/123'>帖子标题</a><div class=content>帖子摘要</div></li><li><a class=title href='/p/123'>重复帖子</a></li><li><a class=title href='javascript:alert(1)'>不可信入口</a></li></ul></div><div class=recommend>无关推荐</div>";

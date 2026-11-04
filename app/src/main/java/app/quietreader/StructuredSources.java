@@ -23,25 +23,45 @@ final class StructuredSources {
         return result;
     }
     private static void baidu(Element page,Document out){
-        Element content=page.selectFirst("#content_left");if(content==null)return;
-        Element intro=content.selectFirst(".rel-baikan-content");
+        Element content=page.selectFirst("#content_left,#results");if(content==null)return;
+        Element intro=content.selectFirst(".rel-baikan-content,[tpl=rel_brief_head] [class^=summary_]");
         if(intro!=null)SourceParser.appendRegion(out,intro,"search-intro","话题介绍 · 来源摘要",false,out.url);
-        Set<String> seen=new HashSet<>();
-        for(Element row:content.children()){
-            if(out.sections.size()>=31)break;
+        // Search results are discovery/navigation, not the body of this topic.
+        // If no topic introduction exists, retain at most the first result's
+        // plain summary. Never display a directory of recommended article links.
+        if(!out.hasContent())for(Element row:content.children()){
             if(row.hasClass("ec-tuiguang")||row.hasAttr("data-tuiguang"))continue;
-            Element heading=row.selectFirst("h3 a[href],a[href]:has(h3)");if(heading==null)continue;
-            String target=UrlPolicy.normalize(out.url,heading.attr("href")),title=heading.text().trim();
-            if(title.isEmpty()||!ReaderLinks.allowed(target)||!seen.add(target))continue;
-            Element clean=row.clone();clean.select(".rel-baikan-content,button,form,script,style,iframe,video,audio,.cosc-source,.cosc-source-a,.c-tools,.c-gap-top-small").remove();
-            Section section=new Section(identity("search",target),"搜索结果 · 来源摘要",false);
-            section.blocks.add(link(title,target));
-            Element summary=clean.selectFirst(".c-abstract,[class*=abstract],.cosc-abstract");
-            if(summary!=null&&!summary.text().trim().isEmpty())section.blocks.add(new Block("text",summary.text().trim()));
-            out.sections.add(section);out.blocks.addAll(section.blocks);
+            // Mobile entity biographies, videos and recommendation cards are not this event.
+            if(content.id().equals("results")&&!row.attr("tpl").equals("www_index"))continue;
+            Element summary=row.selectFirst(".c-abstract,[class*=abstract],.cosc-abstract,[class^=summary_]");
+            if(summary==null||summary.text().trim().isEmpty())continue;
+            Section section=new Section("search-summary","来源摘要",false);
+            section.blocks.add(new Block("text",summary.text().trim()));out.sections.add(section);out.blocks.addAll(section.blocks);break;
         }
-        out.notice="以下为百度当前搜索页的介绍和结果摘要，不是新闻原文。打开具体内容入口可继续查看；未获取的正文不会当作全文展示。";
+        cleanStoredSearch(out);
     }
+    /** Old search-result caches must not revive the removed link directory. */
+    static void cleanStoredSearch(Document out){
+        if(!UrlPolicy.belongs(Source.BAIDU,out.url)||!"/s".equals(java.net.URI.create(out.url).getPath()))return;
+        java.util.List<Section> old=new ArrayList<>(out.sections);
+        out.sections.removeIf(s->s.id.startsWith("search-")&&!s.id.equals("search-intro")&&!s.id.equals("search-summary"));
+        if(out.sections.isEmpty())for(Section section:old){
+            Block summary=section.blocks.stream().filter(b->b.type.equals("text")&&b.inlineLinks.isEmpty()&&!b.value.trim().isEmpty()).findFirst().orElse(null);
+            if(summary!=null){Section plain=new Section("search-summary","来源摘要",false);plain.blocks.add(summary);out.sections.add(plain);break;}
+        }
+        // Search providers wrap an entire event brief in a navigation link.
+        // Treat that container as prose, including old persisted summaries, while
+        // retaining actual inline citations that cover only part of a paragraph.
+        for(Section section:out.sections)if(section.id.equals("search-intro")||section.id.equals("search-summary"))for(int i=0;i<section.blocks.size();i++){
+            Block block=section.blocks.get(i);
+            if(!block.type.equals("text")||block.inlineLinks.stream().noneMatch(link->link.start==0&&link.end==block.value.length()))continue;
+            List<InlineLink> citations=new ArrayList<>();for(InlineLink link:block.inlineLinks)if(link.start!=0||link.end!=block.value.length())citations.add(link);
+            Block plain=new Block(block.type,block.value,block.inlineImages,citations);plain.imageWidth=block.imageWidth;plain.imageHeight=block.imageHeight;section.blocks.set(i,plain);
+        }
+        out.blocks.clear();for(Section section:out.sections)out.blocks.addAll(section.blocks);
+        out.related.clear();out.notice="以下为百度返回的话题介绍或摘要，不是新闻原文。";
+    }
+
     private static void tiebaTopic(Element page,Document out){
         Element topic=page.selectFirst(".topic-wrapper");if(topic==null)return;
         Element description=topic.selectFirst(".topic-desc");

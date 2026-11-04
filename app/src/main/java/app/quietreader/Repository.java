@@ -113,9 +113,11 @@ public final class Repository {
         return disk.retainBatch(keep);
     }}
     ArticleDiskCache.Retention retainItems(java.util.Collection<Item> items){synchronized(Repository.class){
-        java.util.Map<String,java.util.Set<String>> keep=new java.util.HashMap<>();
-        for(Item item:items)keep.computeIfAbsent(item.url,k->new java.util.HashSet<>()).add(ArticleVersion.hash(item));
-        for(String url:articles.snapshot().keySet()){CachedDocument cached=articles.get(url);if(!keep.containsKey(url)||cached!=null&&!keep.get(url).contains(cached.document.metadataHash)){articles.remove(url);articleTimes.remove(url);articleSessions.remove(url);}}
+        java.util.Set<String> keep=new java.util.HashSet<>();
+        for(Item item:items)keep.add(item.url);
+        // Keep recent same-URL bodies as display fallbacks while exact-version
+        // prefetch continues. Their metadata and acquisition time are unchanged.
+        for(String url:articles.snapshot().keySet())if(!keep.contains(url)){articles.remove(url);articleTimes.remove(url);articleSessions.remove(url);}
         return disk.retainItems(items);
     }}
     public Repository(Context context) { this.context=context.getApplicationContext();disk=new ArticleDiskCache(this.context); scheduleRetiredCleanup(this.context); }
@@ -190,7 +192,7 @@ public final class Repository {
     private void article(Item item,Result<Document> cb,boolean explicitReading){
         if(!item.source.readable()){cb.failure("此平台已移除");return;}
         String cookie=CookieManager.getInstance().getCookie(item.url);
-        String userAgent=SourceSession.userAgent(context,item.source);
+        String userAgent=SourceSession.readingUserAgent(context,item.source);
         long cacheEpoch=articleCacheEpoch();
         String cacheSession=ArticleCookies.fingerprint(item.url,cookie);
         requests.submit(ticket->{

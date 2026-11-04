@@ -17,6 +17,6 @@ final class SourceSnapshot {
                 "for(var i=0;i<buttons.length&&i<20;i++){var b=buttons[i];if(!visible(b))continue;if(!b.__qrExpanded&&/显示全部|展开阅读全文|阅读全文|展开全部/.test(b.textContent)){b.__qrExpanded=true;b.click();}if(b.__qrExpanded&&visible(b)&&!/收起/.test(b.textContent))expanding=true;}":"")+
                 "var gates=document.querySelectorAll('.Modal-wrapper .SignFlow,.Modal .SignFlow,.SignContainer-content'),login=false;for(var j=0;j<gates.length;j++){if(gates[j].getClientRects().length){login=true;break;}}"+
                 (source==Source.TIEBA?TiebaRenderedReplies.script()+TiebaReplyTimes.script():"var replyTimes=null;")+
-                "var html=expanding?null:document.documentElement.outerHTML;return JSON.stringify({url:location.href,replyTimes:replyTimes,expanding:expanding,login:login,html:html!==null&&html.length<4194304?html:null});})()";
+                "var html=expanding?null:document.documentElement.outerHTML;return JSON.stringify({url:location.href,ready:document.readyState!=='loading',replyTimes:replyTimes,expanding:expanding,login:login,html:html!==null&&html.length<4194304?html:null});})()";
     }
 }

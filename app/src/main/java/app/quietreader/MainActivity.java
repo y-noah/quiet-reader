@@ -184,10 +184,7 @@ public final class MainActivity extends Activity {
         if(current==null||readerActions!=null&&readerActions.isShowing())return;
         ReaderActions menu=new ReaderActions(this)
             .add("重新读取",()->{repo.invalidateArticles();forceSourceRead=true;open(current,false);})
-            .add("来源 / 登录",()->login(current))
-            .add("阅读字号",this::fontMenu)
-            .add("外观",this::theme)
-            .add("阅读设置",this::settings);
+            .add("来源 / 登录",()->login(current));
         if(reading!=null&&ReaderHtml.sections(reading).size()>1)menu.add("回答 / 楼层目录",this::sectionMenu);
         if(reading!=null&&reading.topic!=null){menu.add("同话题帖子",this::topicMenu);menu.add("话题来源页",()->login(current,true));}
         readerActions=menu.show();
@@ -199,7 +196,18 @@ public final class MainActivity extends Activity {
         readerActions=choices.show();
     }
     private void dismissReaderActions(){if(readerActions!=null){readerActions.dismiss();readerActions=null;}}
-    private void fontMenu(){new AlertDialog.Builder(this).setTitle("阅读字号").setItems(new String[]{"舒适 · 17","标准 · 19","大字 · 22","特大 · 25"},(d,n)->changeFont(new int[]{17,19,22,25}[n])).show();}
+    static String originalLink(Item item,Document document){
+        if(item==null)return "";
+        String selected=document!=null&&document.url.equals(item.url)?document.sourceUrl():item.selectedTopicPost;
+        if(UrlPolicy.https(selected)&&UrlPolicy.belongs(item.source,selected))return selected;
+        return UrlPolicy.https(item.url)&&UrlPolicy.belongs(item.source,item.url)?item.url:"";
+    }
+    private void shareOriginal(){
+        String link=originalLink(current,reading);if(link.isEmpty())return;
+        Intent send=new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,link);
+        try{startActivity(Intent.createChooser(send,"分享原文链接"));}
+        catch(android.content.ActivityNotFoundException unavailable){Toast.makeText(this,"暂无可用的分享应用",Toast.LENGTH_SHORT).show();}
+    }
     private void frame() {
         dismissReaderActions();closeVideo();
         if(imageOwner!=null&&!imageOwner.matches(current)){imageOwner.close();imageOwner=null;}
@@ -214,6 +222,8 @@ public final class MainActivity extends Activity {
         readerSurface=new FrameLayout(this);root.addView(readerSurface,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout bar=new LinearLayout(this);readerBar=bar;bar.setBackgroundColor(BG);bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.addView(new android.widget.Space(this),new LinearLayout.LayoutParams(0,1,1));
+        ImageButton share=icon(R.drawable.ic_share_outline,"分享原文链接",this::shareOriginal);share.setPadding(dp(14),dp(14),dp(14),dp(14));
+        bar.addView(share,new LinearLayout.LayoutParams(dp(48),dp(48)));
         ImageButton more=icon(R.drawable.ic_more_horiz,"更多选项",()->{});more.setOnClickListener(v->options());
         bar.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));
         readerSurface.addView(bar,new FrameLayout.LayoutParams(-1,dp(48),Gravity.TOP));readerToolbar=new ReaderToolbar(bar);
@@ -271,7 +281,7 @@ public final class MainActivity extends Activity {
         if(bypassDisk)loadArticleAfterCache(item,request);
         else repo.restoreArticle(item,storedDoc->{if(request!=generation)return;if(storedDoc!=null&&usableBody(item,storedDoc))renderCached(storedDoc);else loadArticleAfterCache(item,request);});
     }
-    private boolean usableBody(Item item,Document doc){return ArticleVersion.selected(item,doc)&&ArticleSession.contentCurrent(doc)&&(discoveryCandidate==null||repo.offline()||ArticleVersion.matches(item,doc));}
+    private boolean usableBody(Item item,Document doc){return doc.canPresent()&&ArticleVersion.selected(item,doc)&&ArticleSession.contentCurrent(doc)&&(discoveryCandidate==null||ArticleVersion.readableCached(item,doc,System.currentTimeMillis(),repo.offline()));}
     private Repository.Result<Document> promotedResult(Item item,int request){return new Repository.Result<Document>(){
         public void success(Document doc){if(request==generation)renderSource(item,doc,!doc.filteredVideo&&(doc.hasContent()||doc.unsupportedVideo||doc.filteredVideos>0)?preloader.takeSource():null,false);}
         public void failure(String why){if(request==generation){status("暂时没读到正文",why);content.addView(button("重试",()->open(item,false)));content.addView(button("来源 / 登录",()->login(item)));}}
@@ -358,7 +368,10 @@ public final class MainActivity extends Activity {
             final ReaderImageOwner imageRequests=imageOwner;
             frame(); reading=doc;
             readerStatus=text("",12,MUTED);readerStatus.setPadding(0,0,0,dp(8));readerStatus.setVisibility(View.GONE);readerStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);root.addView(readerStatus);
-            readerWeb=ReaderStartup.take(this);readerWeb.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY); Theme.configureWeb(readerWeb,false); readerWeb.getSettings().setJavaScriptEnabled(false);
+            readerWeb=ReaderStartup.take(this);readerWeb.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY); Theme.configureWeb(readerWeb,false);
+            // Chromium disables native image lazy loading when scripting is off.
+            // This surface loads only our escaped document; its CSP forbids all page scripts.
+            readerWeb.getSettings().setJavaScriptEnabled(true);
             // Blink snapshots this policy when the document is created. Media sources
             // are still attached only by our explicit native play action; source HTML
             // cannot supply scripts, autoplay attributes, or media URLs to this page.
@@ -381,7 +394,7 @@ public final class MainActivity extends Activity {
                 @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest req) {
                     String dest=req.getUrl().toString();
                     if(dest.startsWith(ReaderHtml.ACTION+"toggle?index=")){
-                        try {int n=Integer.parseInt(android.net.Uri.parse(dest).getQueryParameter("index"));List<Section> parts=ReaderHtml.sections(reading);if(n>=0&&n<parts.size()){String id=parts.get(n).id;if(!expanded.add(id))expanded.remove(id);pendingAnchor=n;reloadReader(reading);}}catch(Exception ignored){}
+                        try {toggleSection(Integer.parseInt(android.net.Uri.parse(dest).getQueryParameter("index")));}catch(Exception ignored){}
                     } else if(dest.startsWith(ReaderHtml.ACTION+"jump?index=")){
                         try{jumpTo(Integer.parseInt(android.net.Uri.parse(dest).getQueryParameter("index")));}catch(Exception ignored){}
                     } else if(dest.startsWith(ReaderHtml.ACTION+"post?index=")){
@@ -597,8 +610,23 @@ public final class MainActivity extends Activity {
         out.putString("history",Models.toJson(new ArrayList<>(history)).toString());
         super.onSaveInstanceState(out);
     }
-    private void theme(){new AlertDialog.Builder(this).setTitle("外观").setSingleChoiceItems(new String[]{"跟随系统","浅色","深色"},Theme.mode(this),(d,n)->{getSharedPreferences("appearance",0).edit().putInt("mode",n).apply();d.dismiss();recreate();}).show();}
-    private void settings(){startActivityForResult(new Intent(this,SettingsActivity.class),101);}
+    private void toggleSection(int index){
+        if(reading==null||readerWeb==null)return;
+        List<Section> parts=ReaderHtml.sections(reading);if(index<0||index>=parts.size())return;
+        String id=parts.get(index).id;if(!expanded.add(id))expanded.remove(id);
+        cancelDeferredContinuation();interruptViewportRestore();closeVideo();
+        suppressAutoUntil=System.currentTimeMillis()+1500;sampledViewport=null;sampledViewportPage="";
+        String next=renderedReaderHtml(reading);
+        String fragment=org.jsoup.Jsoup.parse(next).getElementById("part-"+index).outerHtml();
+        WebView web=readerWeb;int revision=readerRevision;
+        // Replace only this section: other answers, decoded images and the page's
+        // navigation identity stay in place. Folding reveals the next preview.
+        readerScript(web,"(()=>{const id='part-"+index+"',old=document.getElementById(id),template=document.createElement('template');template.innerHTML="+org.json.JSONObject.quote(fragment)+";const fresh=template.content.firstElementChild;if(!old||!fresh)return false;const top=old.getBoundingClientRect().top;old.replaceWith(fresh);scrollBy(0,fresh.getBoundingClientRect().top-Math.max(60,top));return true})()",result->{
+            if(web!=readerWeb||revision!=readerRevision)return;
+            if(!"true".equals(result)){pendingAnchor=index;reloadReader(reading);return;}
+            readerHtml=next;settleReaderImages(web,null);scheduleViewportSample();rememberReading();
+        });
+    }
     private void sectionMenu(){
         List<Section> parts=ReaderHtml.sections(reading);String[] labels=new String[parts.size()];
         for(int n=0;n<parts.size();n++){Section part=parts.get(n);String preview="";for(Block block:part.blocks)if(block.type.equals("text")){preview=block.value.replace('\n',' ');break;}labels[n]=(n+1)+" · "+part.label+"  "+preview.substring(0,Math.min(32,preview.length()));}
@@ -620,8 +648,9 @@ public final class MainActivity extends Activity {
         closeVideo();
         suppressAutoUntil=System.currentTimeMillis()+1500;
         sampledViewport=null;sampledViewportPage="";viewportRestoreRunning=false;preloadHandler.removeCallbacks(sampleViewport);
-        if(readerWeb!=null){readerWeb.getSettings().setTextZoom(Math.round(font*100f/19));readerHtml=ReaderHtml.render(doc,current.source,19,dark,expanded,loadingMore,font,Theme.style(this)).replace("<main>","<main style=\"padding-top:60px\">");readerPageUrl=ReaderHtml.ACTION+"?render="+System.nanoTime()+"-"+(++readerRevision)+(!streamAnchor.isEmpty()?"#"+streamAnchor:pendingAnchor>=0?"#part-"+pendingAnchor:"");pendingAnchor=-1;readerWeb.loadUrl(readerPageUrl);}
+        if(readerWeb!=null){readerWeb.getSettings().setTextZoom(Math.round(font*100f/19));readerHtml=renderedReaderHtml(doc);readerPageUrl=ReaderHtml.ACTION+"?render="+System.nanoTime()+"-"+(++readerRevision)+(!streamAnchor.isEmpty()?"#"+streamAnchor:pendingAnchor>=0?"#part-"+pendingAnchor:"");pendingAnchor=-1;readerWeb.loadUrl(readerPageUrl);}
     }
+    private String renderedReaderHtml(Document doc){return ReaderHtml.render(doc,current.source,19,dark,expanded,loadingMore,font,Theme.style(this)).replace("<main>","<main style=\"padding-top:60px\">");}
     private void settleReaderImages(WebView web,String failedUrl){
         if(web!=readerWeb||reading==null||wasStopped||isFinishing()||isDestroyed()||failedUrl!=null&&!reading.containsImage(failedUrl))return;
         String page=readerPageUrl;int revision=readerRevision;
@@ -634,7 +663,7 @@ public final class MainActivity extends Activity {
         java.util.function.Consumer<String> finish=value->{
             if(!completed.compareAndSet(false,true))return;
             int remaining=readerScripts.getOrDefault(web,1)-1;
-            if(remaining<=0){readerScripts.remove(web);if(web==readerWeb)web.getSettings().setJavaScriptEnabled(inlineVideoRequests!=null);}else readerScripts.put(web,remaining);
+            if(remaining<=0){readerScripts.remove(web);if(web==readerWeb)web.getSettings().setJavaScriptEnabled(true);}else readerScripts.put(web,remaining);
             callback.accept(value);
         };
         web.evaluateJavascript(script,finish::accept);preloadHandler.postDelayed(()->finish.accept("null"),500);

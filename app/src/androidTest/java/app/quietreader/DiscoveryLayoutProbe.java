@@ -32,7 +32,7 @@ final class DiscoveryLayoutProbe {
             if("sources".equals(page)){ListView list=list(activity.getWindow().getDecorView());check(list.getFirstVisiblePosition()==0&&list.getChildAt(0)!=null&&list.getChildAt(0).getTop()>=0,"opening sources resets the prior feed scroll offset");}
             if(dialogRoot==null){
                 View root=activity.getWindow().getDecorView();float density=activity.getResources().getDisplayMetrics().density;
-                for(String label:new String[]{page.startsWith("feed")?"设置":"返回","●"}){View target=navigation(root,label);android.graphics.Rect rect=new android.graphics.Rect();check(target!=null&&target.getGlobalVisibleRect(rect)&&rect.height()>=48*density-1&&rect.width()>=48*density-1,page+" toolbar target visible and at least 48dp: "+label);}
+                for(String label:new String[]{page.startsWith("feed")?"设置":"返回","刷新"}){View target=navigation(root,label);if(target==null&&label.equals("刷新"))target=navigation(root,"查看更新");if(target==null&&label.equals("刷新"))target=navigation(root,"正在刷新");android.graphics.Rect rect=new android.graphics.Rect();check(target!=null&&target.getGlobalVisibleRect(rect)&&rect.height()>=48*density-1&&rect.width()>=48*density-1,page+" toolbar target visible and at least 48dp: "+label);}
                 check(find(root,"稍后读")==null&&find(root,"发现值得读的")==null&&find(root,"选择兴趣")==null,"home has no saved navigation, oversized heading or interest banner");
                 check(find(root,"科技")==null&&find(root,"社会")==null&&find(root,"文化")==null,"home has no category navigation");
                 boolean clean=true;for(TextView value:values){String text=value.getText().toString();if(text.matches("\\d{2}")||text.equals("按来源内名次排列"))clean=false;}check(clean,"cards have no rank numbers or inline ranking explanation");
@@ -112,13 +112,13 @@ final class DiscoveryLayoutProbe {
             try(FeedStore store=new FeedStore(test.getTargetContext(),database)){
                 store.ensureCandidatePolicy();long now=System.currentTimeMillis();List<HotCandidate> rows=new ArrayList<>();for(int n=0;n<60;n++)rows.add(new HotCandidate(Models.Source.ZHIHU,"https://www.zhihu.com/question/9898"+n,"长标题排版检查：怎样在更大的系统字号下清楚阅读完整的中文热门话题？ 第"+n+"条","这是一段用于验证大字号换行与摘要省略的合成内容，不代表真实平台新闻。","",false,n+1,null,now));
                 rows.set(0,new HotCandidate(Models.Source.ZHIHU,rows.get(0).originalUrl,"武契奇承认败选","","",false,1,null,now));
-                long revision=store.beginRefresh(Models.Source.ZHIHU);store.upsertSnapshot(Models.Source.ZHIHU,revision,rows,now);long snapshot=store.commitRanking(store.version("sources"),store.profile(now).getLong("version"),now,"cold","all|SCIENCE",CandidateOrder.arrange(rows,new org.json.JSONArray(),false));store.activateSnapshot(snapshot);
+                long revision=store.beginRefresh(Models.Source.ZHIHU);store.upsertSnapshot(Models.Source.ZHIHU,revision,rows,now);long snapshot=store.commitRanking(store.version("sources"),store.profile(now).getLong("version"),now,"cold","all",CandidateOrder.arrange(rows,new org.json.JSONArray(),false));store.activateSnapshot(snapshot);
             }
             activity=test.startActivitySync(new Intent(test.getTargetContext(),DiscoveryActivity.class).putExtra("test_skip_fetch",true).putExtra("test_database",database).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
             // Startup/migration runs on the storage executor. Inspect the actual
             // loaded frame, not a fixed delay that can capture an empty toolbar.
             long readyUntil=android.os.SystemClock.elapsedRealtime()+10000;boolean[] loaded={false};
-            do{test.runOnMainSync(()->{try{java.lang.reflect.Field field=DiscoveryActivity.class.getDeclaredField("feed");field.setAccessible(true);loaded[0]=((List<?>)field.get(activity)).size()==60;}catch(Exception error){throw new IllegalStateException(error);}});if(loaded[0])break;Thread.sleep(40);}while(android.os.SystemClock.elapsedRealtime()<readyUntil);
+            do{test.runOnMainSync(()->{try{java.lang.reflect.Field field=DiscoveryActivity.class.getDeclaredField("feed");field.setAccessible(true);loaded[0]=((List<?>)field.get(activity)).size()==FeedBatch.SIZE;}catch(Exception error){throw new IllegalStateException(error);}});if(loaded[0])break;Thread.sleep(40);}while(android.os.SystemClock.elapsedRealtime()<readyUntil);
             if(!loaded[0])throw new IllegalStateException("Layout candidate migration did not finish");
             // Acceptance queues active-snapshot persistence separately.
             boolean migrated=false;do{try(FeedStore store=new FeedStore(test.getTargetContext(),database)){org.json.JSONObject info=store.snapshotInfo(store.activeSnapshot());migrated=info!=null&&"all".equals(info.optString("filter"));}if(migrated)break;Thread.sleep(40);}while(android.os.SystemClock.elapsedRealtime()<readyUntil);
@@ -128,15 +128,10 @@ final class DiscoveryLayoutProbe {
             try{android.graphics.drawable.Drawable drawable=activity.getApplicationInfo().loadIcon(activity.getPackageManager());drawable.setBounds(0,0,432,432);drawable.draw(new android.graphics.Canvas(icon));try(FileOutputStream out=new FileOutputStream(new File(test.getTargetContext().getExternalFilesDir(null),"new-cow-icon-preview.png"))){icon.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);}}
             finally{icon.recycle();}
             try(FeedStore store=new FeedStore(test.getTargetContext(),database)){org.json.JSONObject info=store.snapshotInfo(store.activeSnapshot());check(info!=null&&"all".equals(info.optString("filter")),"upgrade strips the persisted category filter from the active snapshot");}
-            test.runOnMainSync(()->{try{java.lang.reflect.Field field=DiscoveryActivity.class.getDeclaredField("feed");field.setAccessible(true);check(((List<?>)field.get(activity)).size()==60,"legacy category does not silently hide the cached candidate pool");}catch(Exception error){throw new IllegalStateException(error);}});
-            int[] growthAnchor={-1,0};
-            test.runOnMainSync(()->{ListView view=list(activity.getWindow().getDecorView());check(view.getCount()==40&&find(view,"查看更多话题")==null,"initial feed has forty rows and no manual more button");view.getAdapter().registerDataSetObserver(new android.database.DataSetObserver(){@Override public void onChanged(){if(view.getAdapter().getCount()==60&&growthAnchor[0]<0&&view.getChildAt(0)!=null){growthAnchor[0]=view.getFirstVisiblePosition();growthAnchor[1]=view.getChildAt(0).getTop();}}});view.setSelectionFromTop(37,0);});
-            long growthUntil=android.os.SystemClock.elapsedRealtime()+5000;boolean[] grown={false};
-            do{test.runOnMainSync(()->{ListView view=list(activity.getWindow().getDecorView());grown[0]=view.getCount()==60;});if(grown[0])break;Thread.sleep(40);}while(android.os.SystemClock.elapsedRealtime()<growthUntil);
-            check(grown[0],"approaching the first window end automatically exposes the remaining topics");
-            test.waitForIdleSync();
-            test.runOnMainSync(()->{ListView view=list(activity.getWindow().getDecorView());report.append("GROWTH before=").append(growthAnchor[0]).append('/').append(growthAnchor[1]).append(" after=").append(view.getFirstVisiblePosition()).append('/').append(view.getChildAt(0).getTop()).append('\n');check(growthAnchor[0]>0&&view.getFirstVisiblePosition()==growthAnchor[0]&&view.getChildAt(0).getTop()==growthAnchor[1],"automatic feed growth retains the exact current row and pixel offset");view.setSelectionFromTop(59,0);});
-            test.waitForIdleSync();test.runOnMainSync(()->{ListView view=list(activity.getWindow().getDecorView());check(view.getCount()==60&&find(view,"查看更多话题")==null,"exhausted feed has no repeated growth or manual footer");view.setSelectionFromTop(0,0);});test.waitForIdleSync();
+            test.runOnMainSync(()->{try{java.lang.reflect.Field field=DiscoveryActivity.class.getDeclaredField("feed");field.setAccessible(true);check(((List<?>)field.get(activity)).size()==FeedBatch.SIZE,"legacy category does not silently hide the cached candidate pool");}catch(Exception error){throw new IllegalStateException(error);}});
+            test.runOnMainSync(()->{ListView view=list(activity.getWindow().getDecorView());check(view.getCount()==FeedBatch.SIZE&&find(view,"查看更多话题")==null,"initial feed uses the finite fifteen-row batch without a manual more button");view.setSelectionFromTop(FeedBatch.SIZE-1,0);});
+            test.waitForIdleSync();Thread.sleep(500);
+            test.runOnMainSync(()->{ListView view=list(activity.getWindow().getDecorView());check(view.getLastVisiblePosition()==FeedBatch.SIZE-1,"last topic is reachable in the finite batch");check(view.getCount()==FeedBatch.SIZE&&find(view,"查看更多话题")==null,"scrolling to the end does not append the remaining source pool");view.setSelectionFromTop(0,0);});test.waitForIdleSync();
             accessibilityClick("设置");inspect("settings");
             test.runOnMainSync(()->{ListView menu=list(activity.getWindow().getDecorView());check(menu.getCount()==5&&menu.getChildCount()==5,"all five grouped settings entries fit the actual viewport");List<TextView> labels=new ArrayList<>();texts(activity.getWindow().getDecorView(),labels);check(labels.stream().noneMatch(v->"设置".contentEquals(v.getText())),"settings does not repeat a visible settings title");});
             accessibilityClick("返回");interestLayout();
@@ -145,14 +140,14 @@ final class DiscoveryLayoutProbe {
             for(int attempt=0;attempt<8;attempt++){
                 boolean[] reachable={false};test.runOnMainSync(()->{
                     List<TextView> labels=new ArrayList<>();texts(activity.getWindow().getDecorView(),labels);float density=activity.getResources().getDisplayMetrics().density;
-                    for(TextView value:labels)if(value.getContentDescription()!=null&&value.getContentDescription().toString().startsWith("话题选项：")){android.graphics.Rect rect=new android.graphics.Rect();if(value.getGlobalVisibleRect(rect)&&rect.width()>=48*density-1&&rect.height()>=48*density-1)reachable[0]=true;}
+                    for(TextView value:labels)if(value.getContentDescription()!=null&&value.getContentDescription().toString().startsWith("话题选项：")){android.graphics.Rect rect=new android.graphics.Rect();if(value.getGlobalVisibleRect(rect)&&rect.width()>=48*density-1&&rect.height()>=24*density-1&&((View)value.getParent()).getTouchDelegate()!=null)reachable[0]=true;}
                     if(!reachable[0])list(activity.getWindow().getDecorView()).scrollListBy(Math.round(48*density));
                 });
                 if(reachable[0])break;test.waitForIdleSync();Thread.sleep(100);
             }
             test.runOnMainSync(()->{List<TextView> values=new ArrayList<>();texts(activity.getWindow().getDecorView(),values);boolean accessible=false;float density=activity.getResources().getDisplayMetrics().density;
-                for(TextView value:values)if(value.getContentDescription()!=null&&value.getContentDescription().toString().startsWith("话题选项：")){android.graphics.Rect rect=new android.graphics.Rect();if(value.getGlobalVisibleRect(rect)&&rect.width()>=48*density-1&&rect.height()>=48*density-1)accessible=true;}
-                check(accessible,"long-card menu is fully reachable after scrolling");});
+                for(TextView value:values)if(value.getContentDescription()!=null&&value.getContentDescription().toString().startsWith("话题选项：")){android.graphics.Rect rect=new android.graphics.Rect();if(value.getGlobalVisibleRect(rect)&&rect.width()>=48*density-1&&rect.height()>=24*density-1&&((View)value.getParent()).getTouchDelegate()!=null)accessible=true;}
+                check(accessible,"compact long-card menu and its expanded touch delegate remain reachable after scrolling");});
             inspect("feed-scrolled");
             test.runOnMainSync(()->check(navigation(activity.getWindow().getDecorView(),"来源")==null,"home has no independent source-management navigation"));
             sourceSettings();inspect("sources");

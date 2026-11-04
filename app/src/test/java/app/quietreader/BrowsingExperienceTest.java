@@ -16,7 +16,7 @@ public class BrowsingExperienceTest {
         assertEquals(new HashSet<>(Arrays.asList("s0","s1")),expanded);
         org.jsoup.nodes.Document page=org.jsoup.Jsoup.parse(ReaderHtml.render(d,Source.ZHIHU,19,false,expanded,false));
         assertEquals(1,page.select("#part-1 a[href*=toggle]").size());
-        assertEquals(1,page.select("#part-1 a[href*=jump]").size());
+        assertTrue(page.select("#part-1 a[href*=jump]").isEmpty());
         assertEquals(1,page.select("p.preview").size());
         assertTrue(page.select("#part-0 p").text().contains("正文0"));
         assertTrue(page.select("#part-1 p").text().contains("正文1"));

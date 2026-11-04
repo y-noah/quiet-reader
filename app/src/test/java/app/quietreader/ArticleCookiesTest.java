@@ -2,6 +2,15 @@ package app.quietreader;
 import org.junit.Test;
 import static org.junit.Assert.*;
 public class ArticleCookiesTest {
+    @Test public void searchNavigationAnalyticsCannotInvalidatePreviouslyPreparedTopics(){
+        String url="https://www.baidu.com/s?wd=test";
+        assertEquals(ArticleCookies.fingerprint(url,"BDUSS=account; COOKIE_SESSION=first"),ArticleCookies.fingerprint(url,"BDUSS=account; COOKIE_SESSION=second"));
+        assertEquals(ArticleCookies.fingerprint(url,null),ArticleCookies.fingerprint(url,"COOKIE_SESSION=first"));
+        for(String key:new String[]{"BDUSS","BDUSS_BFESS","PTOKEN","STOKEN","PASSID","session_id","unknown_auth"})
+            assertNotEquals(key,ArticleCookies.fingerprint(url,key+"=first; COOKIE_SESSION=one"),ArticleCookies.fingerprint(url,key+"=second; COOKIE_SESSION=two"));
+        for(String other:new String[]{"https://www.baidu.com/","https://www.baidu.com/login","https://www.baidu.com.evil.test/s","https://tieba.baidu.com/p/123"})
+            assertNotEquals(other,ArticleCookies.fingerprint(other,"COOKIE_SESSION=first"),ArticleCookies.fingerprint(other,"COOKIE_SESSION=second"));
+    }
     @Test public void authenticatedZhihuPageContextRotationCannotInvalidateSameAccountBody(){
         String url="https://www.zhihu.com/question/123",first="z_c0=account-one; d_c0=device; BEC=one; JOID=one; osd=one; SESSIONID=one; Hm_lpvt_98beee57fd2ef70ccdd5ca52b9740c49=one";
         String second=first.replace("BEC=one","BEC=two").replace("JOID=one","JOID=two").replace("osd=one","osd=two").replace("SESSIONID=one","SESSIONID=two").replace("c49=one","c49=two");

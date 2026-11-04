@@ -4,7 +4,7 @@ import java.util.*;
 
 /** One home presentation. The full ranked pool remains available for refresh. */
 public final class FeedBatch {
-    public static final int SIZE=15;
+    public static final int SIZE=20;
     private FeedBatch(){}
     public static List<FeedStore.Row> first(List<FeedStore.Row> ranked){
         return first(ranked,SIZE);

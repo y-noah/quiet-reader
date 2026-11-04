@@ -15,7 +15,7 @@ $previousSecret=$env:QR_STORE_PASSWORD
 Push-Location $projectRoot
 try {
     $env:QR_STORE_PASSWORD=$credential.GetNetworkCredential().Password
-    $arguments=@('-PreleaseDiscoveryUi','-PbundleLocalModels',"-PsentencepieceSource=$nativeSource","-PnativeBuildRoot=$nativeRoot/build",'assembleRelease','assembleDebugAndroidTest','--console=plain','--max-workers=4')
+    $arguments=@('-PreleaseDiscoveryUi','-PbundleLocalModels',"-PsentencepieceSource=$nativeSource","-PnativeBuildRoot=$nativeRoot/build",'assembleRelease','assembleDebugAndroidTest','--no-daemon','--console=plain','--max-workers=4')
     if($IsolatedInstall){$arguments+='-PisolatedReleaseProbe'}
     if($FlowInstall){$arguments+='-PisolatedReleaseFlowProbe'}
     if($DiscoveryInstall){$arguments+=@('-PisolatedReleaseFlowProbe','-PisolatedDiscoveryProbe')}
