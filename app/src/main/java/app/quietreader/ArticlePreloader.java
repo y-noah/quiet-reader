@@ -49,7 +49,7 @@ final class ArticlePreloader implements AutoCloseable {
     ArticlePreloader wholeTopics(){wholeTopics=true;return this;}
     void retryTopic(Item item){attempted.keySet().removeIf(key->key.startsWith(item.source.name()+"|"+item.url+"@"));}
     private void prepared(Item item,Document doc){
-        if(wholeTopics&&doc.topic!=null){
+        if(wholeTopics&&speculationAllowed&&doc.topic!=null){
             topic(doc);
             queue.removeIf(queued->queued.url.equals(item.url));
             List<Item> missing=new ArrayList<>();
@@ -93,10 +93,15 @@ final class ArticlePreloader implements AutoCloseable {
     }
     private final Runnable pump=this::next;
     private void next(){
+        ArticleSessionSnapshot.run(this::nextSnapshot);
+    }
+    private void nextSnapshot(){
         if(closed||reserved||active!=null||foreground!=null||retainedForeground)return;
         if(!app.quietreader.ai.RecommendationPolicy.restriction(activity).isEmpty()){queue.clear();idle();return;}
         if(!queue.isEmpty()&&!ArticleDiskCache.acceptsPrefetch()){main.postDelayed(pump,100);return;}
-        int remaining=queue.size()+TiebaTopic.MAX_POSTS;long earliest=Long.MAX_VALUE;
+        // A warm cache can otherwise drain the entire window synchronously on
+        // the UI thread, including cookie checks and every prepared callback.
+        int remaining=Math.min(2,queue.size()+TiebaTopic.MAX_POSTS);long earliest=Long.MAX_VALUE;
         while(remaining-->0&&!queue.isEmpty()){
             Item item=queue.removeFirst();Attempt previous=attempted.get(attemptKey(item));
             if(!item.source.readable()||!item.source.unifiedReading()||item.video||VideoPolicy.url(item.source,item.url)||!UrlPolicy.belongs(item.source,item.url)||item.url.equals(item.source.login)||item.url.equals(item.source.endpoint)||(!revalidateHidden&&repo.hiddenVideo(item)))continue;
@@ -122,7 +127,7 @@ final class ArticlePreloader implements AutoCloseable {
             return;
         }
         if(!queue.isEmpty()&&earliest!=Long.MAX_VALUE){main.postDelayed(pump,Math.max(1,earliest-SystemClock.elapsedRealtime()));return;}
-        if(!queue.isEmpty()){main.post(pump);return;}idle();
+        if(!queue.isEmpty()){main.postDelayed(pump,16);return;}idle();
     }
     /** Must be called before replacing the board. A true result now owns the callback. */
     boolean reserve(Item item){

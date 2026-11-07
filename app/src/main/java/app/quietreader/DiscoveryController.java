@@ -44,6 +44,7 @@ final class DiscoveryController implements AutoCloseable {
     private final FeedReserve reserve=new FeedReserve();
     private final FeedReadiness readiness=new FeedReadiness();
     private final Set<String> verifying=new HashSet<>();
+    private List<Item> deferredPublication;
     private Snapshot admission;
     private boolean admissionAnchor,admissionCommitting;
     private long admissionEpoch;
@@ -68,12 +69,16 @@ final class DiscoveryController implements AutoCloseable {
     private void bodyFailed(Item item){
         HotCandidate candidate=preparedCandidate(item);if(candidate==null)return;
         readiness.failed(FeedReadiness.key(candidate),bodyScope(candidate),System.currentTimeMillis());
-        main.post(()->{if(!closed){if(admission==null)reserve.stage(availableBodies(allRows),sourceFilter);cacheAcceptedBatch(false);tryAdmission();}});
+        main.post(()->ArticleSessionSnapshot.run(()->{if(!closed){if(admission==null)reserve.stage(availableBodies(allRows),sourceFilter);cacheAcceptedBatch(false);tryAdmission();}}));
     }
     private static final class CachedProof {final HotCandidate candidate;final String scope;final long at;CachedProof(HotCandidate candidate,String scope,long at){this.candidate=candidate;this.scope=scope;this.at=at;}}
     /** Local cache restore is allowed before speculative/network resource policy. */
     private void restoreAdmission(){
-        if(admission==null)return;long request=admissionEpoch;boolean offline=cacheOffline();
+        if(admission==null||ReaderStartup.pending())return;
+        ArticleSessionSnapshot.run(this::restoreAdmissionSnapshot);
+    }
+    private void restoreAdmissionSnapshot(){
+        long request=admissionEpoch;boolean offline=cacheOffline();
         ArticleDiskCache disk=new ArticleDiskCache(activity);String namespace=disk.namespace();
         List<FeedStore.Row> target=readiness.targets(admissionPool(),this::bodyScope,System.currentTimeMillis());Map<String,String> sessions=new HashMap<>();
         for(FeedStore.Row row:target)sessions.put(row.candidate.id,ArticleDiskCache.session(row.candidate.originalUrl));
@@ -84,7 +89,10 @@ final class DiscoveryController implements AutoCloseable {
         });
     }
     private void tryAdmission(){
-        if(admission==null||admissionCommitting||closed||!foreground||!feedPage)return;
+        if(admission==null||admissionCommitting||closed||!foreground||!feedPage||ReaderStartup.pending())return;
+        ArticleSessionSnapshot.run(this::tryAdmissionSnapshot);
+    }
+    private void tryAdmissionSnapshot(){
         List<FeedStore.Row> target=readiness.targets(admissionPool(),this::bodyScope,System.currentTimeMillis());
         if(!readiness.complete(target,this::bodyScope,System.currentTimeMillis(),cacheAge()))return;
         Snapshot pendingAdmission=admission;long request=admissionEpoch;boolean offline=cacheOffline();admissionCommitting=true;
@@ -248,7 +256,7 @@ final class DiscoveryController implements AutoCloseable {
     private <T>void work(Callable<T> operation,Consumer<T> then,java.util.function.BooleanSupplier failureCurrent){
         if(closed)return;
         int generation=feedGeneration;long refreshRequest=explicitRefreshEpoch;
-        storage.execute(()->{try{T result=operation.call();main.post(()->{if(!closed)then.accept(result);});}
+        storage.execute(()->{try{T result=operation.call();main.post(()->{if(!closed)ArticleSessionSnapshot.run(()->then.accept(result));});}
             // Success callbacks retain their existing operation-specific guards.
             // A late failure must likewise belong to the current action before
             // it can cancel its spinner, collection or model state.
@@ -288,7 +296,10 @@ final class DiscoveryController implements AutoCloseable {
     }
     private void publish(Snapshot next,boolean keepAnchor){
         if(next.info==null)return;snapshot=next.id;allRows=new ArticleReadHistory(activity,ArticleReadHistory.database(activity,activity.getIntent().getStringExtra("test_database"))).unread(next.rows);sourceFilter=SourceFilter.source(next.info.optString("filter"));List<FeedStore.Row> eligible=SourceFilter.apply(allRows,sourceFilter);rows=FeedBatch.first(eligible,next.readyCount>=0?Math.min(next.readyCount,listener.feedCapacity(eligible)):listener.feedCapacity(eligible));visibleMode=next.info.optString("mode");newest="newest".equals(visibleMode);visibleSourceVersion=next.info.optLong("sourceVersion");visibleProfileVersion=next.info.optLong("profileVersion");
-        List<Item> publishedItems=new ArrayList<>();for(FeedStore.Row row:rows)publishedItems.add(row.candidate.readerItem());new ArticleDiskCache(activity).publishItems(publishedItems);cachePublicationChanged=true;
+        List<Item> publishedItems=new ArrayList<>();for(FeedStore.Row row:rows)publishedItems.add(row.candidate.readerItem());
+        if(ReaderStartup.pending())deferredPublication=publishedItems;
+        else ArticleSessionSnapshot.run(()->new ArticleDiskCache(activity).publishItems(publishedItems));
+        cachePublicationChanged=true;
         if(keepAnchor){int found=-1;for(int n=0;n<rows.size();n++)if(EventGroups.matches(rows.get(n),anchor)){found=n;break;}position=found<0?Math.min(position,Math.max(0,rows.size()-1)):found;}
         else{position=0;String savedAnchor=next.info.optString("anchor");for(int n=0;n<rows.size();n++)if(EventGroups.matches(rows.get(n),savedAnchor)){position=n;break;}offset=next.info.optInt("offset");}
         pending=0;long accepted=snapshot;boolean balanced="all".equals(sourceFilter)&&!newest;List<FeedStore.Row> delivered=new ArrayList<>(rows);work(()->{store.activateSnapshot(accepted);store.recordPresentation(delivered,System.currentTimeMillis(),balanced);return null;},ignored->{});
@@ -501,7 +512,11 @@ final class DiscoveryController implements AutoCloseable {
         for(Source source:HotSourceCatalog.HOT){JSONObject s=states.get(source);if(s!=null&&s.optBoolean("enabled")&&s.optLong("lastSuccessAt")<now-FeedReserve.UPDATE_MS&&s.optLong("retryAt")<=now)stale.add(source);}
         if(!stale.isEmpty())refresh(stale);
     }
-    void readerReady(){if(!closed){maybeStart();viewport(viewport);cacheAcceptedBatch(false);scheduleRecommendation(false);}}
+    void readerReady(){if(!closed){
+        ArticleSessionSnapshot.run(()->{if(deferredPublication!=null){new ArticleDiskCache(activity).publishItems(deferredPublication);deferredPublication=null;}});
+        tryAdmission();if(admission!=null&&!admissionCommitting)restoreAdmission();
+        maybeStart();viewport(viewport);cacheAcceptedBatch(false);scheduleRecommendation(false);
+    }}
     void refresh(){refresh(HotSourceCatalog.HOT);}
     void refresh(Collection<Source> targets){if(!ready||!foreground)return;cacheAction();lastPoolRefresh=SystemClock.elapsedRealtime();armPoolUpdate();main.removeCallbacks(partialSupply);feedGeneration++;pending=0;pausePreload();cancelRecommendation();loading=true;state();collector.refresh(targets);}
     void retryBrowser(Source source){if(!ready||!foreground)return;main.removeCallbacks(partialSupply);feedGeneration++;pending=0;pausePreload();cancelRecommendation();loading=true;state();collector.retryInBrowser(source);}
@@ -589,7 +604,7 @@ final class DiscoveryController implements AutoCloseable {
     void scrollState(int state){if(state==0)cacheWindow.idle();else{if(explicitRefreshRunning)cancelExplicitRefresh();cacheWindow.gesture(state==2,SystemClock.elapsedRealtime());}interacting(state!=0);}
     void scrollViewport(int first,int count,int top){cacheWindow.viewport(first,top,SystemClock.elapsedRealtime());visibleCount=Math.max(1,count);viewport(first);}
     void exposed(Collection<String> events){
-        if(closed||!foreground||!feedPage||snapshot<=0||events.isEmpty()||events.size()>64)return;
+        if(closed||!foreground||!feedPage||snapshot<=0||events.isEmpty()||events.size()>64||ReaderStartup.pending())return;
         long shownSnapshot=snapshot,at=System.currentTimeMillis();List<String> captured=new ArrayList<>(events);
         Set<String> wanted=new HashSet<>(captured);Map<String,ArticleProgressBinding.Scope> scopes=new HashMap<>();
         for(FeedStore.Row row:allRows)if(wanted.contains(row.eventId))for(HotCandidate member:row.entries)if(scopes.size()<64&&!scopes.containsKey(member.id)){ArticleProgressBinding.Scope scope=ArticleProgressBinding.scope(activity,member);if(scope!=null)scopes.put(member.id,scope);}
@@ -614,6 +629,9 @@ final class DiscoveryController implements AutoCloseable {
         return selected;
     }
     private void cacheAcceptedBatch(boolean force){
+        ArticleSessionSnapshot.run(()->cacheBatchSnapshot(force));
+    }
+    private void cacheBatchSnapshot(boolean force){
         if(!autoRefresh||closed||!foreground||!feedPage||(rows.isEmpty()&&admission==null)||ReaderStartup.pending())return;
         StringBuilder identity=new StringBuilder();Set<String> keep=new HashSet<>();List<Item> retainedItems=new ArrayList<>();
         for(FeedStore.Row row:cacheRows()){Item item=row.candidate.readerItem();identity.append(item.source.name()).append('|').append(item.url).append('@').append(ArticleVersion.hash(item)).append('\n');keep.add(item.url);retainedItems.add(item);}
@@ -646,6 +664,9 @@ final class DiscoveryController implements AutoCloseable {
     String readerPrefetchPlan(HotCandidate candidate){long now=SystemClock.elapsedRealtime();return autoRefresh&&!closed?ReaderPrefetchPlan.from(cacheRows(),candidate,cacheWindow.direction(now),cacheWindow.rapid(now)).encode():null;}
     void topicPrepared(Item item,Document document){bodyPrepared(item,document);}
     private void bodyPrepared(Item item,Document document){
+        ArticleSessionSnapshot.run(()->bodyPreparedSnapshot(item,document));
+    }
+    private void bodyPreparedSnapshot(Item item,Document document){
         if(closed||document.cachedSession==null||!document.cachedSession.equals(ArticleDiskCache.session(item.url))||!new ArticleDiskCache(activity).namespace().equals(document.cachedNamespace)||!item.url.equals(document.url))return;
         imagePreloader.prepared(item,document);main.removeCallbacks(preparedImages);main.post(preparedImages);
         HotCandidate prepared=preparedCandidate(item);

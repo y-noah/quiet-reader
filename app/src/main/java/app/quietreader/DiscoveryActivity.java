@@ -64,6 +64,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private HotCandidate startupReadCandidate;
     private boolean startupReadWaiting;
     private boolean openingReader;
+    private boolean topicScrolling;
     private long startupReadEpoch;
     private boolean nativeFeedReady,startupForeground,readerDrawQueued;
     private ViewTreeObserver.OnPreDrawListener readerDraw;
@@ -115,7 +116,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         settingsButton=button("",()->{if(!"feed".equals(page))back();else preferences();});settingsButton.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,dp(24));top.addView(settingsButton,new LinearLayout.LayoutParams(dp(48),dp(48)));
         list=new ListView(this);list.setVerticalScrollBarEnabled(false);list.setDivider(null);list.setCacheColorHint(bg);list.setSelector(android.R.color.transparent);list.setClipToPadding(false);list.setPadding(0,dp(48),0,dp(12));list.setAdapter(adapter);
         navigation=new FeedNavigationLayout(this,list,top,()->controller!=null&&"feed".equals(page),this::refreshFeed);
-        list.setOnScrollListener(new AbsListView.OnScrollListener(){public void onScrollStateChanged(AbsListView view,int state){navigation.scrollState(state);if(controller!=null)controller.scrollState(state);}public void onScroll(AbsListView view,int first,int count,int total){View child=list.getChildAt(0);navigation.scrolled(first,child==null?0:child.getTop());if("feed".equals(page)&&!feed.isEmpty()){feedPosition=first;feedOffset=child==null?0:child.getTop();if(controller!=null)controller.scrollViewport(first,count,feedOffset);}sampleExposure();}});
+        list.setOnScrollListener(new AbsListView.OnScrollListener(){public void onScrollStateChanged(AbsListView view,int state){navigation.scrollState(state);topicScrolling=state!=0;if(topicPreparation!=null)topicPreparation.interacting(topicScrolling);if(!topicScrolling)publishPreparedTopics();if(controller!=null)controller.scrollState(state);}public void onScroll(AbsListView view,int first,int count,int total){View child=list.getChildAt(0);navigation.scrolled(first,child==null?0:child.getTop());if("feed".equals(page)&&!feed.isEmpty()){feedPosition=first;feedOffset=child==null?0:child.getTop();if(controller!=null)controller.scrollViewport(first,count,feedOffset);}sampleExposure();}});
         list.getViewTreeObserver().addOnGlobalLayoutListener(exposureLayout);
         root.addView(navigation,new LinearLayout.LayoutParams(-1,0,1));
         pageHeading();
@@ -141,6 +142,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private void sampleExposure(){
         updateRefreshAnimation();
         if(list==null||controller==null||!exposureForeground||!hasWindowFocus()||!"feed".equals(page)||feed.isEmpty()||isFinishing()||isDestroyed()){pauseExposure();return;}
+        if(ReaderStartup.pending()){list.removeCallbacks(reportExposure);list.postDelayed(reportExposure,100);return;}
         list.removeCallbacks(reportExposure);android.graphics.Rect viewport=new android.graphics.Rect();
         Map<String,Double> fractions=new LinkedHashMap<>();
         if(list.getGlobalVisibleRect(viewport)){
@@ -396,9 +398,14 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     }
     private boolean topicPrepared(FeedStore.Row row){Item item=row.candidate.readerItem();return !TopicPreparation.supports(item)||topicPreparation.ready(item)!=null;}
     private void publishPreparedTopics(){
-        if(topicPreparation==null)return;
-        feed=TopicPublication.select(pendingFeed,feed,this::topicPrepared);
-        searchRows=TopicPublication.select(pendingSearch,searchRows,this::topicPrepared);
+        ArticleSessionSnapshot.run(this::publishTopicSnapshot);
+    }
+    private void publishTopicSnapshot(){
+        if(topicPreparation==null||topicScrolling)return;
+        List<FeedStore.Row> nextFeed=TopicPublication.select(pendingFeed,feed,this::topicPrepared);
+        List<FeedStore.Row> nextSearch=TopicPublication.select(pendingSearch,searchRows,this::topicPrepared);
+        if(feed.equals(nextFeed)&&searchRows.equals(nextSearch))return;
+        feed=nextFeed;searchRows=nextSearch;
         planTopics();
         feedIdentities=new HashSet<>();for(FeedStore.Row row:feed)feedIdentities.add(row.eventId);
         settleEmpty();adapter.notifyDataSetChanged();

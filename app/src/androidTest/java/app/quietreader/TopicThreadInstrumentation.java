@@ -86,6 +86,14 @@ public final class TopicThreadInstrumentation extends Instrumentation {
             ui(()->{Repository fresh=new Repository(getTargetContext());fresh.invalidateArticles();fresh.releaseArticleMemory();fresh.close();});
             getTargetContext().getSharedPreferences("reading-history",0).edit().remove(ROOT).commit();
             Activity warm=startActivitySync(new Intent(getTargetContext(),DiscoveryActivity.class).putExtra("test_skip_fetch",true).putExtra("test_database","test-ui-topic-warm.db").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            java.util.concurrent.atomic.AtomicInteger scrollRequests=new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.atomic.AtomicReference<Repository.Result<Document>> scrollReply=new java.util.concurrent.atomic.AtomicReference<>();
+            ArticlePreloader[] scrollingQueue={null};
+            ui(()->{scrollingQueue[0]=new ArticlePreloader(warm,()->{},new ArticlePreloader.Loader(){public void load(Item request,Repository.Result<Document> callback){scrollRequests.incrementAndGet();scrollReply.set(callback);}public void cancel(){}},3,()->{}).wholeTopics();scrollingQueue[0].offer(List.of(item),3,true);});
+            waitFor(()->scrollReply.get()!=null,"scroll prefetch fixture did not start");
+            ui(()->{scrollingQueue[0].finishWindow();scrollReply.get().success(body(A,"滑动前已启动","当前请求允许完成"));});
+            waitForIdleSync();
+            ui(()->{check(scrollRequests.get()==1&&!scrollingQueue[0].busy(),"an in-flight topic completing during scroll does not enqueue more child loads");scrollingQueue[0].close();Repository fresh=new Repository(warm);fresh.invalidateArticles();fresh.releaseArticleMemory();fresh.close();});
             ui(()->{wholeQueue[0]=new ArticlePreloader(warm,()->{},new ArticlePreloader.Loader(){public void load(Item requested,Repository.Result<Document> callback){callback.success(body(requested.selectedTopicPost.isEmpty()?A:requested.selectedTopicPost,"预取正文","独立评论"));}public void cancel(){}},40,()->{}).wholeTopics();wholeQueue[0].observePrepared((request,doc)->{stages.add(TopicBundle.complete(doc));if(TopicBundle.complete(doc))wholeDone.countDown();});wholeQueue[0].offer(List.of(item),40,true);});
             check(wholeDone.await(10,TimeUnit.SECONDS),"list prefetch completes every body before the reader is opened");
             check(stages.size()>=2&&!stages.get(0)&&stages.get(stages.size()-1),"first-body acquisition never counts as whole-topic readiness");

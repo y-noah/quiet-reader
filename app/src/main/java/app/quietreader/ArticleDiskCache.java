@@ -49,7 +49,7 @@ final class ArticleDiskCache {
     ArticleDiskCache(Context context,long budget){this.context=context.getApplicationContext();this.budget=Math.max(1,Math.min(MAX_BYTES,budget));}
     String namespace(){return context.getSharedPreferences("article-cache",0).getString("namespace","initial");}
     void invalidate(){context.getSharedPreferences("article-cache",0).edit().putString("namespace",UUID.randomUUID().toString()).apply();}
-    static String session(String url){return ArticleCookies.fingerprint(url,CookieManager.getInstance().getCookie(url));}
+    static String session(String url){return ArticleSessionSnapshot.read(url,()->ArticleCookies.fingerprint(url,CookieManager.getInstance().getCookie(url)));}
     private File root(){return new File(context.getCacheDir(),"article-bodies-v1");}
     // Explicitly read topics outlive the speculative hot-list window. Pins are
     // bounded and scoped to the same namespace/account as their body records.
