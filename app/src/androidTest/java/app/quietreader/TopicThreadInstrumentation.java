@@ -78,6 +78,8 @@ public final class TopicThreadInstrumentation extends Instrumentation {
     private String viewText(View view){StringBuilder text=new StringBuilder();if(view instanceof android.widget.TextView)text.append(((android.widget.TextView)view).getText());if(view instanceof android.view.ViewGroup)for(int n=0;n<((android.view.ViewGroup)view).getChildCount();n++)text.append(viewText(((android.view.ViewGroup)view).getChildAt(n)));return text.toString();}
     private View find(View view,String label){if(label.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;if(view instanceof android.view.ViewGroup)for(int n=0;n<((android.view.ViewGroup)view).getChildCount();n++){View found=find(((android.view.ViewGroup)view).getChildAt(n),label);if(found!=null)return found;}return null;}
     @Override public void onStart(){
+        String refreshCase=arguments.getString("refresh_case","");
+        if(!refreshCase.isEmpty()){new RefreshPresentationProbe(this,"pull".equals(refreshCase),"animation".equals(refreshCase),"batch".equals(refreshCase)).run();return;}
         if("true".equals(arguments.getString("real_front"))){try{TopicFrontProbe.run(this,arguments);}catch(Exception error){Bundle result=new Bundle();result.putString("stream","ERROR "+error);finish(0,result);}return;}
         SharedPreferences appearance=getTargetContext().getSharedPreferences("appearance",0);boolean had=appearance.contains("mode");int previous=appearance.getInt("mode",0);
         try{
@@ -119,8 +121,14 @@ public final class TopicThreadInstrumentation extends Instrumentation {
                 app.quietreader.discovery.HotCandidate incoming=new app.quietreader.discovery.HotCandidate(Source.TIEBA,ROOT,item.title+" 新版","","",false,1,null,System.currentTimeMillis());
                 discovery.feed(List.of(new app.quietreader.discovery.FeedStore.Row("publication-topic-next",incoming,"",List.of(incoming))),0,0,false);
                 try{List<?> shown=(List<?>)publishedField.get(discovery);check(shown.size()==1&&shown.get(0)==row,"refresh keeps the prior fully readable title while a replacement is incomplete");}catch(Exception error){throw new IllegalStateException(error);}
-                warm.finish();
+                app.quietreader.discovery.HotCandidate available=new app.quietreader.discovery.HotCandidate(Source.V2EX,"https://www.v2ex.com/t/999991099","刷新后的可读条目","","",false,1,null,System.currentTimeMillis());
+                app.quietreader.discovery.FeedStore.Row availableRow=new app.quietreader.discovery.FeedStore.Row("publication-available",available,"",List.of(available));
+                discovery.feed(List.of(new app.quietreader.discovery.FeedStore.Row("publication-blocked",incoming,"",List.of(incoming)),availableRow),0,0,false);
+                try{List<?> shown=(List<?>)publishedField.get(discovery);check(shown.size()==1&&shown.get(0)==availableRow,"a pending topic cannot keep an entire refreshed screen on the old batch");}catch(Exception error){throw new IllegalStateException(error);}
             });
+            waitFor(()->viewText(discovery.getWindow().getDecorView()).contains("刷新后的可读条目"),"refreshed available row did not become visible");
+            ui(()->check(viewText(discovery.getWindow().getDecorView()).contains("刷新后的可读条目"),"available refreshed content is actually bound in the visible list"));
+            ui(warm::finish);
             ui(()->{repo=new Repository(getTargetContext());repo.invalidateArticles();getTargetContext().getSharedPreferences("reading-history",0).edit().remove(ROOT).commit();repo.cacheArticle(body(B,choices.get(1).title,"只属于乙帖的评论"));repo.cacheArticle(body(A,choices.get(0).title,"只属于甲帖的评论"));});launch(item);
             ArticlePreloader[] topicQueue={null};CountDownLatch preparedPosts=new CountDownLatch(2);Set<String> preparedUrls=new HashSet<>();
             ui(()->{topicQueue[0]=new ArticlePreloader(reader,()->{});topicQueue[0].observePrepared((request,doc)->{if(preparedUrls.add(request.selectedTopicPost))preparedPosts.countDown();});Document root=body(A,choices.get(0).title,"只属于甲帖的评论");topicQueue[0].offer(List.of(TiebaTopic.select(item,root.topic,choices.get(0)),TiebaTopic.select(item,root.topic,choices.get(1))),40,true);});

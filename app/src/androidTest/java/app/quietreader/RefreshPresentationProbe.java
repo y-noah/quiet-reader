@@ -44,7 +44,9 @@ final class RefreshPresentationProbe {
         ui(()->state((long)field(controller,"snapshot"),true));pull(true);Thread.sleep(200);check(onUi(()->(long)field(controller,"explicitRefreshEpoch")==cancelledEpoch&&list.getTranslationY()==0),"cancelled pull leaves the pending batch untouched and resets displacement");
     }
     private void exposureCase(List<FeedStore.Row> rows,long original)throws Exception{
-        Thread.sleep(1700);FeedStore.Row row=rows.get(0);long before=shown(row);check(before>0,"first card has a real completed visible dwell before any refresh request");
+        FeedStore.Row row=rows.get(0);long deadline=SystemClock.elapsedRealtime()+10000,before=shown(row);
+        while(before==0&&SystemClock.elapsedRealtime()<deadline){Thread.sleep(50);before=shown(row);}
+        check(before>0,"first card has a real completed visible dwell before any refresh request");
         Object view=field(home,"feed");blocked();ui(()->{state(original,true);((View)field(home,"updates")).performClick();((View)field(home,"updates")).performClick();});Thread.sleep(1700);
         ui(controller::stop);release.countDown();serial.submit(()->{}).get(5,TimeUnit.SECONDS);test.waitForIdleSync();long after=shown(row);report.append("EXPOSURE_BOUNDARY before=").append(before).append(" afterCancelled=").append(after).append('\n');
         check(before==after,"queued and coalesced refresh cancelled before presentation does not re-expose the unchanged old list");
