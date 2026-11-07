@@ -7,6 +7,15 @@ import static app.quietreader.Models.*;
 import static org.junit.Assert.*;
 
 public final class TiebaTopicTest {
+    @Test public void recentVerifiedChoicesCanResolveASelectedPostWithoutReloadingTheTopic(){
+        String post="https://tieba.baidu.com/p/123";long now=System.currentTimeMillis();Item root=new Item(Source.TIEBA,"话题",TOPIC,"");
+        TiebaTopic.Resolved known=new TiebaTopic.Resolved(TOPIC,post,"a".repeat(64),now,List.of(new Item(Source.TIEBA,"帖子",post,"")));
+        Item selected=TiebaTopic.select(root,known,known.choices.get(0));
+        assertTrue(TiebaTopic.reusable(selected,known,now+1000));assertFalse(TiebaTopic.reusable(root,known,now));
+        assertFalse(TiebaTopic.reusable(selected,known,now+600001));assertFalse(TiebaTopic.reusable(selected,known,now-1));
+        assertFalse(TiebaTopic.reusable(new Item(Source.TIEBA,"其他话题",TOPIC.replace("28368032","28368033"),"",false,"",null,"",post),known,now));
+        assertFalse(TiebaTopic.reusable(new Item(Source.TIEBA,"不在目录",TOPIC,"",false,"",null,"","https://tieba.baidu.com/p/999"),known,now));
+    }
     private static final String TOPIC="https://tieba.baidu.com/hottopic/browse/hottopic?topic_id=28368032";
     private List<Item> posts(String rows){return TiebaTopic.posts(Jsoup.parse("<div class=topic-wrapper><span class=recom-sort-selected>最热</span><ul class=thread-list>"+rows+"</ul></div>",TOPIC),TOPIC);}
     private String row(String link,String title){return "<li><a class='title track-thread-title' href='"+link+"'>"+title+"</a><div class=content>真实列表摘要</div></li>";}

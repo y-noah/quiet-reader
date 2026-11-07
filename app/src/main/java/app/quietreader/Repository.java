@@ -36,13 +36,14 @@ public final class Repository {
     private static final android.util.LruCache<String,String> articleSessions=new android.util.LruCache<>(512);
     public Document cachedArticle(Item i){return cachedArticle(i,null);}
     Document cachedArticle(Item i,ArticleSession captured){if(!i.source.readable())return null;String session=captured==null?ArticleDiskCache.session(i.url):captured.cookieFingerprint(i.url);synchronized(Repository.class){
-        Long at=articleTimes.get(i.url);long age=at==null?-1:System.currentTimeMillis()-at;
-        if(!session.equals(articleSessions.get(i.url))||age<0||(age>ArticleDiskCache.MAX_AGE||age>10*60_000&&!offline()&&!disk.pinned(i.url,disk.namespace(),session,articles.get(i.url)==null?"":articles.get(i.url).document.metadataHash))){articles.remove(i.url);articleTimes.remove(i.url);articleSessions.remove(i.url);return null;}CachedDocument entry=articles.get(i.url);if(entry==null)return null;if(!ArticleSession.contentCurrent(entry.document)||!TiebaReplyRelations.canReuse(entry.document,offline())||!HupuDiscussion.canReuse(entry.document,offline())){articles.remove(i.url);articleTimes.remove(i.url);articleSessions.remove(i.url);return null;}if(!ArticleVersion.selected(i,entry.document))return null;articles.put(i.url,new CachedDocument(entry.document));return articles.get(i.url)==null?null:entry.document;
+        String key=ArticleCacheKey.of(i);Long at=articleTimes.get(key);long age=at==null?-1:System.currentTimeMillis()-at;
+        if(!session.equals(articleSessions.get(key))||age<0||(age>ArticleDiskCache.MAX_AGE||age>10*60_000&&!offline()&&!disk.pinned(i.url,disk.namespace(),session,articles.get(key)==null?"":articles.get(key).document.metadataHash))){articles.remove(key);articleTimes.remove(key);articleSessions.remove(key);return null;}CachedDocument entry=articles.get(key);if(entry==null)return null;if(!ArticleSession.contentCurrent(entry.document)||!TiebaReplyRelations.canReuse(entry.document,offline())||!HupuDiscussion.canReuse(entry.document,offline())){articles.remove(key);articleTimes.remove(key);articleSessions.remove(key);return null;}if(!ArticleVersion.selected(i,entry.document))return null;Document result=entry.document;CachedDocument whole=articles.get(i.url);if(!i.selectedTopicPost.isEmpty()&&whole!=null){Document focused=TopicBundle.focus(whole.document,i.selectedTopicPost);if(focused!=null)result=focused;}return result;
     }}
     public boolean offline(){android.net.ConnectivityManager cm=(android.net.ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);return cm!=null&&cm.getActiveNetwork()==null;}
     public void cacheArticle(Document d){
         cacheArticle(d,articleCacheEpoch());
     }
+    void pinReadTopic(Document doc){disk.pinTopic(doc);}
     boolean cacheArticle(Document d,long expectedEpoch){return cacheArticle(d,expectedEpoch,ArticleDiskCache.session(d.url));}
     private boolean cacheArticle(Document d,long expectedEpoch,String session){synchronized(Repository.class){
         if(expectedEpoch!=articleEpoch||!ArticleSession.contentCurrent(d)||!session.equals(ArticleDiskCache.session(d.url))||(d.cachedSession!=null&&(!session.equals(d.cachedSession)||!disk.namespace().equals(d.cachedNamespace))))return false;
@@ -51,11 +52,16 @@ public final class Repository {
             if(d.filteredVideo&&d.cachedSession==null){d.cachedAt=System.currentTimeMillis();d.cachedSession=session;d.cachedNamespace=disk.namespace();}
             articles.remove(d.url);articleTimes.remove(d.url);articleSessions.remove(d.url);return true;
         }
+        CachedDocument previous=articles.get(d.url);if(previous!=null&&ArticleSession.contentCurrent(previous.document))TopicBundle.merge(d,previous.document);
         // A confirmed empty result must replace earlier unclassified video prose too.
         // Preserve the excluded IDs so reopening and later continuation cannot revive it.
-        if(d.hasContent()||d.unsupportedVideo||!d.related.isEmpty()||d.filteredVideos>0||!d.filteredSectionIds.isEmpty()){long at=d.cachedAt>0?d.cachedAt:System.currentTimeMillis();d.cachedAt=at;d.cachedSession=session;d.cachedNamespace=disk.namespace();articles.put(d.url,new CachedDocument(d));articleTimes.put(d.url,at);articleSessions.put(d.url,session);disk.enqueue(d,disk.namespace(),session,at);}
+        if(d.hasContent()||d.unsupportedVideo||!d.related.isEmpty()||d.filteredVideos>0||!d.filteredSectionIds.isEmpty()){long at=d.cachedAt>0?d.cachedAt:System.currentTimeMillis();d.cachedAt=at;d.cachedSession=session;d.cachedNamespace=disk.namespace();rememberArticle(d,at,session);disk.enqueue(d,disk.namespace(),session,at);}
         return true;
     }}
+    private static void rememberArticle(Document doc,long at,String session){
+        for(String key:new java.util.LinkedHashSet<>(java.util.Arrays.asList(doc.url,ArticleCacheKey.of(doc)))){articles.put(key,new CachedDocument(doc));articleTimes.put(key,at);articleSessions.put(key,session);}
+        for(Document body:doc.topicBodies.values()){String key=ArticleCacheKey.of(body);articles.put(key,new CachedDocument(body));articleTimes.put(key,body.cachedAt>0?body.cachedAt:at);articleSessions.put(key,session);}
+    }
     public boolean hiddenVideo(Item item){
         if(item.source.webReading())return false;
         return item.video||VideoPolicy.url(item.source,item.url)||(!(item.source==Source.WEIBO&&VideoPolicy.weiboTopic(item.url))&&System.currentTimeMillis()-context.getSharedPreferences("video-filter",0).getLong(VideoPolicy.key(item),0)<7L*24*60*60*1000);
@@ -108,23 +114,24 @@ public final class Repository {
     }}
     public void releaseArticleMemory(){synchronized(Repository.class){articles.evictAll();articleTimes.evictAll();articleSessions.evictAll();}}
     ArticleDiskCache.Retention retainBatch(java.util.Collection<String> urls){synchronized(Repository.class){
-        java.util.Set<String> keep=new java.util.HashSet<>(urls);
-        for(String url:articles.snapshot().keySet())if(!keep.contains(url)){articles.remove(url);articleTimes.remove(url);articleSessions.remove(url);}
+        java.util.Set<String> keep=new java.util.HashSet<>(urls);keep.addAll(disk.pinnedTopicUrls());
+        for(String url:articles.snapshot().keySet())if(!keep.contains(ArticleCacheKey.root(url))){articles.remove(url);articleTimes.remove(url);articleSessions.remove(url);}
         return disk.retainBatch(keep);
     }}
     ArticleDiskCache.Retention retainItems(java.util.Collection<Item> items){synchronized(Repository.class){
         java.util.Set<String> keep=new java.util.HashSet<>();
         for(Item item:items)keep.add(item.url);
+        keep.addAll(disk.pinnedTopicUrls());
         // Keep recent same-URL bodies as display fallbacks while exact-version
         // prefetch continues. Their metadata and acquisition time are unchanged.
-        for(String url:articles.snapshot().keySet())if(!keep.contains(url)){articles.remove(url);articleTimes.remove(url);articleSessions.remove(url);}
+        for(String url:articles.snapshot().keySet())if(!keep.contains(ArticleCacheKey.root(url))){articles.remove(url);articleTimes.remove(url);articleSessions.remove(url);}
         return disk.retainItems(items);
     }}
     public Repository(Context context) { this.context=context.getApplicationContext();disk=new ArticleDiskCache(this.context); scheduleRetiredCleanup(this.context); }
     public void restoreArticle(Item item,java.util.function.Consumer<Document> callback){
         long epoch=articleCacheEpoch();String namespace=disk.namespace(),session=ArticleDiskCache.session(item.url);boolean offline=offline();
-        requests.submit(ticket->{ArticleDiskCache.Hit hit=disk.read(item.url,namespace,session,offline,System.currentTimeMillis());
-            main.post(()->{if(ticket.cancelled())return;Document document=null;synchronized(Repository.class){if(epoch==articleEpoch&&hit!=null&&ArticleVersion.selected(item,hit.document)&&ArticleSession.contentCurrent(hit.document)&&namespace.equals(disk.namespace())&&session.equals(ArticleDiskCache.session(item.url))){document=hit.document;document.cachedAt=hit.at;document.cachedSession=session;document.cachedNamespace=namespace;articles.put(item.url,new CachedDocument(document));articleTimes.put(item.url,hit.at);articleSessions.put(item.url,session);}}callback.accept(document);});
+        requests.submit(ticket->{ArticleDiskCache.Hit hit=disk.read(item,namespace,session,offline,System.currentTimeMillis());
+            main.post(()->{if(ticket.cancelled())return;Document document=null;synchronized(Repository.class){if(epoch==articleEpoch&&hit!=null&&ArticleVersion.selected(item,hit.document)&&ArticleSession.contentCurrent(hit.document)&&namespace.equals(disk.namespace())&&session.equals(ArticleDiskCache.session(item.url))){document=hit.document;document.cachedAt=hit.at;document.cachedSession=session;document.cachedNamespace=namespace;CachedDocument previous=articles.get(item.url);if(previous!=null&&ArticleSession.contentCurrent(previous.document))TopicBundle.merge(document,previous.document);rememberArticle(document,hit.at,session);}}callback.accept(document);});
         });
     }
     private static void scheduleRetiredCleanup(Context application) {

@@ -7,6 +7,24 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.Assert.*;
 
 public class ReaderImagesTest {
+    @Test public void prefetchedTopicImageKeepsTopicOwnershipWithoutOpeningThePost()throws Exception{
+        java.io.File dir=java.nio.file.Files.createTempDirectory("prefetched-topic-image-").toFile();String topic="https://tieba.baidu.com/hottopic/browse/hottopic?topic_id=98",post="https://tieba.baidu.com/p/998";
+        ImageDiskCache disk=new ImageDiskCache(dir,1024*1024,20,()->1024L*1024*1024);ReaderImages cache=new ReaderImages(url->null,(url,ref,cookies)->image(),4096);cache.attach(disk,()->"scope");
+        try{cache.load(IMAGE,post,null,()->true,4096,false,topic);cache.retainBatch(Set.of(topic)).run();cache.evictAll();ReaderImages restarted=new ReaderImages(url->null,(url,ref,cookies)->{throw new AssertionError("prefetched image must survive offline");},4096);restarted.attach(disk,()->"scope");assertArrayEquals(image(),restarted.load(IMAGE,post));}finally{disk.clearFiles();dir.delete();}
+    }
+    @Test public void topicPostImagesSurviveReturningToTheHotListAndRestart()throws Exception{
+        java.io.File dir=java.nio.file.Files.createTempDirectory("topic-image-cache-").toFile();
+        String topic="https://tieba.baidu.com/hottopic/browse/hottopic?topic_id=99",post="https://tieba.baidu.com/p/999";
+        ImageDiskCache disk=new ImageDiskCache(dir,1024*1024,20,()->1024L*1024*1024);AtomicInteger calls=new AtomicInteger();
+        ReaderImages cache=new ReaderImages(url->null,(url,ref,cookies)->{calls.incrementAndGet();assertEquals(post,ref);return image();},4096);cache.attach(disk,()->"scope");
+        try{
+            try(ReaderImages.Scope owner=cache.openScope(()->true,topic)){owner.load(IMAGE,post);}
+            cache.retainBatch(Set.of(topic)).run();cache.evictAll();
+            ReaderImages restarted=new ReaderImages(url->null,(url,ref,cookies)->{throw new AssertionError("offline restore must not fetch");},4096);restarted.attach(disk,()->"scope");
+            try(ReaderImages.Scope owner=restarted.openScope(()->true,topic)){assertArrayEquals(image(),owner.load(IMAGE,post));}
+            assertEquals(1,calls.get());restarted.retainBatch(Set.of()).run();assertEquals(0,dir.listFiles().length);
+        }finally{disk.clearFiles();dir.delete();}
+    }
     private static final String IMAGE="https://images.example.com/a.png",PAGE="https://example.com/article/1",REDIRECT="https://cdn.example.com/final.png";
     private static byte[] image(){return "GIF89a123456789".getBytes(StandardCharsets.US_ASCII);}
     @Test public void reusesOnlyMatchingImageAndArticleSessions()throws Exception{

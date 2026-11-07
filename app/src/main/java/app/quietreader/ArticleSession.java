@@ -5,7 +5,8 @@ import static app.quietreader.Models.*;
 
 /** Identity captured before loading, never inferred from a later displayed page. */
 final class ArticleSession {
-    static boolean contentCurrent(Document doc){return doc.topic==null?!TiebaTopic.isTopic(doc.url):doc.url.equals(doc.topic.topicUrl)&&doc.topic.postSession.equals(ArticleDiskCache.session(doc.topic.postUrl));}
+    static boolean contentCurrent(Document doc){if(!bodyCurrent(doc))return false;for(Document body:doc.topicBodies.values())if(!doc.url.equals(body.url)||!bodyCurrent(body))return false;return true;}
+    private static boolean bodyCurrent(Document doc){return doc.topic==null?!TiebaTopic.isTopic(doc.url):doc.url.equals(doc.topic.topicUrl)&&doc.topic.postSession.equals(ArticleDiskCache.session(doc.topic.postUrl));}
     private final ArticleDiskCache disk;
     private final String url, session, namespace,metadataHash;
     private final long epoch;

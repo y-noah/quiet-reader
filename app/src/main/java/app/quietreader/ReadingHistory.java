@@ -52,12 +52,16 @@ final class ReadingHistory {
     }
     static Document restore(JSONObject state)throws JSONException{Document d=decode(state.getJSONObject("document"));d.cachedAt=state.optLong("bodyAt");d.cachedSession=state.optString("session");d.cachedNamespace=state.optString("namespace");return d;}
     static JSONObject encode(Document d)throws JSONException{
+        return encode(d,true);
+    }
+    private static JSONObject encode(Document d,boolean bundle)throws JSONException{
         JSONObject o=new JSONObject().put("url",d.url).put("title",d.title).put("byline",d.byline).put("notice",d.notice).put("next",d.nextUrl).put("more",d.moreStatus)
             .put("unsupportedVideo",d.unsupportedVideo).put("videoTopic",d.videoTopic).put("videoPoster",d.videoPoster).put("videoUrl",d.videoUrl).put("filteredVideos",d.filteredVideos).put("filteredIds",new JSONArray(d.filteredSectionIds));
         o.put("metadataHash",d.metadataHash);
         o.put("loginRequired",d.loginRequired).put("sourceUnavailable",d.sourceUnavailable).put("filteredVideo",d.filteredVideo);
         if(ArticleUpdateEvidence.VERSION.equals(d.sourceUpdateEvidence)&&d.sourceModifiedAt>0)o.put("sourceUpdateEvidence",new JSONObject().put("version",ArticleUpdateEvidence.VERSION).put("modifiedAt",d.sourceModifiedAt));
         if(d.topic!=null)o.put("topicResolution",d.topic.json());
+        if(bundle&&d.topic!=null){JSONArray bodies=new JSONArray();for(Document body:d.topicBodies.values())bodies.put(encode(body,false).put("bodyAt",body.cachedAt).put("bodySession",body.cachedSession).put("bodyNamespace",body.cachedNamespace));o.put("topicBodies",bodies);}
         o.put("discussionPage",d.discussionPage);
         o.put("virtualDiscussion",d.virtualDiscussion);
         if(UrlPolicy.belongs(Source.TIEBA,d.sourceUrl()))o.put("tiebaReplyRevision",d.tiebaReplyRevision);
@@ -125,6 +129,12 @@ final class ReadingHistory {
             d.sections.add(s);
         }
         StructuredSources.cleanStoredSearch(d);ReadingContent.cleanStored(d);
+        JSONArray bodies=o.optJSONArray("topicBodies");
+        if(d.topic!=null&&bodies!=null&&bodies.length()<=TiebaTopic.MAX_POSTS)for(int n=0;n<bodies.length();n++){
+            JSONObject encoded=bodies.getJSONObject(n);if(encoded.has("topicBodies"))throw new JSONException("Nested topic bundle");
+            Document body=decode(encoded);body.cachedAt=encoded.optLong("bodyAt");body.cachedSession=encoded.optString("bodySession");body.cachedNamespace=encoded.optString("bodyNamespace");
+            TopicBundle.merge(d,body);
+        }
         return d;
     }
 }

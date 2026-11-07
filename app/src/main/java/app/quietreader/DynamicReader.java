@@ -44,6 +44,12 @@ public final class DynamicReader {
         this(activity,item,cb,1,false);
     }
     DynamicReader(Activity activity,Item item,Repository.Result<Document> cb,boolean explicitReading){this(activity,item,cb,1,explicitReading);}
+    DynamicReader(Activity activity,Item item,Repository.Result<Document> cb,boolean explicitReading,TiebaTopic.Resolved topic,String scope){
+        this(activity,item,cb,1,explicitReading);
+        if(topic!=null&&scope.equals(session.scopeIdentity())&&TiebaTopic.reusable(item,topic,System.currentTimeMillis())){
+            topicChoices=topic.choices;topicPostUrl=item.selectedTopicPost;topicPostSession=ArticleDiskCache.session(topicPostUrl);topicSelectedAt=topic.at;
+        }
+    }
     private DynamicReader(Activity activity,Item item,Repository.Result<Document> cb,int sessionRetries,boolean explicitReading) {
         this(activity,item,cb,sessionRetries,explicitReading,0,0);
     }
@@ -102,7 +108,7 @@ public final class DynamicReader {
         handler.postDelayed(deadline,Math.max(0,deadlineAt-android.os.SystemClock.elapsedRealtime()));
         // Start after construction so the owner is assigned before navigation callbacks.
         // Closing in the same UI turn cancels this pending navigation too.
-        handler.post(()->{if(!ended){web.loadUrl(item.url);scheduleInspection(1200);}});
+        handler.post(()->{if(!ended){web.loadUrl(topicPostUrl.isEmpty()?item.url:topicPostUrl);scheduleInspection(1200);}});
     }
     private void navigating(String url){
         navigation.begin(url);best=null;lastSnapshot="";attempts=0;

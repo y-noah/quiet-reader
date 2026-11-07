@@ -21,6 +21,9 @@ public final class MainActivity extends Activity {
     private boolean dark,loadingMore=false,morePaused=false,primaryPending=false,wasStopped=false;
     private ArticlePreloader preloader;
     private ReaderPrefetch readerPrefetch;
+    private TopicPreparation topicAhead;
+    private int topicMediaReady=TopicBundle.PAGE;
+    private boolean topicMoreRequested,topicAppending;
     private final ReadingEngagement engagement=new ReadingEngagement();
     private app.quietreader.discovery.HotCandidate discoveryCandidate;
     private Item previousTopicPost;
@@ -52,6 +55,8 @@ public final class MainActivity extends Activity {
     private volatile String readerHtml="",readerPageUrl="";
     private int readerRevision=0;
     private String streamAnchor="";
+    private long topicDomRevision;
+    private String pendingTopicPost="";
     private int streamAnchorOffset=0;
     private ReadingViewport sampledViewport,pendingViewport;
     private String sampledViewportPage="";
@@ -71,6 +76,8 @@ public final class MainActivity extends Activity {
     private ReaderToolbar readerToolbar;
     private ScrollView scroll;
     private int generation=0, font=19;
+    private boolean openMeasured;
+    private long openVisibleMs=-1;
     private Item current;
     private Document reading;
     private final Deque<Item> history=new ArrayDeque<>();
@@ -90,7 +97,9 @@ public final class MainActivity extends Activity {
         BG=Theme.background(this);INK=Theme.ink(this);GREEN=Theme.accent(this);
         preloader=new ArticlePreloader(this,()->{},null,3,()->{},true);
         readerPrefetch=new ReaderPrefetch(this,ReaderPrefetchPlan.decode(getIntent().getStringExtra("reader_prefetch_plan")),()->preloader,
-            ()->readingResumed&&!loadingMore&&reading!=null&&reading.hasContent()&&!reading.loginRequired&&!reading.sourceUnavailable&&inlineVideoRequests==null&&videoPreview==null&&!continuationDue());
+            ()->readingResumed&&!loadingMore&&reading!=null&&reading.topic==null&&reading.hasContent()&&!reading.loginRequired&&!reading.sourceUnavailable&&inlineVideoRequests==null&&videoPreview==null&&!continuationDue());
+        readerPrefetch.observeTopic(this::topicPrepared);
+        topicAhead=new TopicPreparation(this,()->{},this::topicWindowPrepared);
         font=getPreferences(0).getInt("font",19);
         if(state==null){
             try{String payload=getIntent().getStringExtra("discovery_item");if(payload!=null){Item item=Item.from(new org.json.JSONObject(payload));if(UrlPolicy.belongs(item.source,item.url))current=item;}}catch(Exception ignored){}
@@ -186,13 +195,13 @@ public final class MainActivity extends Activity {
             .add("重新读取",()->{repo.invalidateArticles();forceSourceRead=true;open(current,false);})
             .add("来源 / 登录",()->login(current));
         if(reading!=null&&ReaderHtml.sections(reading).size()>1)menu.add("回答 / 楼层目录",this::sectionMenu);
-        if(reading!=null&&reading.topic!=null){menu.add("同话题帖子",this::topicMenu);menu.add("话题来源页",()->login(current,true));}
+        if(reading!=null&&reading.topic!=null){menu.add("话题内容目录",this::topicMenu);menu.add("话题来源页",()->login(current,true));}
         readerActions=menu.show();
     }
     private void topicMenu(){
         if(reading==null||reading.topic==null)return;
         ReaderActions choices=new ReaderActions(this);String selected=reading.sourceUrl();
-        for(Item post:reading.topic.choices){Item request=TiebaTopic.select(current,reading.topic,post);choices.add(post.title,()->{if(!post.url.equals(selected)||!post.url.equals(current.selectedTopicPost))open(request,false);});}
+        int shown=0;for(int n=0;n<reading.topic.choices.size();n++){int index=n;Item post=reading.topic.choices.get(n);if(post.video)continue;if(shown++>=TopicReaderHtml.visible(expanded))break;choices.add(post.title,()->topicSelect(index));}
         readerActions=choices.show();
     }
     private void dismissReaderActions(){if(readerActions!=null){readerActions.dismiss();readerActions=null;}}
@@ -222,7 +231,7 @@ public final class MainActivity extends Activity {
         readerSurface=new FrameLayout(this);root.addView(readerSurface,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout bar=new LinearLayout(this);readerBar=bar;bar.setBackgroundColor(BG);bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.addView(new android.widget.Space(this),new LinearLayout.LayoutParams(0,1,1));
-        ImageButton share=icon(R.drawable.ic_share_outline,"分享原文链接",this::shareOriginal);share.setPadding(dp(15),dp(15),dp(15),dp(15));
+        ImageButton share=icon(R.drawable.ic_share_outline,"分享原文链接",this::shareOriginal);share.setScaleType(ImageView.ScaleType.FIT_CENTER);share.setPadding(dp(17),dp(17),dp(17),dp(17));
         bar.addView(share,new LinearLayout.LayoutParams(dp(48),dp(48)));
         ImageButton more=icon(R.drawable.ic_more_horiz,"更多选项",()->{});more.setOnClickListener(v->options());
         bar.addView(more,new LinearLayout.LayoutParams(dp(48),dp(48)));
@@ -247,6 +256,8 @@ public final class MainActivity extends Activity {
         if(!title.startsWith("正在")&&reading==null&&previousTopicPost!=null){Item fallback=previousTopicPost;content.addView(button("返回原帖",()->{previousTopicPost=null;open(fallback,false);}));}
     }
     private void open(Item item,boolean push) {
+        if(topicAhead!=null)topicAhead.pause();topicMediaReady=TopicBundle.PAGE;topicMoreRequested=false;topicAppending=false;
+        if(!item.selectedTopicPost.equals(pendingTopicPost))pendingTopicPost="";
         boolean changedTopicPost=current!=null&&current.url.equals(item.url)&&!item.selectedTopicPost.isEmpty()&&(reading!=null?!item.selectedTopicPost.equals(reading.sourceUrl()):!item.selectedTopicPost.equals(current.selectedTopicPost));
         if(current==null||!current.url.equals(item.url)||previousTopicPost!=null&&!previousTopicPost.url.equals(item.url))previousTopicPost=null;
         else if(changedTopicPost&&reading!=null&&reading.topic!=null){Document previous=reading;for(Item choice:previous.topic.choices)if(choice.url.equals(previous.sourceUrl())){previousTopicPost=TiebaTopic.select(current,previous.topic,choice);break;}}
@@ -261,6 +272,9 @@ public final class MainActivity extends Activity {
 
         if(push&&current!=null) history.push(current);
         readerPrefetch.opening(item);current=item; reading=null;videoFallbackRequested=false; generation++; final int request=generation;
+        String preparedToken=getIntent().getStringExtra("prepared_topic");getIntent().removeExtra("prepared_topic");
+        Document prepared=PreparedTopicHandoff.take(preparedToken,item,this);
+        if(prepared!=null){primaryPending=true;preloader.finishWindow();renderCached(prepared);return;}
         ReadingMark mark=changedTopicPost?null:marks.get(item.url);if(mark!=null){expanded.addAll(mark.expanded);openPosition=mark.position;}
         Document resumed=null;org.json.JSONObject stored=readingHistory.get(item.url);
         if(stored!=null&&!item.selectedTopicPost.isEmpty()&&!item.selectedTopicPost.equals(stored.optString("bodySource"))){stored=null;mark=null;expanded.clear();openPosition=-1;}
@@ -272,11 +286,11 @@ public final class MainActivity extends Activity {
         }
         historicalViewport=mark==null?null:mark.viewport;
         primaryPending=mark==null;
-        boolean bypassDisk=forceSourceRead;Document cached=forceSourceRead?null:ArticleVersion.preferredCached(resumed,repo.cachedArticle(item),doc->usableBody(item,doc));forceSourceRead=false;if(cached!=null||repo.hiddenVideo(item))preloader.pause();
+        boolean bypassDisk=forceSourceRead;Document cached=forceSourceRead?null:ArticleVersion.preferredCached(resumed,repo.cachedArticle(item),doc->usableBody(item,doc));forceSourceRead=false;if(cached!=null&&cached.topic!=null)preloader.finishWindow();else if(cached!=null||repo.hiddenVideo(item))preloader.pause();
         boolean promoted=cached==null&&!repo.hiddenVideo(item)&&preloader.promote(item,promotedResult(item,request));
+        if(cached!=null){if(cached==resumed)render(cached);else renderCached(cached);return;}
         frame(); scroller(); status("正在整理内容…","只提取内容，不加载原站的推荐和操作界面");
         readerFooter();
-        if(cached!=null){if(cached==resumed)render(cached);else renderCached(cached);return;}
         if(promoted)return;
         if(bypassDisk)loadArticleAfterCache(item,request);
         else repo.restoreArticle(item,storedDoc->{if(request!=generation)return;if(storedDoc!=null&&usableBody(item,storedDoc))renderCached(storedDoc);else loadArticleAfterCache(item,request);});
@@ -331,7 +345,7 @@ public final class MainActivity extends Activity {
             // Promoted prefetches are already saved; fresh dynamic acquisitions still need saving.
             // Rendering replaces the native root; attach the continuation afterward.
             render(doc,updateCache);
-            if(source!=null){if(TiebaReplies.supports(item.source,doc))tiebaReplies=new TiebaReplies(this,item,source);else answers=new AnswerStream(this,item,source);source=null;}
+            if(source!=null&&reading==doc){if(TiebaReplies.supports(item.source,doc))tiebaReplies=new TiebaReplies(this,item,source);else answers=new AnswerStream(this,item,source);source=null;}
         }finally{if(source!=null)SourceSurface.release(source);}
     }
     private void readerFooter() {
@@ -358,7 +372,9 @@ public final class MainActivity extends Activity {
             long added=AnswerStream.answerIds(doc).stream().filter(id->!previous.contains(id)).count();
             toast(current.source==Source.ZHIHU?(added>0?"已重新读取，新增 "+added+" 条回答":"已重新读取，暂无新增回答"):"已重新读取来源内容");
         }
+        repo.pinReadTopic(doc);
         if(updateCache)repo.cacheArticle(doc);
+        if(doc.topic==null)readerPrefetch.topic(current,doc);
         repo.reconcileVideo(current,doc);
         ReadingLanguageRecorder.record(this,getIntent().getStringExtra("test_database"),discoveryCandidate,doc);
         // A question's video description is not an answer. Keep the answer reader and
@@ -366,7 +382,11 @@ public final class MainActivity extends Activity {
         if(doc.hasContent()||doc.unsupportedVideo||(doc.filteredVideos>0&&AnswerStream.sameQuestion(current,doc.url))) {
             if(imageOwner==null||!imageOwner.matches(current,doc)){if(imageOwner!=null)imageOwner.close();imageOwner=new ReaderImageOwner(this,current,images,doc);}
             final ReaderImageOwner imageRequests=imageOwner;
-            frame(); reading=doc;
+            frame(); reading=doc;prepareTopicAhead();
+            if(doc.topic!=null&&doc.sourceUrl().equals(pendingTopicPost)){
+                for(int n=0;n<doc.topic.choices.size();n++)if(doc.topic.choices.get(n).url.equals(pendingTopicPost)){streamAnchor="reading-topic-"+n;streamAnchorOffset=0;break;}
+                pendingTopicPost="";openPosition=-1;
+            }
             readerStatus=text("",12,MUTED);readerStatus.setPadding(0,0,0,dp(8));readerStatus.setVisibility(View.GONE);readerStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);root.addView(readerStatus);
             readerWeb=ReaderStartup.take(this);readerWeb.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY); Theme.configureWeb(readerWeb,false);
             // Chromium disables native image lazy loading when scripting is off.
@@ -395,6 +415,14 @@ public final class MainActivity extends Activity {
                     String dest=req.getUrl().toString();
                     if(dest.startsWith(ReaderHtml.ACTION+"toggle?index=")){
                         try {toggleSection(Integer.parseInt(android.net.Uri.parse(dest).getQueryParameter("index")));}catch(Exception ignored){}
+                    } else if(dest.startsWith(ReaderHtml.ACTION+"topic?index=")){
+                        try{topicPost(Integer.parseInt(android.net.Uri.parse(dest).getQueryParameter("index")));}catch(Exception ignored){}
+                    } else if(dest.equals(ReaderHtml.ACTION+"topic-next")){
+                        topicMoreRequested=true;appendTopicBatch();
+                    } else if(dest.startsWith(ReaderHtml.ACTION+"topic-comments?index=")){
+                        try{int index=Integer.parseInt(android.net.Uri.parse(dest).getQueryParameter("index"));Document body=TopicBundle.find(reading,reading.topic.choices.get(index).url);if(body!=null)topicToggle(TopicReaderHtml.commentsKey(body),index);}catch(Exception ignored){}
+                    } else if(dest.startsWith(ReaderHtml.ACTION+"topic-more?index=")){
+                        try{topicMore(Integer.parseInt(android.net.Uri.parse(dest).getQueryParameter("index")));}catch(Exception ignored){}
                     } else if(dest.startsWith(ReaderHtml.ACTION+"jump?index=")){
                         try{jumpTo(Integer.parseInt(android.net.Uri.parse(dest).getQueryParameter("index")));}catch(Exception ignored){}
                     } else if(dest.startsWith(ReaderHtml.ACTION+"post?index=")){
@@ -409,7 +437,7 @@ public final class MainActivity extends Activity {
                     else if(dest.equals(readerPageUrl))return false;
                     else if(dest.equals(doc.url))login(current);
                     else if(dest.equals(doc.nextUrl)&&UrlPolicy.sameThread(current.source,doc.url,dest))open(new Item(current.source,doc.title,dest,"下一页"),true);
-                    else if(reading!=null&&reading.blocks.stream().anyMatch(b->b.type.equals("image")&&b.value.equals(dest)))zoom(dest,reading.sourceUrl());
+                    else if(reading!=null&&reading.containsImage(dest))zoom(dest,TopicBundle.imageReferer(reading,dest));
                     else if(req.isForMainFrame()&&req.hasGesture()&&ReaderLinks.allowed(dest))openContentLink(dest);
                     return true;
                 }
@@ -418,6 +446,8 @@ public final class MainActivity extends Activity {
                     restoreViewport(web,revision);scheduleViewportSample();
                     web.postVisualStateCallback(revision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){
                         if(web!=readerWeb||revision!=readerRevision||!url.equals(readerPageUrl))return;
+                        long started=getIntent().getLongExtra("reader_open_started",0);
+                        if(!openMeasured&&started>0){openMeasured=true;web.postOnAnimation(()->{if(web!=readerWeb)return;openVisibleMs=android.os.SystemClock.elapsedRealtime()-started;android.util.Log.i("NewReaderOpen","visible ms="+openVisibleMs+" whole="+TopicBundle.complete(reading));});}
                         // Text can already be read while an image keeps the page loading.
                         // Image-only documents still wait for normal page completion.
                         if(reading!=null&&ReaderHtml.sections(reading).stream().flatMap(part->part.blocks.stream()).anyMatch(block->block.type.equals("text")&&!block.value.trim().isEmpty()))readerReady(web,url);
@@ -432,7 +462,7 @@ public final class MainActivity extends Activity {
                     ReaderVideoRequests media=inlineVideoRequests;
                     if(!req.isForMainFrame()&&media!=null&&media.owns(url))try{return media.response(url,req.getRequestHeaders());}catch(Exception error){return new WebResourceResponse("text/plain","utf-8",404,"Unavailable",java.util.Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));}
                     Document active=reading;if(active==null||!active.containsImage(url))return new WebResourceResponse("text/plain","utf-8",new ByteArrayInputStream(new byte[0]));
-                    try { return imageResponse(imageRequests,url,doc.sourceUrl()); }
+                    try { return imageResponse(imageRequests,url,TopicBundle.imageReferer(active,url)); }
                     catch(Exception e) { return new WebResourceResponse("text/plain","utf-8",404,"Unavailable",java.util.Collections.emptyMap(),new ByteArrayInputStream(new byte[0])); }
                 }
             });
@@ -445,7 +475,7 @@ public final class MainActivity extends Activity {
                 if(y!=oy)scheduleViewportSample();
                 if(y!=oy)readerPrefetch.settled();
                 if(y!=oy&&System.currentTimeMillis()>suppressAutoUntil)engagement.scroll(android.os.SystemClock.elapsedRealtime());
-                if(y>oy)maybeLoadMore(readerWeb,true);});
+                if(y>oy){maybeLoadMore(readerWeb,true);if(topicNearEnd())appendTopicBatch();}});
             return;
         }
         reading=doc; content.removeAllViews(); scroll.scrollTo(0,0);
@@ -462,8 +492,9 @@ public final class MainActivity extends Activity {
     }
     private void readerReady(WebView web,String url){
         if(web!=readerWeb||!url.equals(readerPageUrl))return;
-        engagement.ready(reading!=null&&reading.hasContent()&&!reading.loginRequired&&!reading.sourceUnavailable&&!reading.unsupportedVideo,android.os.SystemClock.elapsedRealtime());
-        if(ArticleReadHistory.readable(reading)){int revision=readerRevision;web.postVisualStateCallback(revision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){if(web==readerWeb&&revision==readerRevision&&url.equals(readerPageUrl)){readPresentedPage=url;recordReadFact();}}});}
+        boolean bodyVisible=TopicReaderHtml.bodyVisible(reading,expanded);
+        engagement.ready(bodyVisible&&reading!=null&&reading.hasContent()&&!reading.loginRequired&&!reading.sourceUnavailable&&!reading.unsupportedVideo,android.os.SystemClock.elapsedRealtime());
+        if(bodyVisible&&ArticleReadHistory.readable(reading)){int revision=readerRevision;web.postVisualStateCallback(revision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){if(web==readerWeb&&revision==readerRevision&&url.equals(readerPageUrl)){readPresentedPage=url;recordReadFact();}}});}
         readerPrefetch.ready();
     }
     private static WebResourceResponse imageResponse(ReaderImageOwner owner,String url,String referer)throws Exception {
@@ -539,12 +570,13 @@ public final class MainActivity extends Activity {
         if(imagePreview!=null)imagePreview.dismiss();
         // Keep list/reader thumbnails light; request the observed larger rendition only on tap.
         String previewUrl=current==null?url:WeiboImage.preview(current.source,url);
+        Document imageDoc=reading;if(reading!=null)for(Document body:reading.topicBodies.values())if(body.containsImage(url)){imageDoc=body;break;}
         List<String> gallery=new ArrayList<>();
-        if(reading!=null)for(Block block:reading.blocks)if(block.type.equals("image")&&UrlPolicy.https(block.value)){
+        if(imageDoc!=null)for(Block block:imageDoc.blocks)if(block.type.equals("image")&&UrlPolicy.https(block.value)){
             String large=current==null?block.value:WeiboImage.preview(current.source,block.value);if(!gallery.contains(large))gallery.add(large);
         }
         if(!gallery.contains(previewUrl))gallery.add(previewUrl);
-        ReaderImageOwner galleryOwner=new ReaderImageOwner(this,current,images,reading);
+        ReaderImageOwner galleryOwner=new ReaderImageOwner(this,current,images,imageDoc);
         imagePreview=new ImagePreview(this,gallery,gallery.indexOf(previewUrl),dark,u->imageResponse(galleryOwner,u,referer),u->images.remove(u),galleryOwner::close,()->{galleryOwner.resume();ReaderImages.Scope page=galleryOwner.snapshot();return u->imageResponse(page.load(u,referer));});imagePreview.show();
     }
     private void relatedLink(Item item) {
@@ -627,12 +659,89 @@ public final class MainActivity extends Activity {
             readerHtml=next;settleReaderImages(web,null);scheduleViewportSample();rememberReading();
         });
     }
+    private Item topicRoot(){return new Item(current.source,current.title,current.url,current.detail,current.video,current.snippet,current.publishedAt,current.sourceTag);}
+    private void prepareTopicAhead(){
+        if(topicAhead==null||reading==null||reading.topic==null||current==null)return;
+        topicAhead.window(Math.min(TopicBundle.total(reading),TopicReaderHtml.visible(expanded)+TopicBundle.PAGE));
+        topicAhead.plan(List.of(topicRoot()));if(readingResumed)topicAhead.resume();
+    }
+    private void topicWindowPrepared(Item item,Document doc){
+        if(reading==null||reading.topic==null||current==null||!current.url.equals(item.url)||!ArticleSession.contentCurrent(doc))return;
+        TopicBundle.merge(reading,doc);topicMediaReady=topicAhead.mediaCount(item);
+        if(topicMoreRequested||topicNearEnd())appendTopicBatch();
+    }
+    private boolean topicNearEnd(){return readerWeb!=null&&readerWeb.getScrollY()>dp(24)&&readerWeb.getContentHeight()*readerWeb.getScale()-readerWeb.getScrollY()-readerWeb.getHeight()<readerWeb.getHeight()*1.25f;}
+    private void appendTopicBatch(){
+        if(topicAppending||readerWeb==null||reading==null||reading.topic==null)return;
+        int shown=TopicReaderHtml.visible(expanded),next=Math.min(TopicBundle.total(reading),shown+TopicBundle.PAGE);
+        if(next<=shown)return;
+        if(topicMediaReady<next||!TopicBundle.prepared(reading,next)){topicMoreRequested=true;prepareTopicAhead();return;}
+        topicAppending=true;topicMoreRequested=false;TopicReaderHtml.visible(expanded,next);
+        String html=renderedReaderHtml(reading);org.jsoup.nodes.Element answers=org.jsoup.Jsoup.parse(html).selectFirst(".topic-answers");
+        if(answers==null){topicAppending=false;return;}
+        String fragment=answers.html();WebView web=readerWeb;int revision=readerRevision;
+        long started=android.os.SystemClock.elapsedRealtime();
+        readerScript(web,"(()=>{const list=document.querySelector('.topic-answers');if(!list)return false;const t=document.createElement('template');t.innerHTML="+org.json.JSONObject.quote(fragment)+";const old=list.querySelector('.topic-batch-more');if(old)old.remove();for(const card of [...t.content.children])if(!card.id||!document.getElementById(card.id))list.appendChild(card);return true})()",result->{
+            topicAppending=false;if(web!=readerWeb||revision!=readerRevision)return;
+            if("true".equals(result)){readerHtml=html;settleReaderImages(web,null);scheduleViewportSample();rememberReading();
+                web.postVisualStateCallback(++topicDomRevision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){android.util.Log.i("NewReaderBatch","visible ms="+(android.os.SystemClock.elapsedRealtime()-started)+" count="+next);}});
+                prepareTopicAhead();
+            }
+        });
+    }
+    private void topicPost(int index){
+        if(current==null||reading==null||reading.topic==null||index<0||index>=reading.topic.choices.size())return;
+        Item post=reading.topic.choices.get(index);if(post.video)return;
+        Document body=TopicBundle.find(reading,post.url);
+        if(body!=null)topicToggle(post.url.equals(reading.sourceUrl())?TopicReaderHtml.collapsedKey(body):TopicReaderHtml.openKey(post.url),index);
+        else{expanded.add(TopicReaderHtml.openKey(post.url));readerPrefetch.prioritize(TiebaTopic.select(current,reading.topic,post));}
+    }
+    private void topicSelect(int index){
+        if(reading==null||reading.topic==null||index<0||index>=reading.topic.choices.size())return;
+        String post=reading.topic.choices.get(index).url;Document body=TopicBundle.find(reading,post);
+        if(body==null){pendingTopicPost=post;topicPost(index);return;}
+        if(!TopicReaderHtml.postOpen(reading,body,expanded))topicPost(index);
+        WebView web=readerWeb;readerScript(web,"(()=>{const card=document.getElementById('reading-topic-"+index+"');if(card)scrollBy(0,card.getBoundingClientRect().top-60);return true})()",value->{});
+    }
+    private void topicToggle(String key,int index){
+        if(readerWeb==null||reading==null)return;
+        long started=android.os.SystemClock.elapsedRealtime();
+        if(!expanded.add(key))expanded.remove(key);
+        cancelDeferredContinuation();interruptViewportRestore();closeVideo();
+        suppressAutoUntil=System.currentTimeMillis()+1500;sampledViewport=null;sampledViewportPage="";
+        String id="reading-topic-"+index,next=renderedReaderHtml(reading);org.jsoup.nodes.Element card=org.jsoup.Jsoup.parse(next).getElementById(id);
+        if(card==null){reloadReader(reading);return;}
+        WebView web=readerWeb;int revision=readerRevision;long mutation=++topicDomRevision;Document body=TopicBundle.find(reading,reading.topic.choices.get(index).url);boolean collapsing=!key.startsWith("topic-comments:")&&!TopicReaderHtml.postOpen(reading,body,expanded);
+        readerScript(web,"(()=>{const old=document.getElementById("+org.json.JSONObject.quote(id)+"),template=document.createElement('template');template.innerHTML="+org.json.JSONObject.quote(card.outerHtml())+";const fresh=template.content.firstElementChild;if(!old||!fresh)return false;const top=old.getBoundingClientRect().top;old.replaceWith(fresh);if("+collapsing+")scrollBy(0,fresh.getBoundingClientRect().top-Math.max(60,top));return true})()",result->{
+            if(web!=readerWeb||revision!=readerRevision||mutation!=topicDomRevision)return;
+            if(!"true".equals(result)){streamAnchor=id;openPosition=-1;reloadReader(reading);return;}
+            readerHtml=next;settleReaderImages(web,null);scheduleViewportSample();rememberReading();
+            web.postVisualStateCallback(mutation,new WebView.VisualStateCallback(){@Override public void onComplete(long ignored){if(web==readerWeb&&mutation==topicDomRevision)android.util.Log.i("NewReaderExpand","visible ms="+(android.os.SystemClock.elapsedRealtime()-started)+" index="+index);}});
+        });
+    }
+    private void topicPrepared(Document doc){
+        if(reading==null||readerWeb==null||reading.topic==null||!reading.url.equals(doc.url)||!ArticleSession.contentCurrent(doc))return;
+        Set<String> missing=new HashSet<>();for(Item choice:reading.topic.choices)if(TopicBundle.find(reading,choice.url)==null)missing.add(choice.url);
+        if(!TopicBundle.merge(reading,doc))return;
+        repo.cacheArticle(reading);
+        int readyAnchor=-1;for(int n=0;n<reading.topic.choices.size();n++)if(reading.topic.choices.get(n).url.equals(pendingTopicPost)&&TopicBundle.find(reading,pendingTopicPost)!=null){readyAnchor=n;pendingTopicPost="";break;}
+        String next=renderedReaderHtml(reading);org.jsoup.nodes.Document html=org.jsoup.Jsoup.parse(next);org.json.JSONArray fragments=new org.json.JSONArray();
+        for(int n=0;n<reading.topic.choices.size();n++){String post=reading.topic.choices.get(n).url;if(missing.contains(post)||post.equals(doc.sourceUrl())){org.jsoup.nodes.Element card=html.getElementById("reading-topic-"+n);if(card!=null)fragments.put(new org.json.JSONArray().put(card.id()).put(card.outerHtml()));}}
+        org.jsoup.nodes.Element progress=html.selectFirst(".topic-cache-state");WebView web=readerWeb;int revision=readerRevision;long mutation=++topicDomRevision;
+        readerScript(web,"(()=>{for(const [id,markup] of "+fragments+"){const old=document.getElementById(id);if(!old)continue;const t=document.createElement('template');t.innerHTML=markup;old.replaceWith(t.content.firstElementChild);}const status=document.querySelector('.topic-cache-state');if(status)status.textContent="+org.json.JSONObject.quote(progress==null?"":progress.text())+";const target=document.getElementById('reading-topic-"+readyAnchor+"');if(target)scrollBy(0,target.getBoundingClientRect().top-60);return true})()",value->{if(web==readerWeb&&revision==readerRevision&&mutation==topicDomRevision){readerHtml=next;settleReaderImages(web,null);rememberReading();}});
+    }
+    private void topicMore(int index){
+        if(reading==null||reading.topic==null||index<0||index>=reading.topic.choices.size())return;
+        Item choice=reading.topic.choices.get(index);Document focused=TopicBundle.focus(reading,choice.url);if(focused==null)return;
+        if(focused!=reading){if(TopicReaderHtml.bodyVisible(reading,expanded))expanded.add(TopicReaderHtml.openKey(reading.sourceUrl()));closeAnswers();current=TiebaTopic.select(current,reading.topic,choice);expanded.remove(TopicReaderHtml.collapsedKey(focused));expanded.add(TopicReaderHtml.commentsKey(focused));streamAnchor="reading-topic-"+index;renderCached(focused);}
+        loadMore();
+    }
     private void sectionMenu(){
         List<Section> parts=ReaderHtml.sections(reading);String[] labels=new String[parts.size()];
         for(int n=0;n<parts.size();n++){Section part=parts.get(n);String preview="";for(Block block:part.blocks)if(block.type.equals("text")){preview=block.value.replace('\n',' ');break;}labels[n]=(n+1)+" · "+part.label+"  "+preview.substring(0,Math.min(32,preview.length()));}
         new AlertDialog.Builder(this).setTitle("跳转到回答 / 楼层").setItems(labels,(d,n)->jumpTo(n)).show();
     }
-    private void jumpTo(int index){if(reading==null)return;List<Section> parts=ReaderHtml.sections(reading);if(index<0||index>=parts.size())return;expanded.add(parts.get(index).id);streamAnchor="";openPosition=-1;pendingAnchor=index;reloadReader(reading);}
+    private void jumpTo(int index){if(reading==null)return;List<Section> parts=ReaderHtml.sections(reading);if(index<0||index>=parts.size())return;expanded.add(parts.get(index).id);if(reading.topic!=null){expanded.remove(TopicReaderHtml.collapsedKey(reading));if(ReaderHtml.discussion(parts.get(index)))expanded.add(TopicReaderHtml.commentsKey(reading));}streamAnchor="";openPosition=-1;pendingAnchor=index;reloadReader(reading);}
     private void changeFont(int next){
         int old=font;font=next;getPreferences(0).edit().putInt("font",font).apply();
         if(readerWeb!=null){
@@ -650,7 +759,7 @@ public final class MainActivity extends Activity {
         sampledViewport=null;sampledViewportPage="";viewportRestoreRunning=false;preloadHandler.removeCallbacks(sampleViewport);
         if(readerWeb!=null){readerWeb.getSettings().setTextZoom(Math.round(font*100f/19));readerHtml=renderedReaderHtml(doc);readerPageUrl=ReaderHtml.ACTION+"?render="+System.nanoTime()+"-"+(++readerRevision)+(!streamAnchor.isEmpty()?"#"+streamAnchor:pendingAnchor>=0?"#part-"+pendingAnchor:"");pendingAnchor=-1;readerWeb.loadUrl(readerPageUrl);}
     }
-    private String renderedReaderHtml(Document doc){return ReaderHtml.render(doc,current.source,19,dark,expanded,loadingMore,font,Theme.style(this)).replace("<main>","<main style=\"padding-top:60px\">");}
+    private String renderedReaderHtml(Document doc){return TopicReaderHtml.decorate(current,doc,ReaderHtml.render(doc,current.source,19,dark,expanded,loadingMore,font,Theme.style(this)),expanded).replace("<main>","<main style=\"padding-top:60px\">");}
     private void settleReaderImages(WebView web,String failedUrl){
         if(web!=readerWeb||reading==null||wasStopped||isFinishing()||isDestroyed()||failedUrl!=null&&!reading.containsImage(failedUrl))return;
         String page=readerPageUrl;int revision=readerRevision;
@@ -769,12 +878,14 @@ public final class MainActivity extends Activity {
         preloadHandler.postDelayed(deferredContinuation,delay+30);
     }
     private void maybeLoadMore(WebView web,boolean scrolled){
+        if(!TopicReaderHtml.commentsVisible(reading,expanded))return;
         if(web==null||web!=readerWeb||current==null||reading==null||!readingVisible()||loadingMore||morePaused||pendingViewport!=null||viewportRestoreRunning||System.currentTimeMillis()<=suppressAutoUntil||web.getHeight()<=0||!ReaderContinuation.automatic(current.source,reading))return;
         float height=web.getContentHeight()*web.getScale();
         if(scrolled?height-web.getScrollY()-web.getHeight()<web.getHeight()*.75f:height<=web.getHeight()+dp(32)&&web.getScrollY()<=dp(2))loadMore();
     }
     private boolean readingVisible(){return readingResumed&&hasWindowFocus()&&!wasStopped&&!isFinishing()&&!isDestroyed();}
     private void loadMore(){
+        if(!TopicReaderHtml.commentsVisible(reading,expanded))return;
         if(!readingVisible()||loadingMore||reading==null||current==null)return;
         if(TiebaReplies.supports(current.source,reading)){
             if(Set.of("limit","end","login").contains(reading.moreStatus))return;
@@ -812,7 +923,7 @@ public final class MainActivity extends Activity {
         atReadingPosition(()->reloadReader(reading),()->{});
     }
     private void recordReadFact(){
-        if(!readingVisible()||readerWeb==null||!readPresentedPage.equals(readerPageUrl)||!ArticleReadHistory.displayed(current,reading)||!ArticleSession.contentCurrent(reading))return;
+        if(!readingVisible()||readerWeb==null||!TopicReaderHtml.bodyVisible(reading,expanded)||!readPresentedPage.equals(readerPageUrl)||!ArticleReadHistory.displayed(current,reading)||!ArticleSession.contentCurrent(reading))return;
         ArticleReadHistory history=new ArticleReadHistory(this,ArticleReadHistory.database(this,getIntent().getStringExtra("test_database")));
         if(!history.seen(current.source,current.url))history.mark(current.source,current.url,System.currentTimeMillis());
     }
@@ -830,7 +941,7 @@ public final class MainActivity extends Activity {
     @Override public boolean dispatchGenericMotionEvent(android.view.MotionEvent event){if(event.getActionMasked()==android.view.MotionEvent.ACTION_SCROLL){interruptViewportRestore();if(readerPrefetch!=null){readerPrefetch.defer();readerPrefetch.action();}}return super.dispatchGenericMotionEvent(event);}
     @Override public void onUserInteraction(){super.onUserInteraction();engagement.touch(android.os.SystemClock.elapsedRealtime());}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)recordReadFact();engagement.visible(readingResumed&&focused,android.os.SystemClock.elapsedRealtime());if(readerPrefetch!=null){if(focused)readerPrefetch.settled();else readerPrefetch.defer();}}
-    @Override protected void onPause(){cancelDeferredContinuation();continuationGestureWeb=null;if(readerPrefetch!=null)readerPrefetch.pause();closeVideo();readingResumed=false;engagement.visible(false,android.os.SystemClock.elapsedRealtime());recordReadingInterest();rememberReading();super.onPause();}
+    @Override protected void onPause(){cancelDeferredContinuation();continuationGestureWeb=null;if(readerPrefetch!=null)readerPrefetch.pause();if(topicAhead!=null)topicAhead.pause();closeVideo();readingResumed=false;engagement.visible(false,android.os.SystemClock.elapsedRealtime());recordReadingInterest();rememberReading();super.onPause();}
     @Override protected void onStop(){
         dismissReaderActions();wasStopped=true;
         if(answers!=null){discussionInterrupted=answers.busy();answers.close();answers=null;if(discussionInterrupted)loadingMore=false;}
@@ -844,6 +955,6 @@ public final class MainActivity extends Activity {
         preloadHandler.removeCallbacks(sampleViewport);if(preloader!=null){if(isChangingConfigurations()&&reading==null&&preloader.canRetainForeground(current))preloader.detachForeground();else preloader.pause();}if(discussions!=null){discussionInterrupted=discussions.busy();discussions.close();discussions=null;if(discussionInterrupted)loadingMore=false;}super.onStop();
     }
     @Override public void onTrimMemory(int level){super.onTrimMemory(level);app.quietreader.ai.RecommendationPolicy.memoryPressure(level);if(level>=TRIM_MEMORY_RUNNING_LOW){if(readerPrefetch!=null)readerPrefetch.trim();images.evictAll();if(repo!=null)repo.releaseArticleMemory();if(preloader!=null)preloader.trim();}}
-    @Override protected void onResume(){super.onResume();readingResumed=true;if(readerPrefetch!=null)readerPrefetch.resume();engagement.visible(hasWindowFocus(),android.os.SystemClock.elapsedRealtime());boolean resume=wasStopped;wasStopped=false;if(discussionInterrupted){discussionInterrupted=false;continuationFailure("加载已暂停，已读回复保留，可重试继续。");}if(current!=null&&resume&&reading==null&&dynamic==null)open(current,false);else if(resume&&reading!=null&&imageOwner!=null&&imageOwner.paused()){if(!imageOwner.matches(current)){open(current,false);return;}boolean interrupted=imageOwner.takeInterrupted();imageOwner.resume();if(interrupted&&readerWeb!=null)reloadInterruptedImages();}}
-    @Override protected void onDestroy() { generation++;if(readerPrefetch!=null)readerPrefetch.close();if(imageOwner!=null){imageOwner.close();imageOwner=null;}cancelPendingArticle();preloadHandler.removeCallbacksAndMessages(null);if(preloader!=null)preloader.close();closeAnswers(); if(imagePreview!=null)imagePreview.dismiss();if(dynamic!=null)dynamic.close();if(readerWeb!=null){SourceSurface.release(readerWeb);readerWeb=null;}repo.close(); super.onDestroy(); }
+    @Override protected void onResume(){super.onResume();readingResumed=true;if(topicAhead!=null){topicAhead.resume();prepareTopicAhead();}if(readerPrefetch!=null)readerPrefetch.resume();engagement.visible(hasWindowFocus(),android.os.SystemClock.elapsedRealtime());boolean resume=wasStopped;wasStopped=false;if(discussionInterrupted){discussionInterrupted=false;continuationFailure("加载已暂停，已读回复保留，可重试继续。");}if(current!=null&&resume&&reading==null&&dynamic==null)open(current,false);else if(resume&&reading!=null&&imageOwner!=null&&imageOwner.paused()){if(!imageOwner.matches(current)){open(current,false);return;}boolean interrupted=imageOwner.takeInterrupted();imageOwner.resume();if(interrupted&&readerWeb!=null)reloadInterruptedImages();}}
+    @Override protected void onDestroy() { generation++;if(topicAhead!=null)topicAhead.close();if(readerPrefetch!=null)readerPrefetch.close();if(imageOwner!=null){imageOwner.close();imageOwner=null;}cancelPendingArticle();preloadHandler.removeCallbacksAndMessages(null);if(preloader!=null)preloader.close();closeAnswers(); if(imagePreview!=null)imagePreview.dismiss();if(dynamic!=null)dynamic.close();if(readerWeb!=null){SourceSurface.release(readerWeb);readerWeb=null;}repo.close(); super.onDestroy(); }
 }

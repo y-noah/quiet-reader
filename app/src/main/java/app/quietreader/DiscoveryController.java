@@ -18,6 +18,8 @@ final class DiscoveryController implements AutoCloseable {
         void state(boolean loading,boolean updateAvailable);
         void error(String message);
         default void refreshWork(boolean running){}
+        default void prepareTopics(List<FeedStore.Row> candidates){}
+        default boolean preparesTopics(){return false;}
         default void interestSetup(boolean needed){}
         default void recommendationState(RecommendationState state){}
         default void newPresentation(){}
@@ -75,7 +77,7 @@ final class DiscoveryController implements AutoCloseable {
         ArticleDiskCache disk=new ArticleDiskCache(activity);String namespace=disk.namespace();
         List<FeedStore.Row> target=readiness.targets(admissionPool(),this::bodyScope,System.currentTimeMillis());Map<String,String> sessions=new HashMap<>();
         for(FeedStore.Row row:target)sessions.put(row.candidate.id,ArticleDiskCache.session(row.candidate.originalUrl));
-        work(()->{List<CachedProof> found=new ArrayList<>();for(FeedStore.Row row:target){HotCandidate candidate=row.candidate;String session=sessions.get(candidate.id);ArticleDiskCache.Hit hit=disk.read(candidate.originalUrl,namespace,session,offline,System.currentTimeMillis());if(hit!=null&&hit.document.hasContent()&&ArticleVersion.matches(candidate.readerItem(),hit.document))found.add(new CachedProof(candidate,namespace+"\n"+session,hit.at));}return found;},found->{
+        work(()->{List<CachedProof> found=new ArrayList<>();for(FeedStore.Row row:target){HotCandidate candidate=row.candidate;String session=sessions.get(candidate.id);ArticleDiskCache.Hit hit=disk.read(candidate.originalUrl,namespace,session,offline,System.currentTimeMillis());if(hit!=null&&TopicBundle.initialReady(hit.document)&&ArticleVersion.matches(candidate.readerItem(),hit.document))found.add(new CachedProof(candidate,namespace+"\n"+session,hit.at));}return found;},found->{
             if(request!=admissionEpoch||admission==null)return;
             for(CachedProof proof:found)if(proof.scope.equals(bodyScope(proof.candidate)))readiness.persisted(FeedReadiness.key(proof.candidate),proof.scope,proof.at);
             tryAdmission();if(admission!=null&&!admissionCommitting)cacheAcceptedBatch(true);
@@ -91,7 +93,7 @@ final class DiscoveryController implements AutoCloseable {
         List<HotCandidate> missing=new ArrayList<>();
         work(()->{
             for(FeedStore.Row row:target){HotCandidate candidate=row.candidate;if(HotSourceCatalog.optionalVideo(candidate))continue;ArticleDiskCache.Hit hit=disk.read(candidate.originalUrl,namespace,sessions.get(candidate.id),offline,System.currentTimeMillis());
-                if(hit==null||!hit.document.hasContent()||!ArticleVersion.matches(candidate.readerItem(),hit.document))missing.add(candidate);}
+                if(hit==null||!TopicBundle.initialReady(hit.document)||!ArticleVersion.matches(candidate.readerItem(),hit.document))missing.add(candidate);}
             if(!missing.isEmpty())return new Snapshot();
             long id=store.admitPrepared(pendingAdmission.info.optLong("profileVersion"),pendingAdmission.info.optString("mode"),pendingAdmission.info.optString("filter"),pendingAdmission.rows,target,System.currentTimeMillis());return id>0?read(id):new Snapshot();
         },accepted->{
@@ -194,7 +196,7 @@ final class DiscoveryController implements AutoCloseable {
         if(restoredSource!=null)sourceFilter=SourceFilter.source(restoredSource);
         imagePreloader=new ImagePreloader(activity,()->canPrefetch()&&storageSpace!=null&&storageSpace.allowsPrefetch());
         imagePreloader.observeIdle(()->scheduleRecommendation(false));
-        preloader=new ArticlePreloader(activity,()->{},null,FeedReserve.CAPACITY,this::bodiesIdle,true);
+        preloader=new ArticlePreloader(activity,()->{},null,FeedReserve.CAPACITY,this::bodiesIdle,true).wholeTopics();
         preloader.observePrepared(this::bodyPrepared);preloader.observeFailure(this::bodyFailed);
         String database=activity.getIntent().getStringExtra("test_database");
         boolean diagnostic=(activity.getApplicationInfo().flags&android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0&&database!=null&&database.matches("test-ui-[a-z0-9-]+\\.db");
@@ -615,6 +617,7 @@ final class DiscoveryController implements AutoCloseable {
         if(!autoRefresh||closed||!foreground||!feedPage||(rows.isEmpty()&&admission==null)||ReaderStartup.pending())return;
         StringBuilder identity=new StringBuilder();Set<String> keep=new HashSet<>();List<Item> retainedItems=new ArrayList<>();
         for(FeedStore.Row row:cacheRows()){Item item=row.candidate.readerItem();identity.append(item.source.name()).append('|').append(item.url).append('@').append(ArticleVersion.hash(item)).append('\n');keep.add(item.url);retainedItems.add(item);}
+        listener.prepareTopics(cacheRows());
         String key=HotCandidate.hash(identity.toString());if(!force&&key.equals(cacheBatchKey)){
             // Publishing releases the previous screen's disk pins even when
             // the prefetch window is unchanged. Prune without renewing its lease.
@@ -637,15 +640,16 @@ final class DiscoveryController implements AutoCloseable {
     String handoff(Item item){
         imagePreloader.pause();
         String token=ArticleHandoff.offer(item,preloader);
-        if(token!=null){preloader=new ArticlePreloader(activity,()->{},null,FeedReserve.CAPACITY,this::bodiesIdle,true);preloader.observePrepared(this::bodyPrepared);preloader.observeFailure(this::bodyFailed);}
+        if(token!=null){preloader=new ArticlePreloader(activity,()->{},null,FeedReserve.CAPACITY,this::bodiesIdle,true).wholeTopics();preloader.observePrepared(this::bodyPrepared);preloader.observeFailure(this::bodyFailed);}
         return token;
     }
     String readerPrefetchPlan(HotCandidate candidate){long now=SystemClock.elapsedRealtime();return autoRefresh&&!closed?ReaderPrefetchPlan.from(cacheRows(),candidate,cacheWindow.direction(now),cacheWindow.rapid(now)).encode():null;}
+    void topicPrepared(Item item,Document document){bodyPrepared(item,document);}
     private void bodyPrepared(Item item,Document document){
         if(closed||document.cachedSession==null||!document.cachedSession.equals(ArticleDiskCache.session(item.url))||!new ArticleDiskCache(activity).namespace().equals(document.cachedNamespace)||!item.url.equals(document.url))return;
         imagePreloader.prepared(item,document);main.removeCallbacks(preparedImages);main.post(preparedImages);
         HotCandidate prepared=preparedCandidate(item);
-        if(prepared!=null&&ArticleVersion.matches(item,document)&&document.hasContent()&&!document.filteredVideo&&!document.loginRequired&&!document.sourceUnavailable){
+        if(prepared!=null&&ArticleVersion.matches(item,document)&&TopicBundle.initialReady(document)&&!document.filteredVideo&&!document.loginRequired&&!document.sourceUnavailable){
             String key=FeedReadiness.key(prepared),scope=bodyScope(prepared),verifyKey=key+"|"+scope;
             if(!readiness.ready(prepared,scope,System.currentTimeMillis(),cacheAge())&&verifying.add(verifyKey)){
                 new ArticleDiskCache(activity).verify(document,cacheOffline(),hit->main.post(()->{
@@ -708,6 +712,7 @@ final class DiscoveryController implements AutoCloseable {
         List<Item> window=new ArrayList<>();for(int n:cacheWindow.positions(rows.size(),viewport,visibleCount,SystemClock.elapsedRealtime()))window.add(rows.get(n).candidate.readerItem());
         for(FeedStore.Row row:admissionPool())window.add(row.candidate.readerItem());
         for(FeedStore.Row row:reserve.future())window.add(row.candidate.readerItem());
+        if(listener.preparesTopics())window.removeIf(TopicPreparation::supports);
         imagePreloader.offer(window,rows.size());preloader.offer(window,FeedReserve.CAPACITY,true);
     }
     void memoryPressure(){cancelBodySupply();prefetchBudget.clear();stopCachePolicy();main.removeCallbacks(expirePrefetch);cancelRepair();suspendRecommendation("内存紧张，已暂停整理");}

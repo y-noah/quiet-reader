@@ -40,7 +40,7 @@ final class ImagePreloader implements AutoCloseable {
     }
     ImagePreloader(Context context,BooleanSupplier eligible){this(context,eligible,ReaderImages.shared);images.attach(context);}
     ImagePreloader(Context context,BooleanSupplier eligible,ReaderImages images){this.context=context.getApplicationContext();this.eligible=eligible;this.images=images;}
-    private static String identity(Item item){return item.source.name()+'|'+item.url+'@'+ArticleVersion.hash(item);}
+    private static String identity(Item item){return item.source.name()+'|'+item.url+'@'+ArticleVersion.hash(item)+'|'+item.selectedTopicPost;}
     void offer(List<Item> items,int currentCount){
         offer(items);priorityCount=Math.max(0,currentCount);priorityImages=4;futureImages=1;
     }
@@ -103,7 +103,7 @@ final class ImagePreloader implements AutoCloseable {
         attempted.put(job.key,SystemClock.elapsedRealtime());while(attempted.size()>256)attempted.remove(attempted.keySet().iterator().next());
         requests.submit(ticket->{
             int used=limit;
-            try{used=images.load(job.url,job.body.referer,ticket,()->current(job,epoch),limit,false).length;}catch(Exception ignored){}
+            try{used=images.load(job.url,job.body.referer,ticket,()->current(job,epoch),limit,false,TiebaTopic.isTopic(job.item.url)?job.item.url:"").length;}catch(Exception ignored){}
             int cost=used;main.post(()->{if(epoch!=revision||!running)return;activeKey=null;spent+=cost;next(epoch);});
         });
     }

@@ -1,5 +1,6 @@
 .tools/
 .gradle/
+.android-local/
 .cxx/
 **/.cxx/
 **/build/

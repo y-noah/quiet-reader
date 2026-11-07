@@ -43,6 +43,28 @@ final class ArticlePreloader implements AutoCloseable {
     private long requestStarted;
     private void trace(String state){if(active!=null)android.util.Log.d("NewPrefetch",active.source.name()+" "+state+" ms="+(SystemClock.elapsedRealtime()-requestStarted));}
     private boolean closed;
+    private boolean wholeTopics;
+    private int topicLimit=TiebaTopic.MAX_POSTS;
+    ArticlePreloader topicWindow(int limit){wholeTopics=true;topicLimit=Math.max(1,limit);return this;}
+    ArticlePreloader wholeTopics(){wholeTopics=true;return this;}
+    void retryTopic(Item item){attempted.keySet().removeIf(key->key.startsWith(item.source.name()+"|"+item.url+"@"));}
+    private void prepared(Item item,Document doc){
+        if(wholeTopics&&doc.topic!=null){
+            topic(doc);
+            queue.removeIf(queued->queued.url.equals(item.url));
+            List<Item> missing=new ArrayList<>();
+            int wanted=0;for(Item post:doc.topic.choices)if(!post.video){if(wanted++>=topicLimit)break;if(TopicBundle.find(doc,post.url)==null)missing.add(TiebaTopic.select(item,doc.topic,post));}
+            for(int n=missing.size()-1;n>=0;n--)queue.addFirst(missing.get(n));
+        }
+        onPrepared.accept(item,doc);
+    }
+    private TiebaTopic.Resolved topic;
+    private String topicScope="";
+    void topic(Document doc){
+        if(doc.topic==null||!ArticleSession.contentCurrent(doc)||doc.cachedSession==null||!doc.cachedSession.equals(ArticleDiskCache.session(doc.url)))return;
+        ArticleSession captured=new ArticleSession(activity,doc.url);
+        if(captured.owns(doc)){topic=doc.topic;topicScope=captured.scopeIdentity();}
+    }
     private app.quietreader.ai.RecommendationPolicy.Watch policyWatch;
 
     ArticlePreloader(Activity activity,Runnable onVideo){this(activity,onVideo,null);}
@@ -64,8 +86,8 @@ final class ArticlePreloader implements AutoCloseable {
         queue.clear();
         Set<String> seen=new HashSet<>();
         int bounded=Math.max(1,Math.min(app.quietreader.discovery.FeedReserve.CAPACITY,limit));
-        for(Item item:candidates){if(seen.add(item.url))queue.add(item);if(queue.size()==bounded)break;}
-        if(active!=null&&queue.stream().noneMatch(i->ArticleVersion.sameRequest(i,active)))cancelActive();
+        for(Item item:candidates){if(seen.add(attemptKey(item)))queue.add(item);if(queue.size()==bounded)break;}
+        if(active!=null&&queue.stream().noneMatch(i->ArticleVersion.sameRequest(i,active)||wholeTopics&&i.url.equals(active.url)))cancelActive();
         if(policyWatch==null){policyWatch=new app.quietreader.ai.RecommendationPolicy.Watch(activity,reason->pause());policyWatch.start();}
         main.removeCallbacks(pump);main.postDelayed(pump,immediate?0:350);
     }
@@ -74,7 +96,7 @@ final class ArticlePreloader implements AutoCloseable {
         if(closed||reserved||active!=null||foreground!=null||retainedForeground)return;
         if(!app.quietreader.ai.RecommendationPolicy.restriction(activity).isEmpty()){queue.clear();idle();return;}
         if(!queue.isEmpty()&&!ArticleDiskCache.acceptsPrefetch()){main.postDelayed(pump,100);return;}
-        int remaining=queue.size();long earliest=Long.MAX_VALUE;
+        int remaining=queue.size()+TiebaTopic.MAX_POSTS;long earliest=Long.MAX_VALUE;
         while(remaining-->0&&!queue.isEmpty()){
             Item item=queue.removeFirst();Attempt previous=attempted.get(attemptKey(item));
             if(!item.source.readable()||!item.source.unifiedReading()||item.video||VideoPolicy.url(item.source,item.url)||!UrlPolicy.belongs(item.source,item.url)||item.url.equals(item.source.login)||item.url.equals(item.source.endpoint)||(!revalidateHidden&&repo.hiddenVideo(item)))continue;
@@ -83,7 +105,7 @@ final class ArticlePreloader implements AutoCloseable {
             // A URL-only marker has no metadata version. Recheck the source instead of
             // assigning any previously cached body to the current candidate version.
             Document cached=refreshHidden?null:repo.cachedArticle(item,session);
-            if(cached!=null&&(!revalidateHidden||ArticleVersion.matches(item,cached))){onPrepared.accept(item,cached);continue;}
+            if(cached!=null&&(!revalidateHidden||ArticleVersion.matches(item,cached))){prepared(item,cached);continue;}
             long now=SystemClock.elapsedRealtime();
             if(previous!=null&&!previous.scope.equals(session.scopeIdentity()))previous=null;
             if(previous!=null&&now<previous.until){if(previous.retryPending){queue.addLast(item);earliest=Math.min(earliest,previous.until);}continue;}
@@ -100,7 +122,7 @@ final class ArticlePreloader implements AutoCloseable {
             return;
         }
         if(!queue.isEmpty()&&earliest!=Long.MAX_VALUE){main.postDelayed(pump,Math.max(1,earliest-SystemClock.elapsedRealtime()));return;}
-        idle();
+        if(!queue.isEmpty()){main.post(pump);return;}idle();
     }
     /** Must be called before replacing the board. A true result now owns the callback. */
     boolean reserve(Item item){
@@ -162,8 +184,8 @@ final class ArticlePreloader implements AutoCloseable {
         if(!valid(request))return;
         if(retainedForeground){deferredDynamic=true;return;}
         activeSession=new ArticleSession(activity,item);
-        trace("browser-route");
-        try{dynamic=new DynamicReader(activity,item,dynamicResult(item,request),foreground!=null||retainedForeground);}
+        trace(topic!=null&&topicScope.equals(activeSession.scopeIdentity())&&TiebaTopic.reusable(item,topic,System.currentTimeMillis())?"topic-post-route":"browser-route");
+        try{dynamic=new DynamicReader(activity,item,dynamicResult(item,request),foreground!=null||retainedForeground,topic,topicScope);}
         catch(RuntimeException|LinkageError unavailable){failed(request,"来源阅读器暂不可用，请稍后重试");}
     }
     private Repository.Result<Document> dynamicResult(Item item,int request){
@@ -211,7 +233,7 @@ final class ArticlePreloader implements AutoCloseable {
         // Keep cooldowns for failures, permission shells and video-only results.
         if(doc.hasContent()&&!doc.filteredVideo&&!doc.loginRequired&&!doc.sourceUnavailable)attempted.remove(attemptKey(item));
         if(!doc.hasContent()||doc.filteredVideo||doc.loginRequired||doc.sourceUnavailable)onFailure.accept(item);
-        onPrepared.accept(item,doc);
+        prepared(item,doc);
         Repository.Result<Document> cb=foreground;foreground=null;active=null;activeSession=null;
         // Keep the delivering DynamicReader reachable while the foreground
         // callback transfers its loaded question to AnswerStream.

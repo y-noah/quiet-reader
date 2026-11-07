@@ -20,7 +20,7 @@ final class ReaderImageOwner implements AutoCloseable {
     boolean paused(){return scope==null;}
     ReaderImages.Scope snapshot(){return scope;}
     boolean takeInterrupted(){boolean value=interrupted;interrupted=false;return value;}
-    void resume(){if(scope==null&&current())scope=images.openScope(this::current);}
+    void resume(){if(scope==null&&current())scope=images.openScope(this::current,topic==null?"":item.url);}
     byte[] load(String url,String referer)throws Exception{ReaderImages.Scope active=scope;if(active==null)throw new InterruptedIOException("Reader image ownership paused");return active.load(url,referer);}
     @Override public void close(){ReaderImages.Scope active=scope;scope=null;if(active!=null)interrupted|=active.stop();}
 }

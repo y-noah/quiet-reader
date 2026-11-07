@@ -16,6 +16,7 @@ import static app.quietreader.Models.*;
 /** Single reading feed with a separate unified article reader. */
 public final class DiscoveryActivity extends Activity implements DiscoveryController.Listener {
     private DiscoveryController controller;
+    private TopicPreparation topicPreparation;
     private RecommendationTrialUi trialEvaluation;
     private ListView list;
 
@@ -27,7 +28,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private boolean exposureForeground;
     private final Rows adapter=new Rows();
     private ArticleReadHistory readHistory;
-    private List<FeedStore.Row> feed=Collections.emptyList();
+    private List<FeedStore.Row> feed=Collections.emptyList(),pendingFeed=Collections.emptyList(),pendingSearch=Collections.emptyList(),warmingTopics=Collections.emptyList();
     private Map<Source,JSONObject> sources=new EnumMap<>(Source.class);
     private String page="feed",sourcesReturnPage="feed";
     private int feedPosition,feedOffset;
@@ -47,7 +48,13 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private Map<String,Boolean> setupChoices;
     private ScrollView setupScroll;
     private Bundle pendingSetup;
-    private boolean loading,newest;
+    private boolean loading,newest,feedReceived,emptyConfirmed;
+    private final Runnable confirmEmpty=()->{if(feedReceived&&feed.isEmpty()&&pendingFeed.isEmpty()&&!loading){emptyConfirmed=true;adapter.notifyDataSetChanged();}};
+    private void settleEmpty(){
+        searchHandler.removeCallbacks(confirmEmpty);
+        if(!feed.isEmpty()||!pendingFeed.isEmpty()||loading){emptyConfirmed=false;return;}
+        if(feedReceived&&!emptyConfirmed)searchHandler.postDelayed(confirmEmpty,1200);
+    }
     private boolean updateAvailable;
     private RecommendationState recommendationState=RecommendationState.INITIAL;
     private Source loginReturn;
@@ -63,6 +70,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private final Runnable releaseReaderStartup=()->{readerDrawQueued=false;if(startupForeground&&!isFinishing()&&!isDestroyed())ReaderStartup.releaseDeferred();};
     @Override public void onCreate(Bundle state){
         Theme.apply(this);super.onCreate(state);readHistory=new ArticleReadHistory(this,ArticleReadHistory.database(this,getIntent().getStringExtra("test_database")));BackNavigation.install(this,this::back);
+        topicPreparation=new TopicPreparation(this,this::publishPreparedTopics,(item,doc)->{if(controller!=null)controller.topicPrepared(item,doc);});
         java.lang.ref.WeakReference<DiscoveryActivity> startupOwner=new java.lang.ref.WeakReference<>(this);
         ReaderStartup.defer(getApplicationContext(),()->{DiscoveryActivity owner=startupOwner.get();if(owner!=null&&!owner.isDestroyed()&&owner.controller!=null)owner.controller.readerReady();});
         boolean dark=Theme.dark(this);ink=Theme.ink(this);bg=Theme.background(this);accent=Theme.accent(this);
@@ -117,14 +125,14 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private void hideSearchKeyboard(){if(searchInput!=null)((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(searchInput.getWindowToken(),0);}
     private void queueSearch(){
         if(!"search".equals(page)||controller==null)return;
-        searchHandler.removeCallbacks(runSearch);controller.cancelSearch();searchRows=Collections.emptyList();searchMessage="正在查找…";adapter.notifyDataSetChanged();searchHandler.postDelayed(runSearch,250);
+        searchHandler.removeCallbacks(runSearch);controller.cancelSearch();searchRows=Collections.emptyList();pendingSearch=Collections.emptyList();searchMessage="正在查找…";adapter.notifyDataSetChanged();searchHandler.postDelayed(runSearch,250);
     }
     private void searchPool(){
         if(!"search".equals(page)||controller==null)return;
         String query=searchInput.getText().toString();
         controller.searchPool(query,result->{
             if(!"search".equals(page))return;
-            searchRows=result.rows;searchInput.setHint("搜索热搜池 · "+result.poolSize+" 条");
+            pendingSearch=result.rows;planTopics();publishPreparedTopics();searchInput.setHint("搜索热搜池 · "+result.poolSize+" 条");
             searchMessage=result.poolSize==0?"热搜池暂无内容，请返回首页刷新":query.trim().isEmpty()?"输入关键词，在整个热搜池的 "+result.poolSize+" 条内容中查找":"热搜池里没有相关热搜";
             adapter.notifyDataSetChanged();
         },()->{if("search".equals(page)){searchRows=Collections.emptyList();searchMessage="暂时无法读取热搜池，请重新搜索";adapter.notifyDataSetChanged();}});
@@ -157,7 +165,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         remember();boolean changed=!page.equals(next);int returnPosition=feedPosition,returnOffset=feedOffset;
         if(changed)cancelStartupRead();
         if(!"search".equals(next)){searchHandler.removeCallbacks(runSearch);controller.cancelSearch();hideSearchKeyboard();}
-        page=next;controller.feedPage("feed".equals(page));pageHeading();
+        page=next;planTopics();controller.feedPage("feed".equals(page));pageHeading();
         // Different pages have unrelated row identities. Reset ListView's sync
         // state so it cannot carry a partial card offset into the source list.
         if(changed)list.setAdapter(adapter);else adapter.notifyDataSetChanged();
@@ -210,15 +218,17 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     }
     private void open(HotCandidate candidate){
         if(openingReader)return;
+        Item selected=candidate.readerItem();Document prepared=TopicPreparation.supports(selected)?topicPreparation.ready(selected):null;
+        if(TopicPreparation.supports(selected)&&prepared==null){publishPreparedTopics();return;}
         hideSearchKeyboard();
         if(ReaderStartup.failed()){new AlertDialog.Builder(this).setMessage("阅读器暂时未准备好，可以重试准备。当前列表会保留。").setNegativeButton("取消",null).setPositiveButton("重试准备",(dialog,which)->prepareReader(candidate,true)).show();return;}
         if(ReaderStartup.pending()){prepareReader(candidate,false);return;}
-        openingReader=true;remember();String prefetchPlan=controller.readerPrefetchPlan(candidate);String handoff=!candidate.source.unifiedReading()?null:controller.handoff(candidate.readerItem());controller.stop();
+        openingReader=true;long openedAt=android.os.SystemClock.elapsedRealtime();String preparedToken=prepared==null?null:PreparedTopicHandoff.offer(selected,prepared);remember();String prefetchPlan=controller.readerPrefetchPlan(candidate);String handoff=!candidate.source.unifiedReading()?null:controller.handoff(candidate.readerItem());controller.stop();
         if(!candidate.source.unifiedReading()){
             sourceReadCandidate=candidate;LoginActivity.pendingDocument=null;
             startActivityForResult(new Intent(this,LoginActivity.class).putExtra("source",candidate.source.name()).putExtra("url",candidate.originalUrl).putExtra("reader_item",candidate.readerItem().json().toString()).putExtra("browse",true).putExtra("reader_import",true).putExtra("return_to_discovery",true),202);
         }
-        else try{startActivity(new Intent(this,MainActivity.class).putExtra("discovery_item",candidate.readerItem().json().toString()).putExtra("discovery_candidate",candidate.json().toString()).putExtra("reader_prefetch_plan",prefetchPlan).putExtra("test_database",getIntent().getStringExtra("test_database")).putExtra("article_handoff",handoff).putExtra("direct_reader",true));}
+        else try{startActivity(new Intent(this,MainActivity.class).putExtra("discovery_item",candidate.readerItem().json().toString()).putExtra("discovery_candidate",candidate.json().toString()).putExtra("reader_prefetch_plan",prefetchPlan).putExtra("test_database",getIntent().getStringExtra("test_database")).putExtra("article_handoff",handoff).putExtra("prepared_topic",preparedToken).putExtra("reader_open_started",openedAt).putExtra("direct_reader",true));}
         catch(RuntimeException failure){ArticleHandoff.cancel(handoff);throw failure;}
     }
     private void sourceMenu(Source source){
@@ -368,23 +378,41 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         pauseExposure();feedIdentities=new HashSet<>();for(FeedStore.Row row:rows)feedIdentities.add(row.eventId);
         nativeFeedReady=true;readerAfterNativeDraw();
         if(restoreAnchor!=null){position=Math.min(restorePosition,Math.max(0,rows.size()-1));for(int n=0;n<rows.size();n++)if(EventGroups.matches(rows.get(n),restoreAnchor)){position=n;break;}offset=restoreOffset;restoreAnchor=null;}
-        feed=rows;this.newest=newest;feedPosition=position;feedOffset=offset;
+        feedReceived=true;pendingFeed=rows;planTopics();publishPreparedTopics();this.newest=newest;feedPosition=position;feedOffset=offset;
         updateToolbar();
         if("feed".equals(page)){adapter.notifyDataSetChanged();if(position==0&&offset==0)list.setSelectionFromTop(0,0);else selectPosition(position,offset);}
         if(pendingSetup!=null){Bundle restored=pendingSetup;pendingSetup=null;list.post(()->{
             try{JSONArray data=new JSONArray(restored.getString("candidates","[]"));if(data.length()==0||data.length()>20)return;List<HotCandidate> candidates=new ArrayList<>();Map<String,Boolean> choices=new LinkedHashMap<>();JSONObject selected=new JSONObject(restored.getString("choices","{}"));for(int n=0;n<data.length();n++){HotCandidate candidate=HotCandidate.fromJson(data.getJSONObject(n));candidates.add(candidate);if(selected.has(candidate.id))choices.put(candidate.id,selected.getBoolean(candidate.id));}showInterestSetup(candidates,choices,restored.getInt("scroll"));}catch(JSONException ignored){}
         });}
     }
+    @Override public boolean preparesTopics(){return true;}
+    @Override public void prepareTopics(List<FeedStore.Row> candidates){warmingTopics=candidates;planTopics();}
+    private void planTopics(){
+        if(topicPreparation==null)return;
+        List<Item> items=new ArrayList<>();
+        if("search".equals(page))for(FeedStore.Row row:pendingSearch)items.add(row.candidate.readerItem());
+        for(List<FeedStore.Row> rows:List.of(pendingFeed,feed,searchRows,warmingTopics))for(FeedStore.Row row:rows)items.add(row.candidate.readerItem());
+        topicPreparation.plan(items);
+    }
+    private boolean topicPrepared(FeedStore.Row row){Item item=row.candidate.readerItem();return !TopicPreparation.supports(item)||topicPreparation.ready(item)!=null;}
+    private void publishPreparedTopics(){
+        if(topicPreparation==null)return;
+        feed=TopicPublication.select(pendingFeed,feed,this::topicPrepared);
+        searchRows=TopicPublication.select(pendingSearch,searchRows,this::topicPrepared);
+        planTopics();
+        feedIdentities=new HashSet<>();for(FeedStore.Row row:feed)feedIdentities.add(row.eventId);
+        settleEmpty();adapter.notifyDataSetChanged();
+    }
     @Override public void sources(Map<Source,JSONObject> states){sources=states;if("sources".equals(page))adapter.notifyDataSetChanged();}
     @Override public void recommendationState(RecommendationState value){recommendationState=value;updateStatusDescription();if(recommendationDialog!=null&&recommendationDialog.isShowing())recommendationDialog.setMessage(value.detail);}
     @Override public void onTrimMemory(int level){super.onTrimMemory(level);if(app.quietreader.ai.RecommendationPolicy.memoryPressure(level)&&controller!=null)controller.memoryPressure();}
-    @Override public void state(boolean loading,boolean updateAvailable){boolean changed=this.loading!=loading;this.loading=loading;this.updateAvailable=updateAvailable;updateToolbar();updateStatusDescription();if(changed&&feed.isEmpty()&&"feed".equals(page))adapter.notifyDataSetChanged();}
+    @Override public void state(boolean loading,boolean updateAvailable){boolean changed=this.loading!=loading;this.loading=loading;settleEmpty();this.updateAvailable=updateAvailable;updateToolbar();updateStatusDescription();if(changed&&feed.isEmpty()&&"feed".equals(page))adapter.notifyDataSetChanged();}
     @Override public void error(String message){nativeFeedReady=true;readerAfterNativeDraw();Toast.makeText(this,message,Toast.LENGTH_SHORT).show();}
     // Leaving the home feed exits this app task, including any older home entry.
     // Inner settings/source pages still return within the current activity.
     private void back(){if("sources".equals(page))show(sourcesReturnPage);else if(settingsPage()&&!"settings".equals(page))show("settings");else if(!"feed".equals(page))show("feed");else finishAffinity();}
     @Override public void onBackPressed(){back();}
-    @Override protected void onResume(){super.onResume();adapter.notifyDataSetChanged();exposureForeground=true;startupForeground=true;openingReader=false;if(!ReaderStartup.pending()){java.lang.ref.WeakReference<DiscoveryActivity> ownerRef=new java.lang.ref.WeakReference<>(this);ReaderStartup.defer(getApplicationContext(),()->{DiscoveryActivity owner=ownerRef.get();if(owner!=null&&!owner.isDestroyed()&&owner.controller!=null)owner.controller.readerReady();});}readerAfterNativeDraw();if(trialEvaluation!=null)trialEvaluation.foreground();if(controller!=null){controller.feedPage("feed".equals(page));if(loginReturn!=null){Repository cache=new Repository(this);cache.invalidateArticles();cache.close();}controller.start();if(loginReturn!=null){Source source=loginReturn;loginReturn=null;controller.refresh(Collections.singletonList(source));}}if(list!=null)list.post(reportExposure);if("search".equals(page))searchPool();}
+    @Override protected void onResume(){super.onResume();adapter.notifyDataSetChanged();exposureForeground=true;startupForeground=true;openingReader=false;if(topicPreparation!=null){planTopics();publishPreparedTopics();topicPreparation.resume();}if(!ReaderStartup.pending()){java.lang.ref.WeakReference<DiscoveryActivity> ownerRef=new java.lang.ref.WeakReference<>(this);ReaderStartup.defer(getApplicationContext(),()->{DiscoveryActivity owner=ownerRef.get();if(owner!=null&&!owner.isDestroyed()&&owner.controller!=null)owner.controller.readerReady();});}readerAfterNativeDraw();if(trialEvaluation!=null)trialEvaluation.foreground();if(controller!=null){controller.feedPage("feed".equals(page));if(loginReturn!=null){Repository cache=new Repository(this);cache.invalidateArticles();cache.close();}controller.start();if(loginReturn!=null){Source source=loginReturn;loginReturn=null;controller.refresh(Collections.singletonList(source));}}if(list!=null)list.post(reportExposure);if("search".equals(page))searchPool();}
     @Override protected void onPostResume(){super.onPostResume();updateRefreshAnimation();}
     @Override protected void onPause(){exposureForeground=false;updateRefreshAnimation();pauseExposure();super.onPause();}
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);updateRefreshAnimation();if(focused)sampleExposure();else pauseExposure();}
@@ -404,9 +432,9 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         controller.stop();startActivity(reader);
     }
     private void cancelStartupRead(){startupReadEpoch++;startupReadCandidate=null;startupReadWaiting=false;}
-    @Override protected void onStop(){searchHandler.removeCallbacks(runSearch);if(controller!=null)controller.cancelSearch();clearRefreshDraw();startupForeground=false;readerDrawQueued=false;if(list!=null){list.removeCallbacks(releaseReaderStartup);if(readerDraw!=null){list.getViewTreeObserver().removeOnPreDrawListener(readerDraw);readerDraw=null;}}cancelStartupRead();if(trialEvaluation!=null)trialEvaluation.pause();remember();if(controller!=null)controller.stop();super.onStop();}
+    @Override protected void onStop(){if(topicPreparation!=null)topicPreparation.pause();searchHandler.removeCallbacks(runSearch);if(controller!=null)controller.cancelSearch();clearRefreshDraw();startupForeground=false;readerDrawQueued=false;if(list!=null){list.removeCallbacks(releaseReaderStartup);if(readerDraw!=null){list.getViewTreeObserver().removeOnPreDrawListener(readerDraw);readerDraw=null;}}cancelStartupRead();if(trialEvaluation!=null)trialEvaluation.pause();remember();if(controller!=null)controller.stop();super.onStop();}
     @Override protected void onSaveInstanceState(Bundle out){remember();out.putString("page",page);out.putString("searchQuery",searchInput.getText().toString());if(controller!=null)out.putString("sourceFilter",controller.sourceFilter());out.putString("sourcesReturnPage",sourcesReturnPage);out.putInt("feedPosition",feedPosition);out.putInt("feedOffset",feedOffset);out.putString("feedAnchor",feedPosition<feed.size()?feed.get(feedPosition).eventId:"");if(loginReturn!=null)out.putString("loginReturn",loginReturn.name());if(sourceReadCandidate!=null)out.putString("sourceReadCandidate",sourceReadCandidate.json().toString());if(setupDialog!=null&&setupDialog.isShowing()&&setupCandidates!=null){Bundle setup=new Bundle();JSONArray candidates=new JSONArray();for(HotCandidate candidate:setupCandidates)candidates.put(candidate.json());setup.putString("candidates",candidates.toString());setup.putString("choices",new JSONObject(setupChoices).toString());setup.putInt("scroll",setupScroll.getScrollY());out.putBundle("interestSetup",setup);}if(trialEvaluation!=null){trialEvaluation.saveExport(out);if(trialEvaluation.activeSession()!=null)out.putString("trialSession",trialEvaluation.activeSession());}super.onSaveInstanceState(out);}
-    @Override protected void onDestroy(){searchHandler.removeCallbacks(runSearch);clearRefreshDraw();pauseExposure();if(list!=null&&list.getViewTreeObserver().isAlive())list.getViewTreeObserver().removeOnGlobalLayoutListener(exposureLayout);if(trialEvaluation!=null)trialEvaluation.close();if(setupDialog!=null)setupDialog.dismiss();if(recommendationDialog!=null)recommendationDialog.dismiss();if(controller!=null)controller.close();super.onDestroy();}
+    @Override protected void onDestroy(){if(topicPreparation!=null)topicPreparation.close();searchHandler.removeCallbacks(confirmEmpty);searchHandler.removeCallbacks(runSearch);clearRefreshDraw();pauseExposure();if(list!=null&&list.getViewTreeObserver().isAlive())list.getViewTreeObserver().removeOnGlobalLayoutListener(exposureLayout);if(trialEvaluation!=null)trialEvaluation.close();if(setupDialog!=null)setupDialog.dismiss();if(recommendationDialog!=null)recommendationDialog.dismiss();if(controller!=null)controller.close();super.onDestroy();}
     @Override public int feedCapacity(List<FeedStore.Row> candidates){return Math.min(FeedBatch.SIZE,candidates.size());}
     private final class Card extends LinearLayout {
         final TextView title,summary,meta,menu;final LinearLayout body;
@@ -454,7 +482,15 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         @Override public View getView(int position,View recycled,android.view.ViewGroup parent){
             int type=getItemViewType(position);LinearLayout wrapper=recycled instanceof LinearLayout?(LinearLayout)recycled:column();wrapper.setPadding(0,dp(5),0,dp(5));
             if(type==3){wrapper.removeAllViews();TextView value=button(settingsEntries()[position],()->settingAction(position));value.setTextSize(16);value.setTextColor(ink);value.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);value.setPadding(dp(14),dp(12),dp(14),dp(12));value.setMinHeight(dp(56));value.setBackground(surface(paper));wrapper.addView(value,new LinearLayout.LayoutParams(-1,-2));return wrapper;}
-            if(type==2){wrapper.removeAllViews();int count=feed.size();TextView value=text("search".equals(page)?searchMessage:loading?"正在获取热门话题…":(!"all".equals(controller.sourceFilter())?"这个来源暂无话题":"尚无话题"),14,muted);value.setPadding(dp(8),dp(12),dp(8),dp(12));value.setTextColor(muted);wrapper.addView(value);return wrapper;}
+            if(type==2){wrapper.removeAllViews();
+                if("feed".equals(page)&&!emptyConfirmed){
+                    for(int n=0;n<4;n++){LinearLayout skeleton=column();skeleton.setPadding(dp(12),dp(16),dp(12),dp(16));skeleton.setBackground(surface(paper));
+                        View headline=new View(DiscoveryActivity.this);headline.setBackground(surface(line));skeleton.addView(headline,new LinearLayout.LayoutParams(dp(230),dp(12)));
+                        View detail=new View(DiscoveryActivity.this);detail.setBackground(surface(line));LinearLayout.LayoutParams detailSize=new LinearLayout.LayoutParams(dp(140),dp(8));detailSize.topMargin=dp(14);skeleton.addView(detail,detailSize);
+                        LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,-2);spacing.bottomMargin=dp(10);wrapper.addView(skeleton,spacing);
+                    }return wrapper;
+                }
+                int count=feed.size();TextView value=text("search".equals(page)?searchMessage:loading?"正在获取热门话题…":(!"all".equals(controller.sourceFilter())?"这个来源暂无话题":"尚无话题"),14,muted);value.setPadding(dp(8),dp(12),dp(8),dp(12));value.setTextColor(muted);wrapper.addView(value);return wrapper;}
             if(type==1){SourceCard card=wrapper.getChildCount()>0&&wrapper.getChildAt(0) instanceof SourceCard?(SourceCard)wrapper.getChildAt(0):new SourceCard();wrapper.removeAllViews();wrapper.addView(card);card.bind(HotSourceCatalog.HOT.get(position));return wrapper;}
             Card card=wrapper.getChildCount()>0&&wrapper.getChildAt(0) instanceof Card?(Card)wrapper.getChildAt(0):new Card();wrapper.removeAllViews();wrapper.addView(card);
             card.bind(displayedRows().get(position),position);wrapper.setTag(displayedRows().get(position).eventId);return wrapper;

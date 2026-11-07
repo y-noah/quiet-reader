@@ -107,6 +107,7 @@ public final class Models {
         // url remains the requested/cache identity; a resolved topic also records
         // the exact post whose body is displayed, without changing recommendation identity.
         TiebaTopic.Resolved topic;
+        final java.util.Map<String,Document> topicBodies=new java.util.LinkedHashMap<>();
         public String sourceUrl(){return topic==null?url:topic.postUrl;}
         public final List<VideoAttachment> videos=new ArrayList<>();
         long cachedAt;
@@ -134,6 +135,7 @@ public final class Models {
         public boolean hasContent() { return blocks.stream().anyMatch(b->!b.type.equals("video")&&!b.type.equals("separator")); }
         public boolean canPresent() { return hasContent()||!related.isEmpty()||unsupportedVideo||filteredVideo||filteredVideos>0||loginRequired||sourceUnavailable; }
         public boolean containsImage(String url) {
+            for(Document body:topicBodies.values())if(body.containsImage(url))return true;
             for(VideoAttachment video:videos)if(!video.poster.isEmpty()&&video.poster.equals(url))return true;
             if(!videoPoster.isEmpty()&&videoPoster.equals(url))return true;
             for(Block b:blocks) {

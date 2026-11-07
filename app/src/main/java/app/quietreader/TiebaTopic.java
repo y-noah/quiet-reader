@@ -10,6 +10,10 @@ import static app.quietreader.Models.*;
 final class TiebaTopic {
     static final int MAX_POSTS=40;
     private TiebaTopic(){}
+    static boolean reusable(Item request,Resolved topic,long now){
+        long age=now-topic.at;
+        return request.source==Source.TIEBA&&request.url.equals(topic.topicUrl)&&!request.selectedTopicPost.isEmpty()&&age>=0&&age<=10*60_000&&topic.choices.stream().anyMatch(post->!post.video&&post.url.equals(request.selectedTopicPost));
+    }
     static final class Resolved {
         final String topicUrl,postUrl,postSession;
         final long at;

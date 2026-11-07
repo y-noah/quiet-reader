@@ -25,6 +25,7 @@ final class ReaderImages {
     private long epoch;
     private volatile ImageDiskCache disk;
     private volatile java.util.function.Supplier<String> namespace=()->"memory";
+    private volatile java.util.function.Supplier<Set<String>> topicPins=java.util.Collections::emptySet;
     private final LinkedHashSet<String> invalidated=new LinkedHashSet<>();
     private final LinkedHashMap<String,Entry> entries=new LinkedHashMap<>(16,.75f,true);
     private final RequestQueue sockets=new RequestQueue();
@@ -37,13 +38,15 @@ final class ReaderImages {
     }
     final class Scope implements AutoCloseable {
         private final java.util.function.BooleanSupplier allowed;
+        private final String retentionOwner;
         private final Set<Flight> pending=new HashSet<>();private volatile boolean closed;
-        private Scope(java.util.function.BooleanSupplier allowed){this.allowed=allowed;}
+        private Scope(java.util.function.BooleanSupplier allowed,String retentionOwner){this.allowed=allowed;this.retentionOwner=retentionOwner;}
         byte[] load(String url,String referer)throws Exception{return scoped(this,url,referer);}
         boolean stop(){synchronized(ReaderImages.this){if(closed)return false;boolean interrupted=!pending.isEmpty();closed=true;for(Flight flight:new ArrayList<>(pending)){flight.owners.remove(this);cancelUnused(flight);}pending.clear();ReaderImages.this.notifyAll();return interrupted;}}
         @Override public void close(){stop();}
     }
-    Scope openScope(java.util.function.BooleanSupplier allowed){return new Scope(allowed);}
+    Scope openScope(java.util.function.BooleanSupplier allowed){return openScope(allowed,"");}
+    Scope openScope(java.util.function.BooleanSupplier allowed,String retentionOwner){return new Scope(allowed,retentionOwner);}
     private void checkScope(Scope owner)throws IOException{if(owner.closed||!owner.allowed.getAsBoolean()||Thread.currentThread().isInterrupted())throw new java.io.InterruptedIOException("Image reader is inactive");}
     private void cancelUnused(Flight flight){if(!flight.done&&flight.owners.isEmpty()){if(flights.get(flight.key)==flight)flights.remove(flight.key);sockets.cancel(flight.ticket);}}
     private boolean needed(Flight flight){synchronized(this){for(Scope owner:flight.owners.keySet())if(!owner.closed&&owner.allowed.getAsBoolean())return true;return false;}}
@@ -67,13 +70,22 @@ final class ReaderImages {
             }else synchronized(this){while(!shared.done){checkScope(owner);try{wait(100);}catch(InterruptedException error){Thread.currentThread().interrupt();throw new java.io.InterruptedIOException("Image reader interrupted");}}}
             checkScope(owner);if(shared.failure!=null)throw shared.failure;
             if(shared.result==null||!shared.scope.equals(namespace.get())||!unchanged(shared.revision)||!current(shared.result.sessions))throw new IOException("图片登录或缓存状态已变化，请重试。");
+            retainOwner(owner,shared,url,referer);
             return shared.result.bytes;
         }finally{synchronized(this){Integer count=shared.owners.get(owner);if(count!=null){if(count>1)shared.owners.put(owner,count-1);else{shared.owners.remove(owner);owner.pending.remove(shared);}}cancelUnused(shared);notifyAll();}}
+    }
+    private void retainOwner(Scope owner,Flight flight,String url,String referer)throws IOException{
+        if(owner.retentionOwner.isEmpty()||flight.result.sessions.containsKey(owner.retentionOwner))return;
+        Map<String,String> marks=new LinkedHashMap<>(flight.result.sessions);marks.put(owner.retentionOwner,fingerprint(owner.retentionOwner));
+        Entry copy=new Entry(url,referer,flight.result.bytes,marks);String key=flight.scope+'\0'+key(url,referer);
+        java.util.function.BooleanSupplier valid=()->!owner.closed&&owner.allowed.getAsBoolean()&&flight.scope.equals(namespace.get())&&unchanged(flight.revision)&&current(marks);
+        synchronized(this){if(!valid.getAsBoolean())throw new IOException("Image owner changed");store(key,copy);}
+        ImageDiskCache storage=disk;if(storage!=null)storage.write(key,url,marks,copy.bytes,System.currentTimeMillis(),valid);
     }
     ReaderImages(){this(url->android.webkit.CookieManager.getInstance().getCookie(url),(CancellableFetcher)Repository::imageBytes,2*1024*1024);}
     ReaderImages(Function<String,String> cookies,Fetcher fetcher,int budget){this(cookies,(url,ref,scoped,ticket,limit)->fetcher.fetch(url,ref,scoped),budget);}
     ReaderImages(Function<String,String> cookies,CancellableFetcher fetcher,int budget){this.cookies=cookies;this.fetcher=fetcher;this.budget=budget;}
-    void attach(android.content.Context context){android.content.Context app=context.getApplicationContext();attach(new ImageDiskCache(new java.io.File(app.getCacheDir(),"reader-images-v1")),()->app.getSharedPreferences("article-cache",0).getString("namespace","initial"));}
+    void attach(android.content.Context context){android.content.Context app=context.getApplicationContext();topicPins=()->new ArticleDiskCache(app).pinnedTopicUrls();attach(new ImageDiskCache(new java.io.File(app.getCacheDir(),"reader-images-v1")),()->app.getSharedPreferences("article-cache",0).getString("namespace","initial"));}
     void attach(ImageDiskCache disk,java.util.function.Supplier<String> namespace){this.disk=disk;this.namespace=namespace;}
     private String fingerprint(String url){return fingerprintCookie(cookies.apply(url));}
     private static String fingerprintCookie(String cookie){return app.quietreader.discovery.HotCandidate.hash(cookie==null?"":cookie);}
@@ -88,6 +100,11 @@ final class ReaderImages {
     }
     byte[] load(String url,String referer,RequestQueue.Ticket ticket,java.util.function.BooleanSupplier allowed,int limit,boolean retain)throws Exception{
         return acquire(url,referer,ticket,allowed,limit,retain).bytes;
+    }
+    byte[] load(String url,String referer,RequestQueue.Ticket ticket,java.util.function.BooleanSupplier allowed,int limit,boolean retain,String topic)throws Exception{
+        Entry result=acquire(url,referer,ticket,allowed,limit,retain);
+        if(!topic.isEmpty()){try(Scope owner=openScope(allowed,topic)){Flight receipt=new Flight("",namespace.get(),url,epoch);receipt.result=result;try{retainOwner(owner,receipt,url,referer);}finally{sockets.release(receipt.ticket);}}}
+        return result.bytes;
     }
     private Entry acquire(String url,String referer,RequestQueue.Ticket ticket,java.util.function.BooleanSupplier allowed,int limit,boolean retain)throws Exception{
         check(ticket,allowed);
@@ -136,7 +153,7 @@ final class ReaderImages {
     synchronized void remove(String url){epoch++;invalidateFlights();invalidated.add(url);if(invalidated.size()>128)invalidated.remove(invalidated.iterator().next());Iterator<Entry> iterator=entries.values().iterator();while(iterator.hasNext()){Entry entry=iterator.next();if(entry.url.equals(url)){size-=entry.weight;iterator.remove();}}}
     synchronized void evictAll(){epoch++;invalidateFlights();entries.clear();size=0;}
     synchronized Runnable retainBatch(Set<String> urls){
-        epoch++;invalidateFlights();long captured=epoch;Set<String> keep=new HashSet<>(urls);
+        epoch++;invalidateFlights();long captured=epoch;Set<String> keep=new HashSet<>(urls);keep.addAll(topicPins.get());
         Iterator<Entry> iterator=entries.values().iterator();while(iterator.hasNext()){
             Entry entry=iterator.next();boolean retained=false;for(String url:keep)if(entry.sessions.containsKey(url)){retained=true;break;}
             if(!retained){size-=entry.weight;iterator.remove();}
