@@ -18,6 +18,7 @@ final class DiscoveryController implements AutoCloseable {
         void state(boolean loading,boolean updateAvailable);
         void error(String message);
         default void refreshWork(boolean running){}
+        default void exhausted(boolean value){}
         default void prepareTopics(List<FeedStore.Row> candidates){}
         default boolean preparesTopics(){return false;}
         default void interestSetup(boolean needed){}
@@ -136,7 +137,7 @@ final class DiscoveryController implements AutoCloseable {
             if(!SourceFilter.normalize(sourceFilter).equals(SourceFilter.normalize(next.info.optString("filter"))))return;
             if(reserveProfile!=next.info.optLong("profileVersion"))reserve.clear();
             reserveProfile=next.info.optLong("profileVersion");reserve.preference(next.preference);reserve.nextTurn(next.turn);
-            reserve.stage(availableBodies(next.rows),sourceFilter);cacheAcceptedBatch(false);
+            reserve.stage(availableBodies(next.future),sourceFilter);if(next.remaining>0)exhausted(false);else if(pending==id){pending=0;state();}cacheAcceptedBatch(false);
         });
     }
     private boolean feedPage=true;
@@ -165,7 +166,7 @@ final class DiscoveryController implements AutoCloseable {
     private volatile int feedGeneration;
     private volatile long progressEpoch;
     private long explicitRefreshEpoch;
-    private boolean explicitRefreshRunning;
+    private boolean explicitRefreshRunning,recommendationExhausted;
     private volatile long recommendationEpoch;
     private long completedSource=-1,completedProfile=-1;
     private LocalRecommendation recommendation;
@@ -188,7 +189,7 @@ final class DiscoveryController implements AutoCloseable {
     private String visibleMode="cold";
     private Map<Source,JSONObject> states=new EnumMap<>(Source.class);
     private static final class Snapshot {
-        long id,turn;JSONObject info;List<FeedStore.Row> rows;int readyCount=-1;PlatformPreference preference;
+        long id,turn;JSONObject info;List<FeedStore.Row> rows,future;int readyCount=-1,remaining;PlatformPreference preference;
     }
     DiscoveryController(Activity activity,Listener listener,boolean autoRefresh){
         this(activity,listener,autoRefresh,null);
@@ -265,15 +266,32 @@ final class DiscoveryController implements AutoCloseable {
     private Snapshot read(long id)throws Exception{
         Snapshot result=new Snapshot();result.turn=store.balanceTurn();result.preference=new PlatformPreference(store.profile(System.currentTimeMillis()).getJSONArray("feedback"));result.id=id;result.info=store.snapshotInfo(id);result.rows=new ArrayList<>();
         if(result.info!=null)for(int start=0;start<result.info.getInt("count");start+=200)result.rows.addAll(store.readSnapshot(id,200,start));
-        result.rows=store.unread(result.rows);
+        result.rows=store.unread(result.rows);result.future=SourceFilter.apply(store.unpresented(result.rows,System.currentTimeMillis()),result.info==null?"all":result.info.optString("filter"));result.remaining=result.future.size();
         return result;
     }
+    private String selectionModelRevision;
     private long build(boolean latest)throws Exception{
         return build(latest,Collections.emptyList());
     }
     private long build(boolean latest,List<FeedStore.Row> preserve)throws Exception{
         long now=System.currentTimeMillis(),source=store.version("sources");JSONObject profile=store.profile(now);
-        List<FeedStore.Row> ordered=store.unread(CandidateOrder.arrange(store.candidates(5000,0),profile.getJSONArray("feedback"),latest));
+        List<FeedStore.Row> ordered=store.unread(CandidateOrder.arrange(store.candidates(RecommendationWindow.POOL_SIZE,0),profile.getJSONArray("feedback"),latest));
+        {
+            List<FeedStore.Row> chronological=latest?new ArrayList<>(ordered):Collections.emptyList();
+            ordered.sort(Comparator.comparing(row->row.eventId));
+            SemanticOrder.Profile interests=new SemanticOrder.Profile(profile.getJSONArray("feedback"));
+            Map<String,float[]> vectors=new HashMap<>();
+            if(selectionModelRevision==null)try{selectionModelRevision=new ModelFiles(activity).revision();}catch(Exception unavailable){selectionModelRevision="";}
+            if(!selectionModelRevision.isEmpty()){
+                Map<String,String> inputs=new HashMap<>();for(SemanticOrder.Sample sample:interests.samples)inputs.put(sample.key,sample.text);
+                for(FeedStore.Row row:ordered)inputs.put(SemanticOrder.key(row.candidate.modelText()),row.candidate.modelText());
+                android.database.sqlite.SQLiteDatabase db=store.getWritableDatabase();db.beginTransaction();try{
+                    for(String key:inputs.keySet()){float[] vector=store.vector(FeedStore.vectorKey(key,selectionModelRevision,"wordpiece-v1"),now);if(vector!=null)vectors.put(key,vector);}db.setTransactionSuccessful();
+                }finally{db.endTransaction();}
+            }
+            ordered=store.selectRecommendations(SemanticOrder.fuse(SemanticOrder.rank(ordered,interests,vectors),Collections.emptyMap(),interests.platforms),now);
+            if(latest)ordered=CandidateOrder.preserveVisibleOrder(ordered,chronological);
+        }
         if(!latest&&preserve.isEmpty())ordered=FeedSourceBalance.arrange(ordered,new PlatformPreference(profile.getJSONArray("feedback")),store.balanceTurn());
         if(!preserve.isEmpty())ordered=CandidateOrder.preserveVisibleGroups(ordered,preserve,profile.getJSONArray("feedback"));
         return store.commitRanking(source,profile.getLong("version"),now,latest?"newest":new PlatformPreference(profile.getJSONArray("feedback")).empty()?"cold":"platform",sourceFilter,ordered);
@@ -303,9 +321,9 @@ final class DiscoveryController implements AutoCloseable {
         if(keepAnchor){int found=-1;for(int n=0;n<rows.size();n++)if(EventGroups.matches(rows.get(n),anchor)){found=n;break;}position=found<0?Math.min(position,Math.max(0,rows.size()-1)):found;}
         else{position=0;String savedAnchor=next.info.optString("anchor");for(int n=0;n<rows.size();n++)if(EventGroups.matches(rows.get(n),savedAnchor)){position=n;break;}offset=next.info.optInt("offset");}
         pending=0;long accepted=snapshot;boolean balanced="all".equals(sourceFilter)&&!newest;List<FeedStore.Row> delivered=new ArrayList<>(rows);work(()->{store.activateSnapshot(accepted);store.recordPresentation(delivered,System.currentTimeMillis(),balanced);return null;},ignored->{});
-        listener.feed(Collections.unmodifiableList(rows),position,offset,newest);state();
+        listener.feed(Collections.unmodifiableList(rows),position,offset,newest);exhausted(next.remaining<=rows.size());state();
         viewport(position);
-        if(reserveProfile!=visibleProfileVersion)reserve.clear();reserve.accepted(rows);reserveProfile=visibleProfileVersion;reserve.preference(next.preference);reserve.nextTurn(next.turn+1);reserve.stage(availableBodies(allRows),sourceFilter);
+        if(reserveProfile!=visibleProfileVersion)reserve.clear();reserve.accepted(rows);reserveProfile=visibleProfileVersion;reserve.preference(next.preference);reserve.nextTurn(next.turn+1);reserve.stage(availableBodies(next.future),sourceFilter);
         cacheAcceptedBatch(explicitRefreshRunning);
     }
     private void prepare(boolean apply){
@@ -349,6 +367,11 @@ final class DiscoveryController implements AutoCloseable {
      * keep staging updates and never acquire permission to replace reading. */
     void refreshRecommendations(){
         if(closed||!foreground||!ready||!feedPage||explicitRefreshRunning)return;
+        if(recommendationExhausted&&pending<=0){
+            listener.error("暂时没有新的推荐内容");
+            if(!loading&&SystemClock.elapsedRealtime()-lastPoolRefresh>=FeedReserve.UPDATE_MS)refresh();
+            return;
+        }
         if(admission!=null){admission=null;admissionEpoch++;admissionCommitting=false;afterAdmission=()->{};}
         cacheAction();explicitRefreshing(true);long request=++explicitRefreshEpoch;
         int generation=feedGeneration;long capturedPending=pending,id=pending>0?pending:snapshot;
@@ -362,7 +385,7 @@ final class DiscoveryController implements AutoCloseable {
             },next->{
                 if(request!=explicitRefreshEpoch)return;
                 if(generation!=feedGeneration||!foreground||!feedPage){explicitRefreshing(false);return;}
-                if(next.info==null){explicitRefreshing(false);listener.error("暂时没有更多内容，当前列表已保留");return;}
+                if(next.info==null||SourceFilter.apply(next.rows,filter).isEmpty()){finishExhaustedRefresh(collect);return;}
                 long newer=pending!=capturedPending?pending:0;
                 accept(next,false,()->{if(request!=explicitRefreshEpoch)return;if(newer>0&&newer!=next.id){pending=newer;state();}explicitRefreshing(false);if(collect&&foreground&&feedPage)refresh();});
             });
@@ -417,6 +440,7 @@ final class DiscoveryController implements AutoCloseable {
             // action, with a bounded retry rather than an unbounded callback loop.
             if(pending>capturedPending&&attempt<2){refreshPresentation(request,generation,pending,pending,collect,filter,latest,attempt+1);return;}
             if(next.info==null||progressGeneration!=progressEpoch||!context.current()||progressScopes.values().stream().anyMatch(scope->!scope.current())){explicitRefreshing(false);listener.error("本次更新暂未完成，已保留当前内容");return;}
+            if(SourceFilter.apply(next.rows,filter).isEmpty()){finishExhaustedRefresh(collect);return;}
             // A newer pending computation belongs to a later explicit action.
             long newer=pending>capturedPending?pending:0;
             try{next.info.put("anchor","").put("offset",0);}catch(JSONException impossible){throw new IllegalStateException(impossible);}
@@ -430,6 +454,11 @@ final class DiscoveryController implements AutoCloseable {
             });
         });
     }
+    private void finishExhaustedRefresh(boolean collect){
+        explicitRefreshing(false);exhausted(true);listener.error("暂时没有新的推荐内容");
+        if(collect&&foreground&&feedPage)refresh();
+    }
+    private void exhausted(boolean value){recommendationExhausted=value;listener.exhausted(value);}
     private void explicitRefreshing(boolean running){if(explicitRefreshRunning==running)return;explicitRefreshRunning=running;listener.refreshWork(running);}
     private void cancelExplicitRefresh(){explicitRefreshEpoch++;if(explicitRefreshRunning&&admission!=null){admission=null;admissionEpoch++;admissionCommitting=false;afterAdmission=()->{};}explicitRefreshing(false);}
     void applyPending(boolean keepAnchor){
@@ -468,7 +497,7 @@ final class DiscoveryController implements AutoCloseable {
         String restriction=RecommendationPolicy.restriction(activity);if(!restriction.isEmpty()){failure.accept(restriction);return;}
         pausePreload();cancelRecommendation();trialFailure=failure;long epoch=recommendationEpoch;
         recommendationStatus(RecommendationState.Phase.RUNNING,"正在准备本轮对比");
-        work(()->{RankingInput input=new RankingInput();JSONObject profile=store.profile(System.currentTimeMillis());input.profile=profile.getLong("version");input.source=store.version("sources");input.interests=new SemanticOrder.Profile(profile.getJSONArray("feedback"));List<FeedStore.Row> available=CandidateOrder.forModels(store.candidates(5000,0),profile.getJSONArray("feedback"));try{input.rows=baseline==null?new ArrayList<>(available.subList(0,Math.min(100,available.size()))):store.evaluationCandidates(baseline,System.currentTimeMillis(),new ModelFiles(activity).revision(),trialAppEpoch());if(!input.rows.isEmpty())input.learning=store.comparisonLearning(input.rows,System.currentTimeMillis(),input.profile,input.source);}catch(IllegalArgumentException error){input.error=error.getMessage();input.rows=Collections.emptyList();}return input;},input->{
+        work(()->{RankingInput input=new RankingInput();JSONObject profile=store.profile(System.currentTimeMillis());input.profile=profile.getLong("version");input.source=store.version("sources");input.interests=new SemanticOrder.Profile(profile.getJSONArray("feedback"));List<FeedStore.Row> available=CandidateOrder.forModels(store.candidates(RecommendationWindow.POOL_SIZE,0),profile.getJSONArray("feedback"));try{input.rows=baseline==null?new ArrayList<>(available.subList(0,Math.min(100,available.size()))):store.evaluationCandidates(baseline,System.currentTimeMillis(),new ModelFiles(activity).revision(),trialAppEpoch());if(!input.rows.isEmpty())input.learning=store.comparisonLearning(input.rows,System.currentTimeMillis(),input.profile,input.source);}catch(IllegalArgumentException error){input.error=error.getMessage();input.rows=Collections.emptyList();}return input;},input->{
             if(epoch!=recommendationEpoch||trialFailure==null||!foreground)return;
             if(input.rows.isEmpty()||input.interests.empty()){trialFailure=null;recommendationStatus(RecommendationState.Phase.IDLE,"本轮对比尚未准备");failure.accept(input.error!=null?input.error:input.rows.isEmpty()?(baseline==null?"请先刷新来源获取热门内容。":"准备之后还没有足够的新话题，请刷新来源后再试。旧话题和本组已评价候选不会重复加入。"):"请先选择一些想多看或少看的内容，再开始对比。");return;}
             RecommendationComparison[] captured={null};
@@ -755,9 +784,9 @@ final class DiscoveryController implements AutoCloseable {
             if(epoch!=recommendationEpoch||generation!=feedGeneration)return null;
             RankingInput input=new RankingInput();long now=System.currentTimeMillis();JSONObject profile=store.profile(now);
             input.profile=profile.getLong("version");input.source=store.version("sources");
-            List<HotCandidate> candidates=store.candidates(5000,0);
+            List<HotCandidate> candidates=store.candidates(RecommendationWindow.POOL_SIZE,0);
             if(epoch!=recommendationEpoch||generation!=feedGeneration)return null;
-            input.interests=new SemanticOrder.Profile(profile.getJSONArray("feedback"));input.rows=CandidateOrder.forModels(candidates,profile.getJSONArray("feedback"));return input;
+            input.interests=new SemanticOrder.Profile(profile.getJSONArray("feedback"));input.rows=CandidateOrder.forModels(candidates,profile.getJSONArray("feedback"));input.rows.sort(Comparator.comparing(row->row.eventId));return input;
         },input->{
             if(input==null||epoch!=recommendationEpoch||generation!=feedGeneration||!foreground||!feedPage||interacting||newest||closed||loading||preloader.busy()||imagePreloader.busy())return;
             if(input.source==completedSource&&input.profile==completedProfile){recommendationStatus(RecommendationState.Phase.READY,"本轮结果已准备，可继续浏览或查看更新");return;}
@@ -773,7 +802,7 @@ final class DiscoveryController implements AutoCloseable {
                     String resources=recommendation==null?"":recommendation.resourceDescription();
                     recommendation=null;String detail=status+" · 已缓存向量 "+encoded+"/"+total+"，本轮精排 "+refined+" 条\n"+resources;
                     String filter=sourceFilter;
-                    work(()->store.commitRanking(input.source,input.profile,System.currentTimeMillis(),semantic?"personal":input.interests.platforms.empty()?"cold":"platform",filter,FeedSourceBalance.arrange(store.unread(ordered),input.interests.platforms,store.balanceTurn())),id->{
+                    work(()->store.commitRanking(input.source,input.profile,System.currentTimeMillis(),semantic?"personal":input.interests.platforms.empty()?"cold":"platform",filter,FeedSourceBalance.arrange(store.selectRecommendations(ordered,System.currentTimeMillis(),semantic&&complete),input.interests.platforms,store.balanceTurn())),id->{
                         if(epoch!=recommendationEpoch||generation!=feedGeneration||!foreground)return;
                         if(id<0){recommendationStatus(RecommendationState.Phase.PAUSED,"来源或偏好已更新，当前列表保留，可继续整理");scheduleRecommendation(false);return;}
                         if(complete){completedSource=input.source;completedProfile=input.profile;}pending=id;stageReserve(pending);recommendationStatus(complete?RecommendationState.Phase.READY:semantic?RecommendationState.Phase.PARTIAL:RecommendationState.Phase.PAUSED,detail);state();viewport(viewport);

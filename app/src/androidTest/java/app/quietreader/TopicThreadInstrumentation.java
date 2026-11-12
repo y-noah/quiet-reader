@@ -78,6 +78,9 @@ public final class TopicThreadInstrumentation extends Instrumentation {
     private String viewText(View view){StringBuilder text=new StringBuilder();if(view instanceof android.widget.TextView)text.append(((android.widget.TextView)view).getText());if(view instanceof android.view.ViewGroup)for(int n=0;n<((android.view.ViewGroup)view).getChildCount();n++)text.append(viewText(((android.view.ViewGroup)view).getChildAt(n)));return text.toString();}
     private View find(View view,String label){if(label.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;if(view instanceof android.view.ViewGroup)for(int n=0;n<((android.view.ViewGroup)view).getChildCount();n++){View found=find(((android.view.ViewGroup)view).getChildAt(n),label);if(found!=null)return found;}return null;}
     @Override public void onStart(){
+        if("true".equals(arguments.getString("finite_recommendations"))){new FiniteRecommendationProbe(this).run();return;}
+        if("true".equals(arguments.getString("session_recovery"))){new SessionRecoveryProbe(this).run();return;}
+        if("true".equals(arguments.getString("presentation_store"))){new PresentationStoreProbe(this).run();return;}
         String refreshCase=arguments.getString("refresh_case","");
         if(!refreshCase.isEmpty()){new RefreshPresentationProbe(this,"pull".equals(refreshCase),"animation".equals(refreshCase),"batch".equals(refreshCase)).run();return;}
         if("true".equals(arguments.getString("real_front"))){try{TopicFrontProbe.run(this,arguments);}catch(Exception error){Bundle result=new Bundle();result.putString("stream","ERROR "+error);finish(0,result);}return;}

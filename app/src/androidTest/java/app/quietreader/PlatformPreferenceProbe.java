@@ -42,7 +42,7 @@ final class PlatformPreferenceProbe {
         }
         try(FeedStore store=new FeedStore(test.getTargetContext(),database)){
             JSONArray legacy=store.activeFeedback(104);
-            check(store.getWritableDatabase().getVersion()==11&&legacy.length()==1&&legacy.getJSONObject(0).optString("source").isEmpty(),"v3 upgrade preserves legacy feedback with unknown source rather than guessing");
+            check(store.getWritableDatabase().getVersion()==12&&legacy.length()==1&&legacy.getJSONObject(0).optString("source").isEmpty(),"v3 upgrade preserves legacy feedback with unknown source rather than guessing");
             check(app.quietreader.discovery.LegacySavedFixture.saved(store).size()==1&&store.candidates(10,0).size()==1&&store.readSnapshot(snapshot,10,0).size()==1,"v3 upgrade preserves saved articles, candidates and frozen snapshot");
             check(new PlatformPreference(legacy).empty(),"old unknown source feedback cannot become artificial platform preference");
             long now=System.currentTimeMillis();for(int n=2;n<=4;n++)store.recordRead(candidate(Source.V2EX,n),now+n);

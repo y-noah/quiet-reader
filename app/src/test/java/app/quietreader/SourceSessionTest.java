@@ -5,6 +5,12 @@ import static app.quietreader.Models.*;
 import static org.junit.Assert.*;
 
 public class SourceSessionTest {
+    @Test public void staleZhihuShellRecoveryRequiresAnActualAccountCookie(){
+        assertFalse(SourceSession.authenticatedZhihuCookie(null));
+        assertFalse(SourceSession.authenticatedZhihuCookie("_xsrf=visitor; z_c0=  "));
+        assertFalse(SourceSession.authenticatedZhihuCookie("not_z_c0=account"));
+        assertTrue(SourceSession.authenticatedZhihuCookie("_xsrf=visitor; z_c0=account-token; device=abc"));
+    }
     @Test public void hupuLoginShellRequiresBrowserEvenWhenItIsAPresentableStatus(){
         Document shell=new Document();shell.loginRequired=true;
         assertTrue(shell.canPresent());assertFalse(SourceSession.nativeDocumentReady(Source.HUPU,shell));
@@ -16,9 +22,9 @@ public class SourceSessionTest {
         Document document=new Document();assertFalse(SourceSession.nativeDocumentReady(Source.HUPU,document));
         document.sourceUnavailable=true;assertFalse(SourceSession.nativeDocumentReady(Source.HUPU,document));
     }
-    @Test public void existingOtherSourcePermissionStatusesKeepTheirEstablishedRoute(){
+    @Test public void nativeLoginShellsTrySharedBrowserBeforeManualLogin(){
         Document shell=new Document();shell.loginRequired=true;
-        for(Source source:Source.values())if(source!=Source.HUPU)assertTrue(source.name(),SourceSession.nativeDocumentReady(source,shell));
+        for(Source source:Source.values())assertFalse(source.name(),SourceSession.nativeDocumentReady(source,shell));
     }
     @Test public void unavailableTextShellsNeedBrowserRatherThanBeingMistakenForBodies(){
         for(Source source:new Source[]{Source.BAIDU,Source.CLS,Source.SSPAI,Source.IFANR,Source.ITHOME,Source.THEPAPER,Source.BBC,Source.NYT,Source.V2EX}){

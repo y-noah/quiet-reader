@@ -18,7 +18,7 @@ final class SourceBalanceStoreProbe {
                 store.getWritableDatabase().delete("sources","id=?",new String[]{"NYT"});store.getWritableDatabase().setVersion(10);
             }
             try(FeedStore store=new FeedStore(test.getTargetContext(),name)){
-                check(store.getWritableDatabase().getVersion()==11&&store.sourceState(Source.NYT).getBoolean("enabled"),"schema10 upgrades with new Chinese source");
+                check(store.getWritableDatabase().getVersion()==12&&store.sourceState(Source.NYT).getBoolean("enabled"),"schema10 upgrades with new Chinese source");
                 check(!store.sourceState(Source.WEIBO).getBoolean("enabled")&&!store.sourceState(Source.DOUYIN).getBoolean("enabled")&&store.sourceState(Source.BILIBILI).getBoolean("enabled"),"upgrade preserves all previous source choices");
                 long now=System.currentTimeMillis();HotCandidate video=new HotCandidate(Source.BILIBILI,"https://www.bilibili.com/video/BV1234567890","中文视频主题","","",true,1,null,now);
                 store.ensureCandidatePolicy();long revision=store.beginRefresh(Source.BILIBILI);store.upsertSnapshot(Source.BILIBILI,revision,List.of(video),now);

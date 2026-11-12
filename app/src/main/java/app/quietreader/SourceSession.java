@@ -8,6 +8,12 @@ import static app.quietreader.Models.*;
 
 /** Platform defaults for the supported source views. */
 final class SourceSession {
+    static boolean authenticatedZhihu(String url){return authenticatedZhihuCookie(CookieManager.getInstance().getCookie(url));}
+    static boolean authenticatedZhihuCookie(String cookie){
+        if(cookie==null)return false;
+        for(String field:cookie.split(";")){String value=field.trim();int at=value.indexOf('=');if(at>0&&"z_c0".equals(value.substring(0,at).trim())&&!value.substring(at+1).trim().isEmpty())return true;}
+        return false;
+    }
     static boolean desktop(Context context,Source source){
         return context.getSharedPreferences("source-session",0).getBoolean(source.name()+"-desktop",source!=Source.WEIBO);
     }
@@ -38,13 +44,18 @@ final class SourceSession {
         }
     }
     static boolean nativeDocumentReady(Source source,Document document){
+        // A native login response may be an unhydrated session/challenge shell.
+        // The explicit reader must try its shared browser once before requiring
+        // a manual source visit. Dynamic results are delivered directly, so this
+        // cannot create a native/browser retry loop.
+        if(document.loginRequired)return false;
         // Hupu may hydrate the authenticated response after the server-rendered
         // shell. Try the existing shared WebView before presenting its login gate.
         if(source==Source.HUPU&&(document.loginRequired||document.sourceUnavailable))return false;
         // A parser's missing article state is not a successfully acquired body.
         // The existing foreground caller tries its browser once; browser results
         // are rendered directly and never fed back into this native decision.
-        // Explicit login and video/permission statuses remain terminal.
+        // Explicit video/permission statuses remain terminal.
         if(document.sourceUnavailable&&!document.loginRequired&&!document.filteredVideo&&!document.unsupportedVideo&&!document.videoTopic&&document.filteredVideos==0
             &&source!=Source.DOUYIN&&source!=Source.XHS&&source!=Source.BILIBILI)return false;
         return document.canPresent();

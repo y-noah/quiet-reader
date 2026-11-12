@@ -309,7 +309,7 @@ public final class FeedStoreInstrumentation extends Instrumentation {
                 store.getWritableDatabase().execSQL("DROP TABLE feed_exposure");store.getWritableDatabase().execSQL("DROP TABLE article_progress");store.getWritableDatabase().setVersion(1);
             }
             try(FeedStore store=new FeedStore(getTargetContext(),database)){
-                check(store.getWritableDatabase().getVersion()==11&&store.sourceState(Models.Source.ZHIHU).getLong("retryAt")==0,"v1 database upgrades retry, expiry, rerank cache and source provenance without destructive reset");
+                check(store.getWritableDatabase().getVersion()==12&&store.sourceState(Models.Source.ZHIHU).getLong("retryAt")==0,"v1 database upgrades retry, expiry, rerank cache and source provenance without destructive reset");
                 check(store.candidates(100,0).size()==1&&store.readSnapshot(snapshot,50,0).get(0).candidate.id.equals(first.id),"process-style reopen restores source and frozen feed");
                 store.clearDerivedCache();
                 check(store.candidates(100,0).isEmpty()&&store.latestSnapshot()==0&&app.quietreader.discovery.LegacySavedFixture.saved(store).size()==1,"clear derived cache preserves explicit saved metadata");
@@ -433,7 +433,7 @@ public final class FeedStoreInstrumentation extends Instrumentation {
                 store.getWritableDatabase().execSQL("DROP TABLE reranks");store.getWritableDatabase().execSQL("ALTER TABLE feedback DROP COLUMN source");store.getWritableDatabase().execSQL("DROP TABLE feed_exposure");store.getWritableDatabase().execSQL("DROP TABLE article_progress");store.getWritableDatabase().setVersion(2);
             }
             try(FeedStore store=new FeedStore(getTargetContext(),database)){
-                check(store.getWritableDatabase().getVersion()==11&&app.quietreader.discovery.LegacySavedFixture.saved(store).size()==1&&store.activeFeedback(10).length()==1&&store.vector(FeedStore.vectorKey("keep","model","tokenizer"),10)!=null,"v2 upgrade creates rerank cache/provenance and preserves saved feedback and vectors");
+                check(store.getWritableDatabase().getVersion()==12&&app.quietreader.discovery.LegacySavedFixture.saved(store).size()==1&&store.activeFeedback(10).length()==1&&store.vector(FeedStore.vectorKey("keep","model","tokenizer"),10)!=null,"v2 upgrade creates rerank cache/provenance and preserves saved feedback and vectors");
                 store.putRerank("valid",-1.25f,10);check(Float.valueOf(-1.25f).equals(store.rerank("valid",20)),"finite negative rerank score round trips");
                 boolean rejected=false;try{store.putRerank("nan",Float.NaN,20);}catch(IllegalArgumentException expected){rejected=true;}check(rejected&&store.rerank("nan",21)==null,"nonfinite rerank write is rejected");
                 store.getWritableDatabase().execSQL("UPDATE reranks SET logit='broken' WHERE key='valid'");check(store.rerank("valid",22)==null,"corrupt text score is not silently interpreted as zero");

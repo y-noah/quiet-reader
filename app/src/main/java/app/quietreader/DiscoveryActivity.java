@@ -48,7 +48,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private Map<String,Boolean> setupChoices;
     private ScrollView setupScroll;
     private Bundle pendingSetup;
-    private boolean loading,newest,feedReceived,emptyConfirmed;
+    private boolean loading,newest,feedReceived,emptyConfirmed,recommendationsExhausted;
     private final Runnable confirmEmpty=()->{if(feedReceived&&feed.isEmpty()&&pendingFeed.isEmpty()&&!loading){emptyConfirmed=true;adapter.notifyDataSetChanged();}};
     private void settleEmpty(){
         searchHandler.removeCallbacks(confirmEmpty);
@@ -191,6 +191,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private boolean refreshBusy(){return refreshing||loading&&feed.isEmpty();}
     private void updateToolbar(){updates.setContentDescription(refreshBusy()?"正在刷新":updateAvailable?"查看更新":"刷新");updates.setEnabled(true);updates.setAlpha(1f);refreshIndicator.busy(refreshBusy());updateRefreshAnimation();updateStatusDescription();}
     private void updateRefreshAnimation(){if(refreshIndicator!=null)refreshIndicator.animate(exposureForeground&&hasWindowFocus()&&"feed".equals(page)&&navigation!=null&&navigation.toolbarVisible());}
+    @Override public void exhausted(boolean value){if(recommendationsExhausted!=value){recommendationsExhausted=value;adapter.notifyDataSetChanged();}}
     @Override public void refreshWork(boolean running){refreshing=running;if(!running)clearRefreshDraw();updateToolbar();}
     private void updateStatusDescription(){
         if(android.os.Build.VERSION.SDK_INT>=30)updates.setStateDescription((refreshBusy()?"正在刷新。":"")+recommendationState.accessibilityStatus());
@@ -482,22 +483,22 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private List<FeedStore.Row> displayedRows(){return "search".equals(page)?searchRows:feed;}
     private final class Rows extends BaseAdapter {
         @Override public int getViewTypeCount(){return 4;}
-        @Override public int getItemViewType(int position){if(settingsPage())return 3;if("sources".equals(page))return 1;int count=displayedRows().size();return count==0?2:0;}
-        @Override public int getCount(){if(settingsPage())return settingsEntries().length;if("sources".equals(page))return HotSourceCatalog.HOT.size();int count=displayedRows().size();return count==0?1:count;}
+        @Override public int getItemViewType(int position){if(settingsPage())return 3;if("sources".equals(page))return 1;int count=displayedRows().size();return count==0||("feed".equals(page)&&recommendationsExhausted&&position==count)?2:0;}
+        @Override public int getCount(){if(settingsPage())return settingsEntries().length;if("sources".equals(page))return HotSourceCatalog.HOT.size();int count=displayedRows().size();return count==0?1:count+("feed".equals(page)&&recommendationsExhausted?1:0);}
         @Override public Object getItem(int position){return position;}
         @Override public long getItemId(int position){return position;}
         @Override public View getView(int position,View recycled,android.view.ViewGroup parent){
             int type=getItemViewType(position);LinearLayout wrapper=recycled instanceof LinearLayout?(LinearLayout)recycled:column();wrapper.setPadding(0,dp(5),0,dp(5));
             if(type==3){wrapper.removeAllViews();TextView value=button(settingsEntries()[position],()->settingAction(position));value.setTextSize(16);value.setTextColor(ink);value.setGravity(Gravity.CENTER_VERTICAL|Gravity.START);value.setPadding(dp(14),dp(12),dp(14),dp(12));value.setMinHeight(dp(56));value.setBackground(surface(paper));wrapper.addView(value,new LinearLayout.LayoutParams(-1,-2));return wrapper;}
             if(type==2){wrapper.removeAllViews();
-                if("feed".equals(page)&&!emptyConfirmed){
+                if("feed".equals(page)&&!emptyConfirmed&&!recommendationsExhausted){
                     for(int n=0;n<4;n++){LinearLayout skeleton=column();skeleton.setPadding(dp(12),dp(16),dp(12),dp(16));skeleton.setBackground(surface(paper));
                         View headline=new View(DiscoveryActivity.this);headline.setBackground(surface(line));skeleton.addView(headline,new LinearLayout.LayoutParams(dp(230),dp(12)));
                         View detail=new View(DiscoveryActivity.this);detail.setBackground(surface(line));LinearLayout.LayoutParams detailSize=new LinearLayout.LayoutParams(dp(140),dp(8));detailSize.topMargin=dp(14);skeleton.addView(detail,detailSize);
                         LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,-2);spacing.bottomMargin=dp(10);wrapper.addView(skeleton,spacing);
                     }return wrapper;
                 }
-                int count=feed.size();TextView value=text("search".equals(page)?searchMessage:loading?"正在获取热门话题…":(!"all".equals(controller.sourceFilter())?"这个来源暂无话题":"尚无话题"),14,muted);value.setPadding(dp(8),dp(12),dp(8),dp(12));value.setTextColor(muted);wrapper.addView(value);return wrapper;}
+                int count=feed.size();TextView value=text("search".equals(page)?searchMessage:recommendationsExhausted?"暂时没有新的推荐内容":loading?"正在获取热门话题…":(!"all".equals(controller.sourceFilter())?"这个来源暂无话题":"尚无话题"),14,muted);value.setPadding(dp(8),dp(12),dp(8),dp(12));value.setTextColor(muted);wrapper.addView(value);return wrapper;}
             if(type==1){SourceCard card=wrapper.getChildCount()>0&&wrapper.getChildAt(0) instanceof SourceCard?(SourceCard)wrapper.getChildAt(0):new SourceCard();wrapper.removeAllViews();wrapper.addView(card);card.bind(HotSourceCatalog.HOT.get(position));return wrapper;}
             Card card=wrapper.getChildCount()>0&&wrapper.getChildAt(0) instanceof Card?(Card)wrapper.getChildAt(0):new Card();wrapper.removeAllViews();wrapper.addView(card);
             card.bind(displayedRows().get(position),position);wrapper.setTag(displayedRows().get(position).eventId);return wrapper;

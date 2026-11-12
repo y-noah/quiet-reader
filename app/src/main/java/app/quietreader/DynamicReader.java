@@ -97,7 +97,7 @@ public final class DynamicReader {
             @Override public void onReceivedHttpError(WebView w,WebResourceRequest r,WebResourceResponse response){
                 if(r.isForMainFrame()&&response.getStatusCode()>=400){
                     boolean restricted=response.getStatusCode()==401||response.getStatusCode()==403;
-                    if(restricted&&retryChangedSession())return;
+                    if(restricted&&retrySession(true))return;
                     String retryAfter=null;if(response.getResponseHeaders()!=null)for(java.util.Map.Entry<String,String> header:response.getResponseHeaders().entrySet())if("Retry-After".equalsIgnoreCase(header.getKey()))retryAfter=header.getValue();
                     fail(ArticleFailure.http(restricted?"来源要求登录或限制了访问。请在来源页确认权限后重新读取。":"来源暂时返回错误，可稍后重试或打开来源页确认。",response.getStatusCode(),app.quietreader.discovery.RefreshBackoff.retryAfter(retryAfter,System.currentTimeMillis())));
                 }
@@ -165,6 +165,9 @@ public final class DynamicReader {
                         String html=payload.getString("html");
                         if(html.length()<4*1024*1024){
                             parsed=requestedExplicit?SourceParser.readingArticle(item.source,html,payload.getString("url")):SourceParser.article(item.source,html,payload.getString("url"));
+                            if(payload.optBoolean("login")&&!parsed.hasContent()){
+                                parsed.loginRequired=true;parsed.notice="来源要求登录后读取";
+                            }
                             if(item.source==Source.TIEBA)TiebaReplyTimes.attach(parsed,payload.optJSONObject("replyTimes"),System.currentTimeMillis());
                             // Resolve relative links against the loaded document while retaining
                             // the requested reading/cache identity already validated above.
@@ -201,6 +204,7 @@ public final class DynamicReader {
                     if(attempts>=2){fail(doc!=null&&doc.loginRequired?"来源要求登录后才能读取该话题。":"话题当前没有可读取的图文帖子，可在来源页确认后重试。");return;}
                 }
                 if(doc!=null){
+                    if(attempts>=5&&snapshot.equals(lastSnapshot)&&!doc.canPresent()&&retrySession(true))return;
                     if(doc.canPresent()&&(!TiebaTopic.isTopic(item.url)||doc.topic!=null)) {
                         boolean stable=snapshot.equals(lastSnapshot);
                         best=doc;
@@ -270,6 +274,11 @@ public final class DynamicReader {
     }
     private void finish(Document doc) {
         if(ended)return;
+        // An existing Zhihu account may briefly receive a stale login/hydration
+        // shell although the shared account cookie is already present. Give the
+        // explicit read the same fresh navigation a manual source visit provided.
+        // The replacement has no retry left and inherits this read's deadline.
+        if((doc.loginRequired||doc.sourceUnavailable)&&retrySession(true))return;
         if(!session.stamp(doc)){
             // A source can set its first cookies while loading. Never relabel that old
             // DOM with the new session: release it and perform one fresh acquisition.
@@ -279,7 +288,11 @@ public final class DynamicReader {
         stopInspecting();pendingResult=doc;deliver();
     }
     private boolean retryChangedSession(){
-        if(ended||sessionRetries<=0||(!session.cookieChanged()&&topicCurrent())||android.os.SystemClock.elapsedRealtime()>=deadlineAt||owner==null||owner.isFinishing()||owner.isDestroyed())return false;
+        return retrySession(false);
+    }
+    private boolean retrySession(boolean staleShell){
+        boolean authenticatedShell=staleShell&&explicitReading&&item.source==Source.ZHIHU&&SourceSession.authenticatedZhihu(item.url);
+        if(ended||sessionRetries<=0||(!session.cookieChanged()&&topicCurrent()&&!authenticatedShell)||android.os.SystemClock.elapsedRealtime()>=deadlineAt||owner==null||owner.isFinishing()||owner.isDestroyed())return false;
         // Initial cookies can arrive on a restricted HTTP response before a DOM
         // exists. Use the same single fresh acquisition and original time budget.
         stopInspecting();if(ownsWeb){ownsWeb=false;SourceSurface.release(web);}

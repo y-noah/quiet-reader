@@ -26,7 +26,7 @@ final class ExposureHistoryProbe {
             }
             try(FeedStore store=new FeedStore(context,name)){
                 SQLiteDatabase db=store.getWritableDatabase();long profile=store.version("profile"),sources=store.version("sources");
-                check(db.getVersion()==11&&scalar(db,"SELECT COUNT(*) FROM feed_exposure")==0,"synthetic schema7 upgrades to11 with empty exposure history");
+                check(db.getVersion()==12&&scalar(db,"SELECT COUNT(*) FROM feed_exposure")==0,"synthetic schema7 upgrades to12 with empty exposure history");
                 check(store.activeSnapshot()==snapshot&&store.readSnapshot(snapshot,20,0).size()==2&&store.activeFeedback(now).length()==1&&store.rerank("preserve-model",now)==.75f,"upgrade preserves active list, feedback and model cache");
                 check(store.recordExposed(snapshot,List.of("unknown-event"),now)==0&&store.recordExposed(snapshot+100,List.of("shown-event"),now)==0,"unknown or nonexistent snapshot rows cannot manufacture exposure");
                 check(store.recordExposed(snapshot,List.of("shown-event","shown-event"),now)==1,"actual captured event is recorded once per batch");
@@ -48,7 +48,7 @@ final class ExposureHistoryProbe {
                 db.beginTransaction();try{for(int n=0;n<10020;n++)db.execSQL("INSERT INTO feed_exposure(key,shown_at,touched_at) VALUES (?,?,?)",new Object[]{"synthetic-"+n,now,now});db.setTransactionSuccessful();}finally{db.endTransaction();}
                 store.recordConsumed(a,now+1);check(scalar(db,"SELECT COUNT(*) FROM feed_exposure")==10000&&store.recentExposure(rows,now+1).get("shown-event").readAt==now+1,"write/access cleanup enforces 10000-key bound and preserves newest real member");
             }
-            try(FeedStore reopened=new FeedStore(context,name)){check(reopened.getWritableDatabase().getVersion()==11&&reopened.recentExposure(rows,now+1).get("shown-event").readAt==now+1,"read/exposure facts persist across close and reopen");}
+            try(FeedStore reopened=new FeedStore(context,name)){check(reopened.getWritableDatabase().getVersion()==12&&reopened.recentExposure(rows,now+1).get("shown-event").readAt==now+1,"read/exposure facts persist across close and reopen");}
         }catch(Throwable error){failures++;report.append("ERROR ").append(android.util.Log.getStackTraceString(error)).append('\n');}
         finally{context.deleteDatabase(name);}
         report.append("checks=").append(checks).append(" failures=").append(failures).append('\n');Bundle result=new Bundle();result.putString("stream",report.toString());test.finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);

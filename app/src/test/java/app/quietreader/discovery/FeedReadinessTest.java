@@ -16,7 +16,7 @@ public class FeedReadinessTest {
         FeedReadiness ledger=new FeedReadiness();List<FeedStore.Row> rows=pool(30);
         for(int n=1;n<30;n++)ledger.persisted(FeedReadiness.key(rows.get(n).candidate),"account",1000);
         List<FeedStore.Row> target=ledger.targets(rows,c->"account",2000);
-        assertEquals(20,target.size());assertSame(rows.get(0),target.get(0));assertFalse(ledger.complete(target,c->"account",2000));
+        assertEquals(15,target.size());assertSame(rows.get(0),target.get(0));assertFalse(ledger.complete(target,c->"account",2000));
         ledger.persisted(FeedReadiness.key(rows.get(0).candidate),"account",1000);
         assertTrue(ledger.complete(target,c->"account",2000));
     }

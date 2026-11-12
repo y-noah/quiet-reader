@@ -29,10 +29,10 @@ final class PresentationStoreProbe {
                 long next=store.presentationSnapshot(store.activeSnapshot(),"all",Collections.emptyList(),now+2);check(store.readSnapshot(next,15,0).get(0).eventId.equals(pool.get(30).eventId),"process-level store reopen remembers two whole delivered batches");
                 long source=store.version("sources");store.enable(Source.THEPAPER,false);check(store.version("sources")!=source&&store.presentationSnapshot(next,"all",Collections.emptyList(),now+3)<0,"disabled-source context invalidates the saved next-batch snapshot");store.enable(Source.THEPAPER,true);
                 store.recordPresentation(rows(1000,2600,now),now);check(count(store.getWritableDatabase(),"presentations")==2500,"delivery history stays bounded at 2500 identities");store.recordPresentation(List.of(pool.get(0)),now+8L*86400000);check(count(store.getWritableDatabase(),"presentations")==1,"old delivery history expires rather than growing indefinitely");
-                SQLiteDatabase raw=store.getWritableDatabase();raw.execSQL("DROP TABLE presentations");raw.setVersion(9);
+                SQLiteDatabase raw=store.getWritableDatabase();raw.execSQL("DROP TABLE presentations");raw.execSQL("DROP TABLE recommendation_window");raw.setVersion(9);
             }
             try(FeedStore upgraded=new FeedStore(test.getTargetContext(),database)){
-                check(upgraded.getWritableDatabase().getVersion()==11&&count(upgraded.getWritableDatabase(),"presentations")==0,"v9 to v11 adds delivery storage without destructive recreation");
+                check(upgraded.getWritableDatabase().getVersion()==12&&count(upgraded.getWritableDatabase(),"presentations")==0&&count(upgraded.getWritableDatabase(),"recommendation_window")==0,"v9 to v12 adds delivery storage without destructive recreation");
                 check(upgraded.candidates(200,0).size()==60&&upgraded.profile(now).getLong("version")==profile,"migration preserves source candidates and profile version");check(upgraded.activeSnapshot()>0&&upgraded.readSnapshot(upgraded.activeSnapshot(),15,0).size()==15,"migration preserves the previous visible snapshot");
             }
         }catch(Throwable error){failures++;report.append("ERROR ").append(android.util.Log.getStackTraceString(error));}

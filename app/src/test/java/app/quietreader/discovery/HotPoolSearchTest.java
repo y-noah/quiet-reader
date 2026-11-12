@@ -13,7 +13,7 @@ public class HotPoolSearchTest {
     }
     @Test public void searchesBeyondTheVisibleHomeAndReserve(){
         List<FeedStore.Row> pool=new ArrayList<>();for(int n=0;n<130;n++)pool.add(row(n,n==129?"寒武纪发布重要公告":"今日新闻第"+n+"条",""));
-        assertEquals(20,FeedBatch.first(pool).size());
+        assertEquals(15,FeedBatch.first(pool).size());
         HotPoolSearch.Result result=HotPoolSearch.search(pool,"寒武纪");assertEquals(130,result.poolSize);assertEquals(List.of(pool.get(129)),result.rows);assertEquals(130,pool.size());
     }
     @Test public void blankAndUnrelatedQueriesNeverProduceFallbackNews(){
