@@ -498,7 +498,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
                         LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,-2);spacing.bottomMargin=dp(10);wrapper.addView(skeleton,spacing);
                     }return wrapper;
                 }
-                int count=feed.size();TextView value=text("search".equals(page)?searchMessage:recommendationsExhausted?"暂时没有新的推荐内容":loading?"正在获取热门话题…":(!"all".equals(controller.sourceFilter())?"这个来源暂无话题":"尚无话题"),14,muted);value.setPadding(dp(8),dp(12),dp(8),dp(12));value.setTextColor(muted);wrapper.addView(value);return wrapper;}
+                int count=feed.size();TextView value=text("search".equals(page)?searchMessage:recommendationsExhausted?"暂无新内容":loading?"正在获取热门话题…":(!"all".equals(controller.sourceFilter())?"这个来源暂无话题":"尚无话题"),14,muted);value.setPadding(dp(8),dp(12),dp(8),dp(12));value.setTextColor(muted);wrapper.addView(value);return wrapper;}
             if(type==1){SourceCard card=wrapper.getChildCount()>0&&wrapper.getChildAt(0) instanceof SourceCard?(SourceCard)wrapper.getChildAt(0):new SourceCard();wrapper.removeAllViews();wrapper.addView(card);card.bind(HotSourceCatalog.HOT.get(position));return wrapper;}
             Card card=wrapper.getChildCount()>0&&wrapper.getChildAt(0) instanceof Card?(Card)wrapper.getChildAt(0):new Card();wrapper.removeAllViews();wrapper.addView(card);
             card.bind(displayedRows().get(position),position);wrapper.setTag(displayedRows().get(position).eventId);return wrapper;

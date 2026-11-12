@@ -47,7 +47,7 @@ final class FiniteRecommendationProbe {
                 check(selected.size()==75&&selected.get(0).candidate.sourceRank==300,"preference selection admits 75 relevant rows rather than top source heat ranks");
                 long id=seed.commitRanking(seed.version("sources"),seed.profile(now).getLong("version"),now,"personal","all",selected);seed.activateSnapshot(id);
             }
-            test.getUiAutomation().setOnAccessibilityEventListener(event->{if(event.getEventType()==AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED&&event.getText().toString().contains("暂时没有新的推荐内容"))exhaustedToast=true;});
+            test.getUiAutomation().setOnAccessibilityEventListener(event->{if(event.getEventType()==AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED&&event.getText().toString().contains("暂无新内容"))exhaustedToast=true;});
             home=(DiscoveryActivity)test.startActivitySync(new Intent(test.getTargetContext(),DiscoveryActivity.class).putExtra("test_database",database).putExtra("test_skip_fetch",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
             controller=(DiscoveryController)field(home,"controller");serial=(ExecutorService)field(controller,"storage");store=(FeedStore)field(controller,"store");
             await("focused fifteen",()->home.hasWindowFocus()&&(boolean)field(controller,"ready")&&visible().size()==15);ui(()->controller.interacting(true));
@@ -60,13 +60,17 @@ final class FiniteRecommendationProbe {
                 int expectedCount=round==4?16:15;check(onUi(()->((ListView)field(home,"list")).getCount()==expectedCount),"actual adapter has fifteen data rows and only the final exhaustion footer, round "+(round+1));shot("finite-round-"+(round+1));
             }
             ListView finalList=(ListView)field(home,"list");ui(()->finalList.setSelection(15));
-            await("visible exhaustion footer",()->finalList.getFirstVisiblePosition()>0&&text(home.getWindow().getDecorView(),"暂时没有新的推荐内容"));check(true,"last batch has a persistent, actually bound exhaustion footer");shot("finite-footer");ui(()->finalList.setSelection(0));
-            long latestBefore=serial.submit(store::latestSnapshot).get(10,TimeUnit.SECONDS);
-            long snapshot=(long)field(controller,"snapshot");String first=visible().get(0).eventId;
+            await("visible exhaustion footer",()->finalList.getFirstVisiblePosition()>0&&text(home.getWindow().getDecorView(),"暂无新内容"));check(true,"last batch has a persistent, actually bound no-new-content footer");shot("finite-footer");ui(()->finalList.setSelection(0));
             refresh();Thread.sleep(300);check(exhaustedToast,"actual exhausted refresh displays no-new-recommendations message");
-            check((long)field(controller,"snapshot")==snapshot&&visible().get(0).eventId.equals(first),"exhaustion preserves the actual last screen rather than cycling rejected content");shot("finite-exhausted");
+            check(visible().size()==15&&visible().stream().allMatch(row->seen.contains(row.candidate.id)),"exhaustion cycles fifteen unread selected rows without admitting rejected tail");shot("finite-cycle");
             check(seen.size()==75,"five real home batches contain exactly 75 distinct recommendations");
-            refresh();check(serial.submit(store::latestSnapshot).get(10,TimeUnit.SECONDS)==latestBefore,"repeated exhausted refresh is rejected without rebuilding snapshots");
+            HotCandidate consumed=visible().get(0).candidate;serial.submit(()->{store.recordConsumed(consumed,System.currentTimeMillis());return null;}).get(10,TimeUnit.SECONDS);
+            ui(()->{controller.stop();controller.start();controller.interacting(true);});
+            check(visible().stream().noneMatch(row->row.candidate.id.equals(consumed.id)),"returning from reading immediately removes the read card before another refresh");
+            for(int round=0;round<6;round++){if(round%2==0)pull();else refresh();check(visible().size()<=15&&visible().stream().noneMatch(row->row.candidate.id.equals(consumed.id))&&visible().stream().allMatch(row->seen.contains(row.candidate.id)),"unread cycle excludes a read item across repeated pull/dot refresh "+round);}
+            serial.submit(()->{for(FeedStore.Row row:ranked)if(seen.contains(row.eventId))store.recordConsumed(row.candidate,System.currentTimeMillis());return null;}).get(10,TimeUnit.SECONDS);
+            refresh();await("all selected content read",()->visible().isEmpty());
+            check(text(home.getWindow().getDecorView(),"暂无新内容"),"reading all selections leaves the actual no-new-content screen without replaying read cards");
             serial.submit(()->{
                 List<FeedStore.Row> again=store.selectRecommendations(ranked,System.currentTimeMillis(),true);
                 long id=store.commitRanking(store.version("sources"),store.profile(System.currentTimeMillis()).getLong("version"),System.currentTimeMillis(),"personal","all",again);
@@ -82,10 +86,10 @@ final class FiniteRecommendationProbe {
             candidates.add(newcomer);
             serial.submit(()->{store.upsertSnapshot(Source.THEPAPER,store.beginRefresh(Source.THEPAPER),candidates,System.currentTimeMillis());return null;}).get(10,TimeUnit.SECONDS);
             ui(()->{try{Method prepare=DiscoveryController.class.getDeclaredMethod("prepare",boolean.class);prepare.setAccessible(true);prepare.invoke(controller,false);}catch(Exception error){throw new IllegalStateException(error);}});
-            await("new content prepared",()->(long)field(controller,"pending")>0&&!(boolean)field(controller,"recommendationExhausted"));
+            await("new content prepared",()->(long)field(controller,"pending")>0||visible().size()==1&&visible().get(0).candidate.id.equals(newcomer.id));
             serial.submit(()->{List<FeedStore.Row> model=new ArrayList<>(ranked);model.add(0,new FeedStore.Row(newcomer.id,newcomer,"新内容兴趣匹配",List.of(newcomer),0));
                 List<FeedStore.Row> refined=store.selectRecommendations(model,System.currentTimeMillis(),true);
-                check(store.unpresented(refined,System.currentTimeMillis()).size()==1,"new arrival retains its model allowance when the previous window never finished inference");return null;
+                check(refined.size()==1&&refined.get(0).candidate.id.equals(newcomer.id),"new arrival retains its model allowance without reviving read selections or rejected tail");return null;
             }).get(10,TimeUnit.SECONDS);
             refresh();await("new title bound",()->visible().size()==1&&visible().get(0).candidate.id.equals(newcomer.id)&&text(home.getWindow().getDecorView(),newcomer.title));
             check(visible().size()==1,"genuine new arrival reopens recommendation with one item, without filling from rejected old tail");shot("finite-new-arrival");
@@ -95,6 +99,13 @@ final class FiniteRecommendationProbe {
             await("restored actual screen",()->(boolean)field(controller,"ready")&&!visible().isEmpty());ui(()->controller.interacting(true));
             String restored=visible().get(0).eventId;refresh();
             check(visible().size()==1&&visible().get(0).eventId.equals(restored),"activity/store reopen preserves exhausted selection and last screen");
+            // test_skip_fetch normally disables the release-only fresh-open
+            // advance. Exercise that constructor policy without starting source
+            // collection or making any live source request.
+            ui(()->{controller.close();try{Field owner=DiscoveryActivity.class.getDeclaredField("controller");owner.setAccessible(true);controller=new DiscoveryController(home,home,true,null,null,true);owner.set(home,controller);}catch(Exception error){throw new IllegalStateException(error);}});
+            serial=(ExecutorService)field(controller,"storage");store=(FeedStore)field(controller,"store");
+            await("release fresh-open policy restores exhausted last screen",()->(boolean)field(controller,"ready")&&visible().size()==1);
+            check(visible().get(0).eventId.equals(restored)&&text(home.getWindow().getDecorView(),newcomer.title),"release fresh-open advance never replaces exhausted last screen with an empty snapshot");
         }catch(Throwable error){failures++;report.append("ERROR ").append(android.util.Log.getStackTraceString(error)).append('\n');}
         finally{test.getUiAutomation().setOnAccessibilityEventListener(null);ui(()->{if(home!=null)home.finish();});if(serial!=null)try{serial.awaitTermination(10,TimeUnit.SECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}test.getTargetContext().deleteDatabase(database);}
         report.append("checks=").append(checks).append(" failures=").append(failures).append('\n');Bundle result=new Bundle();result.putString("stream",report.toString());test.finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);

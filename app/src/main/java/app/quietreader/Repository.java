@@ -39,7 +39,7 @@ public final class Repository {
         String key=ArticleCacheKey.of(i);Long at=articleTimes.get(key);long age=at==null?-1:System.currentTimeMillis()-at;
         if(!session.equals(articleSessions.get(key))||age<0||(age>ArticleDiskCache.MAX_AGE||age>10*60_000&&!offline()&&!disk.pinned(i.url,disk.namespace(),session,articles.get(key)==null?"":articles.get(key).document.metadataHash))){articles.remove(key);articleTimes.remove(key);articleSessions.remove(key);return null;}CachedDocument entry=articles.get(key);if(entry==null)return null;if(!ArticleSession.contentCurrent(entry.document)||!TiebaReplyRelations.canReuse(entry.document,offline())||!HupuDiscussion.canReuse(entry.document,offline())){articles.remove(key);articleTimes.remove(key);articleSessions.remove(key);return null;}if(!ArticleVersion.selected(i,entry.document))return null;Document result=entry.document;CachedDocument whole=articles.get(i.url);if(!i.selectedTopicPost.isEmpty()&&whole!=null){Document focused=TopicBundle.focus(whole.document,i.selectedTopicPost);if(focused!=null)result=focused;}return result;
     }}
-    public boolean offline(){android.net.ConnectivityManager cm=(android.net.ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);return cm!=null&&cm.getActiveNetwork()==null;}
+    public boolean offline(){return ReadingNetwork.offline(context);}
     public void cacheArticle(Document d){
         cacheArticle(d,articleCacheEpoch());
     }

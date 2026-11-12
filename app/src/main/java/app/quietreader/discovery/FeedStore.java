@@ -88,6 +88,7 @@ public final class FeedStore extends SQLiteOpenHelper {
     public void recordPresentation(Collection<Row> visible,long now){recordPresentation(visible,now,false);}
     public void recordPresentation(Collection<Row> visible,long now,boolean balanced){
         SQLiteDatabase db=db();db.beginTransaction();try{
+            now=Math.max(now,scalar(db,"SELECT value FROM meta WHERE key='recommendation_cycle_started'"));
             if(balanced&&!visible.isEmpty()){
                 StringBuilder identity=new StringBuilder();for(Row row:visible)identity.append(row.eventId).append(':').append(row.candidate.id).append('@').append(row.candidate.textHash).append('\n');
                 long fingerprint=Long.parseLong(HotCandidate.hash(identity.toString()).substring(0,15),16);
@@ -103,8 +104,27 @@ public final class FeedStore extends SQLiteOpenHelper {
         }finally{db.endTransaction();}
     }
     private Map<String,Long> delivered(long now){
-        Map<String,Long> result=new HashMap<>();try(Cursor cursor=db().rawQuery("SELECT candidate_id,at FROM presentations WHERE at<=? AND at>=?",new String[]{""+now,""+(now-7L*86400000)})){while(cursor.moveToNext())result.put(cursor.getString(0),cursor.getLong(1));}
-        try(Cursor cursor=db().rawQuery("SELECT identity,offered_at FROM recommendation_window WHERE offered_at>0 AND offered_at<=?",new String[]{""+now})){while(cursor.moveToNext()){String identity=cursor.getString(0);int at=identity.indexOf('@');if(at>0)result.merge(identity.substring(0,at),cursor.getLong(1),Math::max);}}return result;
+        long cycle=scalar(db(),"SELECT value FROM meta WHERE key='recommendation_cycle_started'");now=Math.max(now,cycle);
+        Map<String,Long> result=new HashMap<>();try(Cursor cursor=db().rawQuery("SELECT candidate_id,at FROM presentations WHERE at<=? AND at>=?",new String[]{""+now,""+Math.max(cycle,now-7L*86400000)})){while(cursor.moveToNext())result.put(cursor.getString(0),cursor.getLong(1));}
+        try(Cursor cursor=db().rawQuery("SELECT identity,offered_at FROM recommendation_window WHERE offered_at>0 AND offered_at<=? AND offered_at>=?",new String[]{""+now,""+cycle})){while(cursor.moveToNext()){String identity=cursor.getString(0);int at=identity.indexOf('@');if(at>0)result.merge(identity.substring(0,at),cursor.getLong(1),Math::max);}}return result;
+    }
+    /** Explicit wrap of the selected unread pool. Reading and interest evidence
+     * remain intact; only the delivery boundary advances to a new cycle. */
+    public long recycleSnapshot(long id,String filter,long now){
+        SQLiteDatabase db=db();db.beginTransaction();try{
+            JSONObject info=snapshotInfo(id);if(info==null||!SourceFilter.normalize(filter).equals(info.optString("filter"))||info.optLong("sourceVersion")!=version("sources")||info.optLong("profileVersion")!=profile(now).optLong("version"))return -1;
+            List<Row> original=new ArrayList<>();for(int start=0;start<info.optInt("count");start+=200)original.addAll(readSnapshot(id,200,start));
+            List<Row> eligible=SourceFilter.apply(unread(original),filter);
+            if(eligible.size()>RecommendationWindow.SIZE)eligible=new ArrayList<>(eligible.subList(0,RecommendationWindow.SIZE));
+            Map<String,Long> previous=delivered(now);
+            eligible.sort(Comparator.comparingLong(row->{long at=0;for(HotCandidate member:row.entries)at=Math.max(at,previous.getOrDefault(member.id,0L));return at;}));
+            long next=commitRanking(info.getLong("sourceVersion"),info.getLong("profileVersion"),now,info.getString("mode"),filter,eligible);
+            if(next>0&&!eligible.isEmpty()){
+                long boundary=Math.max(now,Math.max(scalar(db,"SELECT COALESCE(MAX(at),0) FROM presentations"),scalar(db,"SELECT COALESCE(MAX(offered_at),0) FROM recommendation_window"))+1);
+                db.execSQL("INSERT OR REPLACE INTO meta VALUES ('recommendation_cycle_started',?)",new Object[]{boundary});
+            }
+            db.setTransactionSuccessful();return next;
+        }catch(JSONException error){throw new IllegalStateException(error);}finally{db.endTransaction();}
     }
     public List<Row> unpresented(List<Row> rows,long now){return RecommendationWindow.undelivered(unread(rows),delivered(now).keySet());}
     /** Local-only next batch; source/profile epochs validate saved membership once. */

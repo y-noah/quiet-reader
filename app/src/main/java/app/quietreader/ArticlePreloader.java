@@ -92,6 +92,7 @@ final class ArticlePreloader implements AutoCloseable {
         main.removeCallbacks(pump);main.postDelayed(pump,immediate?0:350);
     }
     private final Runnable pump=this::next;
+    private boolean cachedVersion(Item item,Document document){return !revalidateHidden||ArticleVersion.matches(item,document)||repo.offline()&&ArticleVersion.readableCached(item,document,System.currentTimeMillis(),true);}
     private void next(){
         ArticleSessionSnapshot.run(this::nextSnapshot);
     }
@@ -110,7 +111,7 @@ final class ArticlePreloader implements AutoCloseable {
             // A URL-only marker has no metadata version. Recheck the source instead of
             // assigning any previously cached body to the current candidate version.
             Document cached=refreshHidden?null:repo.cachedArticle(item,session);
-            if(cached!=null&&(!revalidateHidden||ArticleVersion.matches(item,cached))){prepared(item,cached);continue;}
+            if(cached!=null&&cachedVersion(item,cached)){prepared(item,cached);continue;}
             long now=SystemClock.elapsedRealtime();
             if(previous!=null&&!previous.scope.equals(session.scopeIdentity()))previous=null;
             if(previous!=null&&now<previous.until){if(previous.retryPending){queue.addLast(item);earliest=Math.min(earliest,previous.until);}continue;}
@@ -123,7 +124,7 @@ final class ArticlePreloader implements AutoCloseable {
                 public void failure(ArticleFailure failure){failed(request,failure);}
             });
             else if(refreshHidden)loadNetwork(item,request);
-            else repo.restoreArticle(item,restored->{if(!valid(request))return;if(restored!=null&&(!revalidateHidden||ArticleVersion.matches(item,restored)))complete(item,restored,false);else loadNetwork(item,request);});
+            else repo.restoreArticle(item,restored->{if(!valid(request))return;trace("disk="+(restored!=null)+" metadata="+(restored!=null&&ArticleVersion.matches(item,restored))+" offline="+repo.offline());if(restored!=null&&cachedVersion(item,restored))complete(item,restored,false);else loadNetwork(item,request);});
             return;
         }
         if(!queue.isEmpty()&&earliest!=Long.MAX_VALUE){main.postDelayed(pump,Math.max(1,earliest-SystemClock.elapsedRealtime()));return;}

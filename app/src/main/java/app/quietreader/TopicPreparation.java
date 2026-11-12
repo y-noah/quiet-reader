@@ -34,6 +34,7 @@ final class TopicPreparation implements AutoCloseable {
     }
     static boolean supports(Item item){return item.source==Source.TIEBA&&TiebaTopic.isTopic(item.url);}
     private static String key(Item item){return item.url+"|"+ArticleVersion.hash(item);}
+    private boolean cachedVersion(Item item,Document doc){return ArticleVersion.matches(item,doc)||ReadingNetwork.offline(activity)&&ArticleVersion.readableCached(item,doc,System.currentTimeMillis(),true);}
     void plan(List<Item> candidates){
         ArticleSessionSnapshot.run(()->planSnapshot(candidates));
     }
@@ -53,7 +54,7 @@ final class TopicPreparation implements AutoCloseable {
     }
     private Document readySnapshot(Item item){
         Document doc=ready.get(key(item));
-        if(doc==null||mediaCount(item)<Math.min(limit,TopicBundle.total(doc))||!TopicBundle.prepared(doc,limit)||!ArticleVersion.matches(item,doc)||!ArticleSession.contentCurrent(doc))return null;
+        if(doc==null||mediaCount(item)<Math.min(limit,TopicBundle.total(doc))||!TopicBundle.prepared(doc,limit)||!cachedVersion(item,doc)||!ArticleSession.contentCurrent(doc))return null;
         long age=System.currentTimeMillis()-doc.cachedAt;
         return age>=0&&age<=ArticleDiskCache.MAX_AGE&&new ArticleSession(activity,item).owns(doc)?doc:null;
     }
@@ -63,10 +64,11 @@ final class TopicPreparation implements AutoCloseable {
         // queue or redraw the feed for every incomplete child document.
         if(!TopicBundle.prepared(doc,limit)||!verifying.add(item.url))return;
         long request=epoch;Item root=items.get(item.url);
-        if(root==null||!ArticleVersion.matches(root,doc)){verifying.remove(item.url);return;}
-        new ArticleDiskCache(activity).verify(doc,hit->main.post(()->{
+        if(root==null||!cachedVersion(root,doc)){verifying.remove(item.url);return;}
+        new ArticleDiskCache(activity).verify(doc,ReadingNetwork.offline(activity),hit->main.post(()->{
+            android.util.Log.d("NewTopicCache","disk verified="+(hit!=null)+" initial="+(hit!=null&&TopicBundle.prepared(hit.document,limit))+" metadata="+(hit!=null&&ArticleVersion.matches(root,hit.document)));
             verifying.remove(item.url);if(closed||!foreground||request!=epoch)return;
-            if(hit!=null&&TopicBundle.prepared(hit.document,limit)&&ArticleVersion.matches(root,hit.document)&&ArticleSession.contentCurrent(hit.document)){
+            if(hit!=null&&TopicBundle.prepared(hit.document,limit)&&cachedVersion(root,hit.document)&&ArticleSession.contentCurrent(hit.document)){
                 Document whole=hit.document;for(Item choice:whole.topic.choices)if(!choice.video){whole=TopicBundle.focus(whole,choice.url);break;}
                 prepareMedia(root,whole,request);return;
             }
@@ -89,10 +91,10 @@ final class TopicPreparation implements AutoCloseable {
                         }
                     }
                 }
-            }catch(Exception failure){complete=false;}finally{media.release(ticket);}
+            }catch(Exception failure){android.util.Log.d("NewTopicCache","media failed="+failure.getClass().getSimpleName());complete=false;}finally{media.release(ticket);}
             boolean success=complete;main.post(()->{if(closed||!foreground||request!=epoch)return;
                 preparingMedia.remove(item.url);
-                if(success&&ArticleSession.contentCurrent(doc)&&ArticleVersion.matches(item,doc)){new ArticleDiskCache(activity).pinTopic(doc);ready.put(key(item),doc);mediaCounts.put(key(item),mediaLimit);onReady.accept(item,doc);}
+                if(success&&ArticleSession.contentCurrent(doc)&&cachedVersion(item,doc)){new ArticleDiskCache(activity).pinTopic(doc);ready.put(key(item),doc);mediaCounts.put(key(item),mediaLimit);onReady.accept(item,doc);}
                 changed.run();
                 if(!closed&&foreground&&(!success||mediaLimit<limit)){main.removeCallbacks(start);main.postDelayed(start,success?0:3000);}
             });

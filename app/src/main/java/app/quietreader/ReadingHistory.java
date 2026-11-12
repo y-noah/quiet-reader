@@ -22,7 +22,7 @@ final class ReadingHistory {
         return edit.commit();
     }
     JSONObject get(String url){try{JSONObject state=new JSONObject(prefs.getString(url,""));
-        android.net.ConnectivityManager network=(android.net.ConnectivityManager)context.getSystemService(Context.CONNECTIVITY_SERVICE);boolean offline=network!=null&&network.getActiveNetwork()==null;
+        boolean offline=ReadingNetwork.offline(context);
         long age=System.currentTimeMillis()-state.optLong("bodyAt");
         if(state.optInt("bodyFormat")!=1||!ArticleDiskCache.session(url).equals(state.optString("session"))||!new ArticleDiskCache(context).namespace().equals(state.optString("namespace"))||age<0||age>(offline?ArticleDiskCache.MAX_AGE:10*60_000))state.remove("document");
         if(state.has("document")){Document body=decode(state.getJSONObject("document"));if(body.loginRequired||body.sourceUnavailable||body.filteredVideo||!ArticleSession.contentCurrent(body)||!TiebaReplyRelations.canReuse(body,offline)||!HupuDiscussion.canReuse(body,offline))state.remove("document");}

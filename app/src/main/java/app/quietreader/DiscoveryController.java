@@ -50,7 +50,7 @@ final class DiscoveryController implements AutoCloseable {
     private boolean admissionAnchor,admissionCommitting;
     private long admissionEpoch;
     private Runnable afterAdmission=()->{};
-    private boolean cacheOffline(){android.net.ConnectivityManager network=(android.net.ConnectivityManager)activity.getSystemService(android.content.Context.CONNECTIVITY_SERVICE);return network!=null&&network.getActiveNetwork()==null;}
+    private boolean cacheOffline(){return ReadingNetwork.offline(activity);}
     private long cacheAge(){return cacheOffline()?ArticleDiskCache.MAX_AGE:FeedReadiness.FRESH_MS;}
     private String bodyScope(HotCandidate candidate){return new ArticleSession(activity,candidate.readerItem()).scopeIdentity();}
     private List<FeedStore.Row> availableBodies(List<FeedStore.Row> ranked){
@@ -231,7 +231,10 @@ final class DiscoveryController implements AutoCloseable {
             }
             if(autoRefresh&&freshOpen&&previous!=null){
                 Snapshot old=read(previous.optLong("id"));store.recordPresentation(FeedBatch.first(SourceFilter.apply(old.rows,sourceFilter)),System.currentTimeMillis());
-                long next=store.presentationSnapshot(id,sourceFilter,Collections.emptyList(),System.currentTimeMillis());if(next>0)id=next;
+                long next=store.presentationSnapshot(id,sourceFilter,Collections.emptyList(),System.currentTimeMillis());
+                // A fresh launch may advance to new recommendations, but an
+                // exhausted window must retain its last actual screen.
+                if(next>0&&!SourceFilter.apply(read(next).rows,sourceFilter).isEmpty())id=next;
             }
             return read(id);
         },loaded->{ready=true;accept(loaded,false);readSources();readInterestSetup();maybeStart();if(!loading)scheduleRecommendation(false);});
@@ -368,8 +371,7 @@ final class DiscoveryController implements AutoCloseable {
     void refreshRecommendations(){
         if(closed||!foreground||!ready||!feedPage||explicitRefreshRunning)return;
         if(recommendationExhausted&&pending<=0){
-            listener.error("暂时没有新的推荐内容");
-            if(!loading&&SystemClock.elapsedRealtime()-lastPoolRefresh>=FeedReserve.UPDATE_MS)refresh();
+            recycleRecommendations();
             return;
         }
         if(admission!=null){admission=null;admissionEpoch++;admissionCommitting=false;afterAdmission=()->{};}
@@ -455,8 +457,17 @@ final class DiscoveryController implements AutoCloseable {
         });
     }
     private void finishExhaustedRefresh(boolean collect){
-        explicitRefreshing(false);exhausted(true);listener.error("暂时没有新的推荐内容");
-        if(collect&&foreground&&feedPage)refresh();
+        explicitRefreshing(false);exhausted(true);recycleRecommendations();
+    }
+    private void recycleRecommendations(){
+        cacheAction();explicitRefreshing(true);long request=++explicitRefreshEpoch;int generation=feedGeneration;String filter=sourceFilter;boolean latest=newest;
+        boolean collect=!loading&&SystemClock.elapsedRealtime()-lastPoolRefresh>=FeedReserve.UPDATE_MS;
+        work(()->{long rebuilt=build(latest);long next=rebuilt>0?store.recycleSnapshot(rebuilt,filter,System.currentTimeMillis()):-1;return next>0?read(next):new Snapshot();},next->{
+            if(request!=explicitRefreshEpoch)return;
+            if(generation!=feedGeneration||!foreground||!feedPage){explicitRefreshing(false);return;}
+            if(next.info==null){explicitRefreshing(false);listener.error("本次更新暂未完成，已保留当前内容");return;}
+            accept(next,false,()->{if(request!=explicitRefreshEpoch)return;explicitRefreshing(false);listener.error("暂无新内容");if(collect&&foreground&&feedPage)refresh();});
+        });
     }
     private void exhausted(boolean value){recommendationExhausted=value;listener.exhausted(value);}
     private void explicitRefreshing(boolean running){if(explicitRefreshRunning==running)return;explicitRefreshRunning=running;listener.refreshWork(running);}
@@ -531,7 +542,11 @@ final class DiscoveryController implements AutoCloseable {
         });
     }
     void start(){
-        if(foreground)return;foreground=true;interacting=false;cacheAction();tryAdmission();armPoolUpdate();maybeStart();viewport(viewport);cacheAcceptedBatch(false);
+        if(foreground)return;
+        ArticleReadHistory readHistory=new ArticleReadHistory(activity,ArticleReadHistory.database(activity,activity.getIntent().getStringExtra("test_database")));
+        List<FeedStore.Row> unread=readHistory.unread(rows);
+        if(!rows.equals(unread)){rows=unread;allRows=readHistory.unread(allRows);position=Math.min(position,Math.max(0,rows.size()-1));listener.feed(Collections.unmodifiableList(rows),position,offset,newest);}
+        foreground=true;interacting=false;cacheAction();tryAdmission();armPoolUpdate();maybeStart();viewport(viewport);cacheAcceptedBatch(false);
         String restriction=RecommendationPolicy.restriction(activity);if(!restriction.isEmpty())recommendationStatus(RecommendationState.Phase.PAUSED,restriction);
         if(ready){scheduleRecommendation(false);readSources();work(()->new long[]{store.version("sources"),store.profile(System.currentTimeMillis()).getLong("version")},versions->{if(versions[0]!=visibleSourceVersion||versions[1]!=visibleProfileVersion)prepare(false);});}
     }
