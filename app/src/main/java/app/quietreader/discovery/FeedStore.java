@@ -79,13 +79,26 @@ public final class FeedStore extends SQLiteOpenHelper {
             Map<String,Boolean> decisions=new HashMap<>();Set<String> provisional=new HashSet<>();
             try(Cursor c=db.rawQuery("SELECT identity,selected,finalized FROM recommendation_window",null)){while(c.moveToNext()){decisions.put(c.getString(0),c.getInt(1)!=0);if(c.getInt(2)==0)provisional.add(c.getString(0));}}
             Map<String,Boolean> before=new HashMap<>(decisions);Set<String> previous=new HashSet<>(decisions.keySet());
-            List<Row> eligible=InterestPool.eligible(unread(ranked),new PlatformPreference(interests.getJSONArray("feedback")));Set<String> delivered=delivered(now).keySet();
+            List<Row> unread=unread(ranked);PlatformPreference preference=new PlatformPreference(interests.getJSONArray("feedback"));
+            Map<Source,Integer> proposed=InterestPool.limits(unread,preference),limits=new EnumMap<>(Source.class);
+            for(Source source:Source.values()){
+                String key="interest_source_quota_"+source.name();
+                if(preference.score(source)>=0){db.delete("meta","key=?",new String[]{key});continue;}
+                long saved=scalar(db,"SELECT value FROM meta WHERE key=?",key);
+                // A read, refresh or source update must never enlarge a LESS budget.
+                // Store limit+1 so a real zero limit differs from an unset value.
+                if(saved==0){saved=proposed.getOrDefault(source,0)+1;db.execSQL("INSERT OR REPLACE INTO meta VALUES (?,?)",new Object[]{key,saved});}
+                limits.put(source,(int)saved-1);
+            }
+            List<Row> eligible=InterestPool.eligible(unread,limits);Set<String> delivered=delivered(now).keySet();
             // A new arrival after exhaustion owns a fresh allowance even if the
             // previous model pass was interrupted before finalizing its choices.
             if(!semantic&&!previous.isEmpty()&&RecommendationWindow.startsNewWindow(eligible,decisions,delivered)){
                 db.execSQL("UPDATE recommendation_window SET finalized=1 WHERE finalized=0");provisional.clear();
             }
-            List<Row> selected=RecommendationWindow.select(eligible,decisions,delivered,provisional,semantic);
+            List<Row> chosen=RecommendationWindow.select(FeedSourceBalance.arrange(eligible,new PlatformPreference(interests.getJSONArray("feedback"))),decisions,delivered,provisional,semantic);
+            Set<String> identities=new HashSet<>();for(Row row:chosen)identities.add(row.eventId);
+            List<Row> selected=new ArrayList<>();for(Row row:eligible)if(identities.contains(row.eventId))selected.add(row);
             for(Row row:ranked)for(HotCandidate member:row.entries)decisions.putIfAbsent(RecommendationWindow.key(member),false);
             for(Map.Entry<String,Boolean> entry:decisions.entrySet())if(!Objects.equals(before.get(entry.getKey()),entry.getValue())||semantic&&provisional.contains(entry.getKey())){ContentValues value=new ContentValues();value.put("identity",entry.getKey());value.put("selected",entry.getValue()?1:0);value.put("finalized",semantic?1:0);value.put("assessed_at",now);if(previous.contains(entry.getKey()))db.update("recommendation_window",value,"identity=?",new String[]{entry.getKey()});else db.insertOrThrow("recommendation_window",null,value);}
             db.setTransactionSuccessful();return selected;
@@ -127,7 +140,7 @@ public final class FeedStore extends SQLiteOpenHelper {
             if(eligible.size()>RecommendationWindow.SIZE)eligible=new ArrayList<>(eligible.subList(0,RecommendationWindow.SIZE));
             Map<String,Long> previous=delivered(now);
             eligible.sort(Comparator.comparingLong(row->{long at=0;for(HotCandidate member:row.entries)at=Math.max(at,previous.getOrDefault(member.id,0L));return at;}));
-            long next=commitRanking(info.getLong("sourceVersion"),info.getLong("profileVersion"),now,info.getString("mode"),filter,eligible);
+            long next=commitRanking(info.getLong("sourceVersion"),info.getLong("profileVersion"),now,info.getString("mode"),filter,FeedSourceBalance.spread(eligible));
             if(next>0&&!eligible.isEmpty()){
                 long boundary=Math.max(now,Math.max(scalar(db,"SELECT COALESCE(MAX(at),0) FROM presentations"),scalar(db,"SELECT COALESCE(MAX(offered_at),0) FROM recommendation_window"))+1);
                 db.execSQL("INSERT OR REPLACE INTO meta VALUES ('recommendation_cycle_started',?)",new Object[]{boundary});
@@ -172,7 +185,7 @@ public final class FeedStore extends SQLiteOpenHelper {
     public long version(String key){if(!key.equals("sources")&&!key.equals("profile"))throw new IllegalArgumentException("Unknown version");return scalar(db(),"SELECT value FROM meta WHERE key=?",key);}
     /** Rebuild pre-policy snapshots once; keep feedback and reusable vectors. */
     public void ensureCandidatePolicy(){SQLiteDatabase db=db();db.beginTransaction();try{
-        if(scalar(db,"SELECT value FROM meta WHERE key='candidate_policy'")!=4){db.execSQL("INSERT OR REPLACE INTO meta VALUES ('candidate_policy',4)");bump(db,"sources");}
+        if(scalar(db,"SELECT value FROM meta WHERE key='candidate_policy'")!=5){db.execSQL("INSERT OR REPLACE INTO meta VALUES ('candidate_policy',5)");bump(db,"sources");}
         db.setTransactionSuccessful();
     }finally{db.endTransaction();}}
     public long beginRefresh(Source source){return beginRefresh(source,System.currentTimeMillis());}

@@ -59,6 +59,16 @@ final class InterestMembershipProbe {
             ui(()->{controller.stop();controller.start();controller.interacting(true);});
             check(rows().stream().noneMatch(r->r.entries.stream().anyMatch(c->c.id.equals(read.id))),"read return immediately removes the article from current and future rows");
             for(int round=0;round<7;round++){refresh();check(count(rows(),Source.V2EX)<=limit&&rows().stream().noneMatch(r->r.entries.stream().anyMatch(c->c.id.equals(read.id)||c.id.equals(disliked.candidate.id))),"whole-pool source budget, read and content exclusions survive refresh/cycle "+round);}
+            serial.submit(()->{
+                for(HotCandidate c:candidates)if(c.source!=Source.V2EX)store.recordConsumed(c,System.currentTimeMillis());
+                List<FeedStore.Row> fresh=new ArrayList<>();for(int n=0;n<10;n++){
+                    HotCandidate c=new HotCandidate(Source.V2EX,"https://www.v2ex.com/t/"+(999980000+n),"新增V站话题 "+n,"","",false,n+1,null,now);
+                    fresh.add(new FeedStore.Row(c.id,c,"",List.of(c),1));
+                }
+                fresh.addAll(canonical);
+                List<FeedStore.Row> kept=store.selectRecommendations(fresh,System.currentTimeMillis());
+                check(count(kept,Source.V2EX)<=limit,"reading all other sources and adding fresh V2EX cannot enlarge the saved LESS budget");return null;
+            }).get(10,TimeUnit.SECONDS);
             // Old read facts and large reading histories must never become new recommendations.
             HotCandidate ancient=candidates.get(299);history.mark(ancient,System.currentTimeMillis()-181L*86400000);
             check(history.seen(ancient),"read facts remain effective past the previous 180-day expiry");

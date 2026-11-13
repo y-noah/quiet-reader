@@ -295,7 +295,7 @@ final class DiscoveryController implements AutoCloseable {
             ordered=store.selectRecommendations(SemanticOrder.fuse(SemanticOrder.rank(ordered,interests,vectors),Collections.emptyMap(),interests.platforms),now);
             if(latest)ordered=CandidateOrder.preserveVisibleOrder(ordered,chronological);
         }
-        if(!latest&&preserve.isEmpty())ordered=FeedSourceBalance.arrange(ordered,new PlatformPreference(profile.getJSONArray("feedback")),store.balanceTurn());
+        if(!latest&&preserve.isEmpty())ordered=FeedSourceBalance.spread(ordered);
         if(!preserve.isEmpty())ordered=CandidateOrder.preserveVisibleGroups(ordered,preserve,profile.getJSONArray("feedback"));
         return store.commitRanking(source,profile.getLong("version"),now,latest?"newest":new PlatformPreference(profile.getJSONArray("feedback")).empty()?"cold":"platform",sourceFilter,ordered);
     }
@@ -826,7 +826,7 @@ final class DiscoveryController implements AutoCloseable {
                     String resources=recommendation==null?"":recommendation.resourceDescription();
                     recommendation=null;String detail=status+" · 已缓存向量 "+encoded+"/"+total+"，本轮精排 "+refined+" 条\n"+resources;
                     String filter=sourceFilter;
-                    work(()->store.commitRanking(input.source,input.profile,System.currentTimeMillis(),semantic?"personal":input.interests.platforms.empty()?"cold":"platform",filter,FeedSourceBalance.arrange(store.selectRecommendations(ordered,System.currentTimeMillis(),semantic&&complete),input.interests.platforms,store.balanceTurn())),id->{
+                    work(()->store.commitRanking(input.source,input.profile,System.currentTimeMillis(),semantic?"personal":input.interests.platforms.empty()?"cold":"platform",filter,FeedSourceBalance.spread(store.selectRecommendations(ordered,System.currentTimeMillis(),semantic&&complete))),id->{
                         if(epoch!=recommendationEpoch||generation!=feedGeneration||!foreground)return;
                         if(id<0){recommendationStatus(RecommendationState.Phase.PAUSED,"来源或偏好已更新，当前列表保留，可继续整理");scheduleRecommendation(false);return;}
                         if(complete){completedSource=input.source;completedProfile=input.profile;}pending=id;stageReserve(pending);recommendationStatus(complete?RecommendationState.Phase.READY:semantic?RecommendationState.Phase.PARTIAL:RecommendationState.Phase.PAUSED,detail);state();viewport(viewport);

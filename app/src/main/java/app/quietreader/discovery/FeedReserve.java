@@ -33,7 +33,7 @@ public final class FeedReserve {
             next.add(row);for(HotCandidate member:row.entries)used.add(member.id);
 
         }
-        next=FeedSourceBalance.arrange(next,preference,nextTurn);
+        next=FeedSourceBalance.spread(next);
         future=Collections.unmodifiableList(new ArrayList<>(next.subList(0,Math.min(next.size(),FeedBatch.SIZE*ROUNDS))));
     }
     public List<FeedStore.Row> future(){return future;}

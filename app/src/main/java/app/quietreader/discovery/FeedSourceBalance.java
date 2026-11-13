@@ -12,7 +12,33 @@ public final class FeedSourceBalance {
         return arrange(rows,preference,turn,false);
     }
     static List<FeedStore.Row> arrangeDelivered(List<FeedStore.Row> rows,PlatformPreference preference,long turn){
-        return arrange(rows,preference,turn,true);
+        return spread(rows);
+    }
+    /** Once membership is fixed, distribute its actual source totals across the
+     * whole window. Reallocating equal shares per page would exhaust small
+     * sources first and leave the large source as an all-source final page. */
+    public static List<FeedStore.Row> spread(List<FeedStore.Row> rows){
+        List<FeedStore.Row> usable=new ArrayList<>(),negative=new ArrayList<>();
+        for(FeedStore.Row row:rows)(row.interestBand==2?negative:usable).add(row);
+        List<FeedStore.Row> result=spreadRows(usable);result.addAll(spreadRows(negative));return result;
+    }
+    private static List<FeedStore.Row> spreadRows(List<FeedStore.Row> rows){
+        Map<Source,ArrayDeque<FeedStore.Row>> queues=new EnumMap<>(Source.class);
+        Map<Source,Integer> totals=new EnumMap<>(Source.class),used=new EnumMap<>(Source.class),first=new EnumMap<>(Source.class);
+        for(int n=0;n<rows.size();n++){
+            FeedStore.Row row=rows.get(n);Source source=row.candidate.source;
+            queues.computeIfAbsent(source,k->new ArrayDeque<>()).add(row);totals.merge(source,1,Integer::sum);first.putIfAbsent(source,n);
+        }
+        List<FeedStore.Row> result=new ArrayList<>();
+        while(!queues.isEmpty()){
+            Source chosen=null;double earliest=Double.MAX_VALUE;int position=Integer.MAX_VALUE;
+            for(Source source:queues.keySet()){
+                double due=(used.getOrDefault(source,0)+0.5)/totals.get(source);
+                if(due<earliest||due==earliest&&first.get(source)<position){chosen=source;earliest=due;position=first.get(source);}
+            }
+            ArrayDeque<FeedStore.Row> queue=queues.get(chosen);result.add(queue.remove());used.merge(chosen,1,Integer::sum);if(queue.isEmpty())queues.remove(chosen);
+        }
+        return result;
     }
     private static List<FeedStore.Row> arrange(List<FeedStore.Row> rows,PlatformPreference preference,long turn,boolean deliveryOrdered){
         List<FeedStore.Row> result=new ArrayList<>();

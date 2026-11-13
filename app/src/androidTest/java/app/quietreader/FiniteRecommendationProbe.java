@@ -16,10 +16,11 @@ import static app.quietreader.Models.*;
 
 /** Isolated real SQLite + actual home controls. Does not use live source accounts. */
 final class FiniteRecommendationProbe {
-    private final Instrumentation test;
+    private final Instrumentation test;private final boolean multi;
     private DiscoveryActivity home;private DiscoveryController controller;private FeedStore store;private ExecutorService serial;
     private int checks,failures;private final StringBuilder report=new StringBuilder();private volatile boolean exhaustedToast;
-    FiniteRecommendationProbe(Instrumentation test){this.test=test;}
+    FiniteRecommendationProbe(Instrumentation test){this(test,false);}
+    FiniteRecommendationProbe(Instrumentation test,boolean multi){this.test=test;this.multi=multi;}
     private Object field(Object owner,String name){try{Field f=owner.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(owner);}catch(Exception e){throw new IllegalStateException(e);}}
     private void ui(Runnable action){test.runOnMainSync(action);}
     private boolean onUi(BooleanSupplier condition){boolean[] value={false};ui(()->value[0]=condition.getAsBoolean());return value[0];}
@@ -38,14 +39,14 @@ final class FiniteRecommendationProbe {
     void run(){String database="test-ui-finite-"+UUID.randomUUID()+".db";
         try{
             List<HotCandidate> candidates=new ArrayList<>();List<FeedStore.Row> ranked=new ArrayList<>();long now=System.currentTimeMillis();
-            for(int n=0;n<300;n++){HotCandidate c=new HotCandidate(Source.THEPAPER,"https://www.thepaper.cn/newsDetail_forward_"+(99700000+n),"有限推荐验证中文话题 "+n,"","",false,n+1,null,now);candidates.add(c);ranked.add(new FeedStore.Row(c.id,c,"受控偏好匹配",List.of(c),n>=225?0:2));}
+            for(int n=0;n<300;n++){HotCandidate c=new HotCandidate(!multi?Source.THEPAPER:n<270?Source.V2EX:n<280?Source.BBC:n<290?Source.ITHOME:Source.THEPAPER,(!multi||n>=290?"https://www.thepaper.cn/newsDetail_forward_":n<270?"https://www.v2ex.com/t/":n<280?"https://www.bbc.com/zhongwen/articles/":"https://www.ithome.com/0/997/000/")+(99700000+n),"有限推荐验证中文话题 "+n,"","",false,n+1,null,now);candidates.add(c);ranked.add(new FeedStore.Row(c.id,c,"受控偏好匹配",List.of(c),n>=225?0:2));}
             Collections.reverse(ranked);
             try(FeedStore seed=new FeedStore(test.getTargetContext(),database)){
-                seed.ensureCandidatePolicy();for(Source source:Source.values())seed.enable(source,source==Source.THEPAPER);
-                seed.upsertSnapshot(Source.THEPAPER,seed.beginRefresh(Source.THEPAPER),candidates,now);seed.finishInterestSetup(List.of(),Map.of(),now);
+                seed.ensureCandidatePolicy();for(Source source:Source.values())seed.enable(source,source==Source.THEPAPER||multi&&List.of(Source.V2EX,Source.BBC,Source.ITHOME).contains(source));
+                for(Source source:Source.values()){List<HotCandidate> group=candidates.stream().filter(c->c.source==source).toList();if(!group.isEmpty())seed.upsertSnapshot(source,seed.beginRefresh(source),group,now);}seed.finishInterestSetup(List.of(),Map.of(),now);
                 List<FeedStore.Row> selected=seed.selectRecommendations(ranked,now,false);
                 check(selected.size()==75&&selected.get(0).candidate.sourceRank==300,"preference selection admits 75 relevant rows rather than top source heat ranks");
-                long id=seed.commitRanking(seed.version("sources"),seed.profile(now).getLong("version"),now,"personal","all",selected);seed.activateSnapshot(id);
+                long id=seed.commitRanking(seed.version("sources"),seed.profile(now).getLong("version"),now,"personal","all",multi?FeedSourceBalance.spread(selected):selected);seed.activateSnapshot(id);
             }
             test.getUiAutomation().setOnAccessibilityEventListener(event->{if(event.getEventType()==AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED&&event.getText().toString().contains("暂无新内容"))exhaustedToast=true;});
             home=(DiscoveryActivity)test.startActivitySync(new Intent(test.getTargetContext(),DiscoveryActivity.class).putExtra("test_database",database).putExtra("test_skip_fetch",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));
@@ -55,6 +56,7 @@ final class FiniteRecommendationProbe {
             for(int round=0;round<5;round++){
                 if(round>0){if(round%2==0)pull();else refresh();}
                 List<FeedStore.Row> rows=visible();check(rows.size()==15,"screen "+(round+1)+" contains exactly fifteen recommendations");
+                if(multi){Map<Source,Long> counts=new EnumMap<>(Source.class);for(FeedStore.Row row:rows)counts.merge(row.candidate.source,1L,Long::sum);report.append("PAGE ").append(round+1).append(" ").append(counts).append('\n');check(counts.size()==4&&counts.getOrDefault(Source.V2EX,0L)==9,"all four platforms remain visible on actual page "+(round+1)+", including the fifth");}
                 for(FeedStore.Row row:rows)check(seen.add(row.eventId),"new visible identity "+row.candidate.title);
                 await("bound first title",()->text(home.getWindow().getDecorView(),rows.get(0).candidate.title));
                 int expectedCount=15;check(onUi(()->((ListView)field(home,"list")).getCount()==expectedCount),"actual adapter has exactly fifteen data rows without an exhaustion footer, round "+(round+1));shot("finite-round-"+(round+1));
@@ -83,7 +85,7 @@ final class FiniteRecommendationProbe {
             }).get(10,TimeUnit.SECONDS);
             HotCandidate newcomer=new HotCandidate(Source.THEPAPER,"https://www.thepaper.cn/newsDetail_forward_99700301","新增内容才能重新开放推荐","","",false,1,null,System.currentTimeMillis());
             candidates.add(newcomer);
-            serial.submit(()->{store.upsertSnapshot(Source.THEPAPER,store.beginRefresh(Source.THEPAPER),candidates,System.currentTimeMillis());return null;}).get(10,TimeUnit.SECONDS);
+            serial.submit(()->{store.upsertSnapshot(Source.THEPAPER,store.beginRefresh(Source.THEPAPER),candidates.stream().filter(c->c.source==Source.THEPAPER).toList(),System.currentTimeMillis());return null;}).get(10,TimeUnit.SECONDS);
             ui(()->{try{Method prepare=DiscoveryController.class.getDeclaredMethod("prepare",boolean.class);prepare.setAccessible(true);prepare.invoke(controller,false);}catch(Exception error){throw new IllegalStateException(error);}});
             await("new content prepared",()->(long)field(controller,"pending")>0||visible().size()==1&&visible().get(0).candidate.id.equals(newcomer.id));
             serial.submit(()->{List<FeedStore.Row> model=new ArrayList<>(ranked);model.add(0,new FeedStore.Row(newcomer.id,newcomer,"新内容兴趣匹配",List.of(newcomer),0));

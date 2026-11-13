@@ -93,7 +93,7 @@ public class FeedSourceBalanceTest {
             for(Source source:Source.values())assertEquals(count(shortPool,source),count(deep,source));
             List<FeedStore.Row> promoted=FeedReserve.promotePrepared(shallow,rows.subList(0,60));
             List<FeedStore.Row> actual=FeedBatch.first(FeedPresentationOrder.arrange(promoted,Collections.emptyMap(),1000,null,turn));
-            for(Source source:Source.values())assertEquals(count(shortPool,source),count(actual,source));
+            for(Source source:Source.values())assertEquals(count(FeedBatch.first(FeedSourceBalance.spread(shallow)),source),count(actual,source));
         }
     }
     @Test public void shortagesRedistributeVacanciesAndNeverDuplicateOrLoseCandidates(){
@@ -105,7 +105,7 @@ public class FeedSourceBalanceTest {
         List<FeedStore.Row> rows=pool();List<FeedStore.Row> ranked=new ArrayList<>();for(FeedStore.Row row:rows)ranked.add(row.withInterestBand(row.candidate.source==Source.BAIDU?0:1));
         PlatformPreference preference=new PlatformPreference(new JSONArray().put(new JSONObject().put("action","LESS").put("scope","source").put("target","BAIDU")));
         List<FeedStore.Row> batch=FeedBatch.first(FeedSourceBalance.arrange(ranked,preference));assertEquals(5,count(batch,Source.BAIDU));
-        assertEquals(12,count(InterestPool.eligible(ranked,preference),Source.BAIDU));
+        assertEquals(6,count(InterestPool.eligible(ranked,preference),Source.BAIDU));
         FeedStore.Row neutral=row(Source.ZHIHU,501,1),positive=row(Source.ZHIHU,502,0);
         assertEquals(List.of(positive,neutral),FeedSourceBalance.arrange(List.of(neutral,positive)));
     }
