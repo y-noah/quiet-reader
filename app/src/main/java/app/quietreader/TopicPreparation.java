@@ -34,7 +34,7 @@ final class TopicPreparation implements AutoCloseable {
     }
     static boolean supports(Item item){return item.source==Source.TIEBA&&TiebaTopic.isTopic(item.url);}
     private static String key(Item item){return item.url+"|"+ArticleVersion.hash(item);}
-    private boolean cachedVersion(Item item,Document doc){return ArticleVersion.matches(item,doc)||ReadingNetwork.offline(activity)&&ArticleVersion.readableCached(item,doc,System.currentTimeMillis(),true);}
+    private boolean cachedVersion(Item item,Document doc){return ArticleVersion.readableCached(item,doc,System.currentTimeMillis(),ReadingNetwork.offline(activity));}
     void plan(List<Item> candidates){
         ArticleSessionSnapshot.run(()->planSnapshot(candidates));
     }

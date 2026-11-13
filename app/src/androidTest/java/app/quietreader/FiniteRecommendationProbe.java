@@ -57,10 +57,9 @@ final class FiniteRecommendationProbe {
                 List<FeedStore.Row> rows=visible();check(rows.size()==15,"screen "+(round+1)+" contains exactly fifteen recommendations");
                 for(FeedStore.Row row:rows)check(seen.add(row.eventId),"new visible identity "+row.candidate.title);
                 await("bound first title",()->text(home.getWindow().getDecorView(),rows.get(0).candidate.title));
-                int expectedCount=round==4?16:15;check(onUi(()->((ListView)field(home,"list")).getCount()==expectedCount),"actual adapter has fifteen data rows and only the final exhaustion footer, round "+(round+1));shot("finite-round-"+(round+1));
+                int expectedCount=15;check(onUi(()->((ListView)field(home,"list")).getCount()==expectedCount),"actual adapter has exactly fifteen data rows without an exhaustion footer, round "+(round+1));shot("finite-round-"+(round+1));
             }
-            ListView finalList=(ListView)field(home,"list");ui(()->finalList.setSelection(15));
-            await("visible exhaustion footer",()->finalList.getFirstVisiblePosition()>0&&text(home.getWindow().getDecorView(),"暂无新内容"));check(true,"last batch has a persistent, actually bound no-new-content footer");shot("finite-footer");ui(()->finalList.setSelection(0));
+            ui(()->((ListView)field(home,"list")).setSelection(14));test.waitForIdleSync();check(onUi(()->!text(home.getWindow().getDecorView(),"暂无新内容")),"no persistent no-new-content message below the hot list");shot("finite-no-footer");ui(()->((ListView)field(home,"list")).setSelection(0));
             refresh();Thread.sleep(300);check(exhaustedToast,"actual exhausted refresh displays no-new-recommendations message");
             check(visible().size()==15&&visible().stream().allMatch(row->seen.contains(row.candidate.id)),"exhaustion cycles fifteen unread selected rows without admitting rejected tail");shot("finite-cycle");
             check(seen.size()==75,"five real home batches contain exactly 75 distinct recommendations");
@@ -70,7 +69,7 @@ final class FiniteRecommendationProbe {
             for(int round=0;round<6;round++){if(round%2==0)pull();else refresh();check(visible().size()<=15&&visible().stream().noneMatch(row->row.candidate.id.equals(consumed.id))&&visible().stream().allMatch(row->seen.contains(row.candidate.id)),"unread cycle excludes a read item across repeated pull/dot refresh "+round);}
             serial.submit(()->{for(FeedStore.Row row:ranked)if(seen.contains(row.eventId))store.recordConsumed(row.candidate,System.currentTimeMillis());return null;}).get(10,TimeUnit.SECONDS);
             refresh();await("all selected content read",()->visible().isEmpty());
-            check(text(home.getWindow().getDecorView(),"暂无新内容"),"reading all selections leaves the actual no-new-content screen without replaying read cards");
+            check(!text(home.getWindow().getDecorView(),"暂无新内容"),"all-read empty state does not repeat the refresh toast as a footer");
             serial.submit(()->{
                 List<FeedStore.Row> again=store.selectRecommendations(ranked,System.currentTimeMillis(),true);
                 long id=store.commitRanking(store.version("sources"),store.profile(System.currentTimeMillis()).getLong("version"),System.currentTimeMillis(),"personal","all",again);

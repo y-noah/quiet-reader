@@ -80,6 +80,9 @@ public final class TopicThreadInstrumentation extends Instrumentation {
     @Override public void onStart(){
         if("true".equals(arguments.getString("finite_recommendations"))){new FiniteRecommendationProbe(this).run();return;}
         if("true".equals(arguments.getString("session_recovery"))){new SessionRecoveryProbe(this).run();return;}
+        if("true".equals(arguments.getString("interest_pool"))){new InterestMembershipProbe(this).run();return;}
+        if("true".equals(arguments.getString("online_cache"))){new OfflineTopicCacheProbe(this,false).run();return;}
+        if("true".equals(arguments.getString("batch_cache"))){new BatchCacheRetentionProbe(this).run();return;}
         if("true".equals(arguments.getString("offline_cache"))){new OfflineTopicCacheProbe(this).run();return;}
         if("true".equals(arguments.getString("presentation_store"))){new PresentationStoreProbe(this).run();return;}
         String refreshCase=arguments.getString("refresh_case","");

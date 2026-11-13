@@ -51,7 +51,7 @@ final class DiscoveryController implements AutoCloseable {
     private long admissionEpoch;
     private Runnable afterAdmission=()->{};
     private boolean cacheOffline(){return ReadingNetwork.offline(activity);}
-    private long cacheAge(){return cacheOffline()?ArticleDiskCache.MAX_AGE:FeedReadiness.FRESH_MS;}
+    private long cacheAge(){return ArticleDiskCache.MAX_AGE;}
     private String bodyScope(HotCandidate candidate){return new ArticleSession(activity,candidate.readerItem()).scopeIdentity();}
     private List<FeedStore.Row> availableBodies(List<FeedStore.Row> ranked){
         List<FeedStore.Row> result=new ArrayList<>();long now=System.currentTimeMillis();
@@ -83,7 +83,7 @@ final class DiscoveryController implements AutoCloseable {
         ArticleDiskCache disk=new ArticleDiskCache(activity);String namespace=disk.namespace();
         List<FeedStore.Row> target=readiness.targets(admissionPool(),this::bodyScope,System.currentTimeMillis());Map<String,String> sessions=new HashMap<>();
         for(FeedStore.Row row:target)sessions.put(row.candidate.id,ArticleDiskCache.session(row.candidate.originalUrl));
-        work(()->{List<CachedProof> found=new ArrayList<>();for(FeedStore.Row row:target){HotCandidate candidate=row.candidate;String session=sessions.get(candidate.id);ArticleDiskCache.Hit hit=disk.read(candidate.originalUrl,namespace,session,offline,System.currentTimeMillis());if(hit!=null&&TopicBundle.initialReady(hit.document)&&ArticleVersion.matches(candidate.readerItem(),hit.document))found.add(new CachedProof(candidate,namespace+"\n"+session,hit.at));}return found;},found->{
+        work(()->{List<CachedProof> found=new ArrayList<>();for(FeedStore.Row row:target){HotCandidate candidate=row.candidate;String session=sessions.get(candidate.id);ArticleDiskCache.Hit hit=disk.read(candidate.originalUrl,namespace,session,offline,System.currentTimeMillis());if(hit!=null&&TopicBundle.initialReady(hit.document)&&ArticleVersion.readableCached(candidate.readerItem(),hit.document,System.currentTimeMillis(),offline))found.add(new CachedProof(candidate,namespace+"\n"+session,hit.at));}return found;},found->{
             if(request!=admissionEpoch||admission==null)return;
             for(CachedProof proof:found)if(proof.scope.equals(bodyScope(proof.candidate)))readiness.persisted(FeedReadiness.key(proof.candidate),proof.scope,proof.at);
             tryAdmission();if(admission!=null&&!admissionCommitting)cacheAcceptedBatch(true);
@@ -102,7 +102,7 @@ final class DiscoveryController implements AutoCloseable {
         List<HotCandidate> missing=new ArrayList<>();
         work(()->{
             for(FeedStore.Row row:target){HotCandidate candidate=row.candidate;if(HotSourceCatalog.optionalVideo(candidate))continue;ArticleDiskCache.Hit hit=disk.read(candidate.originalUrl,namespace,sessions.get(candidate.id),offline,System.currentTimeMillis());
-                if(hit==null||!TopicBundle.initialReady(hit.document)||!ArticleVersion.matches(candidate.readerItem(),hit.document))missing.add(candidate);}
+                if(hit==null||!TopicBundle.initialReady(hit.document)||!ArticleVersion.readableCached(candidate.readerItem(),hit.document,System.currentTimeMillis(),offline))missing.add(candidate);}
             if(!missing.isEmpty())return new Snapshot();
             long id=store.admitPrepared(pendingAdmission.info.optLong("profileVersion"),pendingAdmission.info.optString("mode"),pendingAdmission.info.optString("filter"),pendingAdmission.rows,target,System.currentTimeMillis());return id>0?read(id):new Snapshot();
         },accepted->{
@@ -358,7 +358,16 @@ final class DiscoveryController implements AutoCloseable {
         completedSource=-1;completedProfile=-1;
         cancelRecommendation();boolean latest=newest;int generation=++feedGeneration;pending=0;
         List<FeedStore.Row> preserve=retainOrder?new ArrayList<>(allRows):Collections.emptyList();
-        work(()->build(latest,preserve),id->{if(id<0||generation!=feedGeneration)return;pending=id;stageReserve(pending);if(apply||rows.isEmpty())applyPending(apply);else{state();viewport(viewport);}scheduleRecommendation(false);});
+        work(()->{long id=build(latest,preserve);return id>0?read(id):new Snapshot();},next->{
+            if(next.info==null||generation!=feedGeneration)return;
+            if(apply){
+                Set<String> allowed=new HashSet<>();for(FeedStore.Row row:next.rows)allowed.add(row.candidate.id);
+                List<FeedStore.Row> retained=new ArrayList<>();for(FeedStore.Row row:rows)if(allowed.contains(row.candidate.id))retained.add(row);
+                List<FeedStore.Row> future=new ArrayList<>();for(FeedStore.Row row:allRows)if(allowed.contains(row.candidate.id))future.add(row);allRows=future;
+                if(!rows.equals(retained)){rows=retained;position=Math.min(position,Math.max(0,rows.size()-1));listener.feed(Collections.unmodifiableList(rows),position,offset,newest);}
+            }
+            pending=next.id;stageReserve(pending);if(apply||rows.isEmpty())applyPending(apply);else{state();viewport(viewport);}scheduleRecommendation(false);
+        });
     }
     // Only the explicit update action renews speculation. Automatic snapshot
     // publication also uses applyPending and must never extend the lease.
@@ -544,8 +553,8 @@ final class DiscoveryController implements AutoCloseable {
     void start(){
         if(foreground)return;
         ArticleReadHistory readHistory=new ArticleReadHistory(activity,ArticleReadHistory.database(activity,activity.getIntent().getStringExtra("test_database")));
-        List<FeedStore.Row> unread=readHistory.unread(rows);
-        if(!rows.equals(unread)){rows=unread;allRows=readHistory.unread(allRows);position=Math.min(position,Math.max(0,rows.size()-1));listener.feed(Collections.unmodifiableList(rows),position,offset,newest);}
+        List<FeedStore.Row> unread=readHistory.unread(rows);allRows=readHistory.unread(allRows);
+        if(!rows.equals(unread)){rows=unread;position=Math.min(position,Math.max(0,rows.size()-1));listener.feed(Collections.unmodifiableList(rows),position,offset,newest);}
         foreground=true;interacting=false;cacheAction();tryAdmission();armPoolUpdate();maybeStart();viewport(viewport);cacheAcceptedBatch(false);
         String restriction=RecommendationPolicy.restriction(activity);if(!restriction.isEmpty())recommendationStatus(RecommendationState.Phase.PAUSED,restriction);
         if(ready){scheduleRecommendation(false);readSources();work(()->new long[]{store.version("sources"),store.profile(System.currentTimeMillis()).getLong("version")},versions->{if(versions[0]!=visibleSourceVersion||versions[1]!=visibleProfileVersion)prepare(false);});}
@@ -573,11 +582,11 @@ final class DiscoveryController implements AutoCloseable {
     void feedback(FeedStore.Row row,String action){
         pausePreload();
         String id=UUID.randomUUID().toString();boolean enough="ENOUGH".equals(action),block="BLOCK".equals(action);feedGeneration++;pending=0;state();
-        cancelRecommendation();work(()->store.feedback(id,action,enough||block?"event":"sample",enough||block?EventTargets.capture(row,enough):CandidateOrder.versionTarget(row.candidate),System.currentTimeMillis(),null,row.candidate.modelText(),row.candidate.source),ignored->{prepare(enough||block,enough||block);listener.error(block?"已屏蔽这条内容，可在反馈记录中撤销":"已记下，可在偏好中撤销");});
+        cancelRecommendation();work(()->store.feedback(id,action,enough||block?"event":"sample",enough||block?EventTargets.capture(row,enough):CandidateOrder.versionTarget(row.candidate),System.currentTimeMillis(),null,row.candidate.modelText(),row.candidate.source),ignored->{prepare(true,enough||block);listener.error(block?"已屏蔽这条内容，可在反馈记录中撤销":"已记下，可在偏好中撤销");});
     }
     void platformFeedback(Source source,boolean more){
         pausePreload();cancelRecommendation();feedGeneration++;pending=0;state();
-        work(()->store.feedback(UUID.randomUUID().toString(),more?"MORE":"LESS","source",source.name(),System.currentTimeMillis(),null,source.label,source),ignored->{prepare(false);listener.error("已记下"+source.label+"的平台偏好，可在反馈记录中撤销");});
+        work(()->store.feedback(UUID.randomUUID().toString(),more?"MORE":"LESS","source",source.name(),System.currentTimeMillis(),null,source.label,source),ignored->{prepare(true);listener.error("已记下"+source.label+"的平台偏好，可在反馈记录中撤销");});
     }
     void separate(FeedStore.Row row){cancelRecommendation();feedGeneration++;pending=0;String id=UUID.randomUUID().toString();String target=EventTargets.capture(row,false);work(()->store.feedback(id,"SEPARATE","event",target,System.currentTimeMillis(),null,row.candidate.title),ignored->{prepare(true,true);listener.error("已分开显示，可在反馈记录中撤销");});}
     void feedbackHistory(Consumer<JSONArray> callback){work(()->store.activeFeedback(System.currentTimeMillis()),callback);}
@@ -714,7 +723,7 @@ final class DiscoveryController implements AutoCloseable {
         if(closed||document.cachedSession==null||!document.cachedSession.equals(ArticleDiskCache.session(item.url))||!new ArticleDiskCache(activity).namespace().equals(document.cachedNamespace)||!item.url.equals(document.url))return;
         imagePreloader.prepared(item,document);main.removeCallbacks(preparedImages);main.post(preparedImages);
         HotCandidate prepared=preparedCandidate(item);
-        if(prepared!=null&&ArticleVersion.matches(item,document)&&TopicBundle.initialReady(document)&&!document.filteredVideo&&!document.loginRequired&&!document.sourceUnavailable){
+        if(prepared!=null&&ArticleVersion.readableCached(item,document,System.currentTimeMillis(),cacheOffline())&&TopicBundle.initialReady(document)&&!document.filteredVideo&&!document.loginRequired&&!document.sourceUnavailable){
             String key=FeedReadiness.key(prepared),scope=bodyScope(prepared),verifyKey=key+"|"+scope;
             if(!readiness.ready(prepared,scope,System.currentTimeMillis(),cacheAge())&&verifying.add(verifyKey)){
                 new ArticleDiskCache(activity).verify(document,cacheOffline(),hit->main.post(()->{

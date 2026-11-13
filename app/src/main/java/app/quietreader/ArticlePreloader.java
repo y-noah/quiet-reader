@@ -92,7 +92,7 @@ final class ArticlePreloader implements AutoCloseable {
         main.removeCallbacks(pump);main.postDelayed(pump,immediate?0:350);
     }
     private final Runnable pump=this::next;
-    private boolean cachedVersion(Item item,Document document){return !revalidateHidden||ArticleVersion.matches(item,document)||repo.offline()&&ArticleVersion.readableCached(item,document,System.currentTimeMillis(),true);}
+    private boolean cachedVersion(Item item,Document document){return ArticleVersion.readableCached(item,document,System.currentTimeMillis(),repo.offline());}
     private void next(){
         ArticleSessionSnapshot.run(this::nextSnapshot);
     }

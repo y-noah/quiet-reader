@@ -101,7 +101,7 @@ final class ArticleDiskCache {
             doc.cachedAt=at;doc.cachedSession=session;doc.cachedNamespace=namespace;
             doc.topicBodies.values().removeIf(body->body.cachedAt<=0||now-body.cachedAt<0||now-body.cachedAt>MAX_AGE||!namespace.equals(body.cachedNamespace)||!session.equals(body.cachedSession)||!ArticleSession.contentCurrent(body));
             if(!post.isEmpty()&&(doc.topic==null||!post.equals(doc.topic.postUrl)))return null;
-            if(!offline&&age>10*60_000&&!pinned(url,namespace,session,doc.metadataHash))return null;
+            // Persisted bodies remain readable throughout MAX_AGE, including across feed batches.
             if(doc.loginRequired||doc.sourceUnavailable||doc.filteredVideo||!url.equals(doc.url)||!ArticleSession.contentCurrent(doc)||!TiebaReplyRelations.canReuse(doc,offline)||!HupuDiscussion.canReuse(doc,offline)||(!doc.hasContent()&&!doc.unsupportedVideo)||!namespace.equals(namespace()))return null;
             // Migrate a previous version's last-post-only record before another
             // post replaces the topic slot. Preserve its acquisition timestamp.
@@ -202,7 +202,7 @@ final class ArticleDiskCache {
             File root=root();if(java.nio.file.Files.isSymbolicLink(root.toPath()))return false;
             File[] files=root.listFiles();if(files==null)return !root.exists();boolean ok=true;
             Set<String> pins=new HashSet<>();addTopicPins(pins);
-            for(File file:files){if(retention!=owner)return ok;if(file.getName().matches("[a-f0-9]{64}(-[a-f0-9]{64})?\\.json")&&!owner.contains(file.getName())&&!pins.contains(ArticleCacheKey.family(file.getName()))&&!publishedFile(file)&&file.isFile()&&!java.nio.file.Files.isSymbolicLink(file.toPath())&&!file.delete())ok=false;}
+            for(File file:files){if(retention!=owner)return ok;if(file.getName().matches("[a-f0-9]{64}(-[a-f0-9]{64})?\\.json")&&!owner.contains(file.getName())&&!pins.contains(ArticleCacheKey.family(file.getName()))&&!publishedFile(file)&&System.currentTimeMillis()-file.lastModified()>MAX_AGE&&file.isFile()&&!java.nio.file.Files.isSymbolicLink(file.toPath())&&!file.delete())ok=false;}
             return ok;
         }
     }

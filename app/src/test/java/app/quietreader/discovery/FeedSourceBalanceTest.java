@@ -22,10 +22,10 @@ public class FeedSourceBalanceTest {
             for(FeedStore.Row r:batch){assertTrue(firstSeen.add(r.eventId));history.put(r.candidate.id,1000L+round);}
         }
     }
-    @Test public void explicitLessLimitsOccupancyWithoutBlockingSource()throws Exception{
+    @Test public void explicitLessNoLongerDefersRowsWithinAPage()throws Exception{
         PlatformPreference preference=new PlatformPreference(new JSONArray().put(new JSONObject().put("action","LESS").put("scope","source").put("target","BAIDU")));
         List<FeedStore.Row> batch=FeedBatch.first(FeedSourceBalance.arrange(pool(),preference));
-        assertEquals(2,count(batch,Source.BAIDU));assertEquals(15,batch.size());
+        assertEquals(5,count(batch,Source.BAIDU));assertEquals(15,batch.size());
     }
     @Test public void interestBeatsDiversityAndSingleSourceStillWorks(){
         List<FeedStore.Row> rows=new ArrayList<>();for(int n=0;n<20;n++)rows.add(row(Source.BAIDU,n,0));for(int n=0;n<20;n++)rows.add(row(Source.ZHIHU,n,2));
@@ -75,15 +75,15 @@ public class FeedSourceBalanceTest {
             assertTrue(first.stream().map(r->r.candidate.source).distinct().count()>=4);
         }
     }
-    @Test public void moreAndLessChangeSharesWithoutCandidateCountOrPermanentStarvation()throws Exception{
+    @Test public void onlyPositivePreferenceChangesPageSharesNegativeBelongsToMembership()throws Exception{
         PlatformPreference preference=new PlatformPreference(new JSONArray()
             .put(new JSONObject().put("action","LESS").put("scope","source").put("target","WEIBO"))
             .put(new JSONObject().put("action","MORE").put("scope","source").put("target","ZHIHU")));
         Map<Source,Long> totals=new EnumMap<>(Source.class);List<FeedStore.Row> rows=unequalPool();
         for(int turn=0;turn<200;turn++)for(FeedStore.Row row:FeedBatch.first(FeedSourceBalance.arrange(rows,preference,turn)))totals.merge(row.candidate.source,1L,Long::sum);
-        assertTrue(totals.get(Source.WEIBO)>65&&totals.get(Source.WEIBO)<85);
-        assertTrue(totals.get(Source.ZHIHU)>515&&totals.get(Source.ZHIHU)<535);
-        assertTrue(totals.get(Source.BAIDU)>290&&totals.get(Source.BAIDU)<310);
+        assertTrue(totals.get(Source.WEIBO)>270&&totals.get(Source.WEIBO)<290);
+        assertTrue(totals.get(Source.ZHIHU)>478&&totals.get(Source.ZHIHU)<498);
+        assertTrue(totals.get(Source.BAIDU)>270&&totals.get(Source.BAIDU)<290);
         assertEquals(3000L,totals.values().stream().mapToLong(Long::longValue).sum());
     }
     @Test public void extraPoolDepthCannotChangeFirstBatchAndWarmCacheCannotIncreaseShare(){
@@ -104,7 +104,8 @@ public class FeedSourceBalanceTest {
     @Test public void contentMatchesCannotBypassExplicitPlatformDislike()throws Exception{
         List<FeedStore.Row> rows=pool();List<FeedStore.Row> ranked=new ArrayList<>();for(FeedStore.Row row:rows)ranked.add(row.withInterestBand(row.candidate.source==Source.BAIDU?0:1));
         PlatformPreference preference=new PlatformPreference(new JSONArray().put(new JSONObject().put("action","LESS").put("scope","source").put("target","BAIDU")));
-        List<FeedStore.Row> batch=FeedBatch.first(FeedSourceBalance.arrange(ranked,preference));assertTrue(count(batch,Source.BAIDU)<=2);
+        List<FeedStore.Row> batch=FeedBatch.first(FeedSourceBalance.arrange(ranked,preference));assertEquals(5,count(batch,Source.BAIDU));
+        assertEquals(12,count(InterestPool.eligible(ranked,preference),Source.BAIDU));
         FeedStore.Row neutral=row(Source.ZHIHU,501,1),positive=row(Source.ZHIHU,502,0);
         assertEquals(List.of(positive,neutral),FeedSourceBalance.arrange(List.of(neutral,positive)));
     }

@@ -55,8 +55,9 @@ public final class PlatformPreference {
             result.add(new FeedStore.Row(row.eventId,selected,reason,row.entries,row.interestBand,row.refreshBasePosition));order.put(row.eventId,index++);
         }
         // Source prior shifts a rank key by at most four; weak evidence by <1.5.
+        // Negative source feedback changes membership, never position.
         result.sort(Comparator.comparingInt((FeedStore.Row row)->categories.getOrDefault(row.eventId,0))
-            .thenComparingDouble(row->order.get(row.eventId)-4*score(row.candidate.source))
+            .thenComparingDouble(row->order.get(row.eventId)-4*Math.max(0,score(row.candidate.source)))
             .thenComparingInt(row->order.get(row.eventId)));
         return result;
     }

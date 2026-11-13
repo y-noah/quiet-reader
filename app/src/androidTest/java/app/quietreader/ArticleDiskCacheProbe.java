@@ -27,7 +27,7 @@ final class ArticleDiskCacheProbe {
             check.accept(hit!=null&&hit.document.videos.size()==2&&hit.document.videos.get(1).url.equals(doc.videos.get(1).url)&&hit.document.containsImage(doc.videos.get(1).poster),"disk reopen preserves each attachment and authorized poster");
             check.accept(hit!=null&&ArticleVersion.matches(item,hit.document),"disk reopen preserves acquisition metadata version");
             check.accept(disk.read(item.url,namespace,"other-session",false,now)==null,"different cookie fingerprint cannot read earlier session body");
-            check.accept(disk.read(item.url,namespace,session,false,now+11*60_000)==null&&disk.read(item.url,namespace,session,true,now+11*60_000)!=null,"online freshness expires while bounded offline snapshot remains available");
+            check.accept(disk.read(item.url,namespace,session,false,now+11*60_000)!=null&&disk.read(item.url,namespace,session,true,now+11*60_000)!=null,"online and offline both reuse a valid acquired snapshot beyond ten minutes");
             Repository[] repo={null};CountDownLatch restored=new CountDownLatch(1);boolean[] loaded={false};
             test.runOnMainSync(()->{repo[0]=new Repository(context);repo[0].releaseArticleMemory();repo[0].restoreArticle(item,value->{loaded[0]=value!=null&&repo[0].cachedArticle(item)!=null;restored.countDown();});});
             check.accept(restored.await(5,TimeUnit.SECONDS)&&loaded[0],"repository restores body from disk after memory eviction without network");test.runOnMainSync(()->repo[0].close());

@@ -34,7 +34,7 @@ public class PlatformPreferenceTest {
         JSONArray events=new JSONArray();for(int n=1;n<=5;n++){events.put(event("READ",item(Source.ZHIHU,n)).put("source",""));events.put(event("FOLLOW",item(Source.V2EX,n)));events.put(event("PREFETCH",item(Source.V2EX,n)));}
         assertTrue(new PlatformPreference(events).empty());
     }
-    @Test public void platformPriorIsBoundedAndDoesNotCrossContentNegativeCategory()throws Exception{
+    @Test public void platformPreferencePreservesRankingAndCategoryPositions()throws Exception{
         List<FeedStore.Row> rows=new ArrayList<>();for(int n=0;n<12;n++){HotCandidate c=item(n==10?Source.V2EX:Source.ZHIHU,n);rows.add(new FeedStore.Row(c.id,c,"原顺序"));}
         PlatformPreference preferences=new PlatformPreference(new JSONArray().put(explicit(Source.V2EX,true)));
         List<FeedStore.Row> ranked=preferences.apply(rows);int promoted=-1;for(int n=0;n<ranked.size();n++)if(ranked.get(n).candidate.source==Source.V2EX)promoted=n;

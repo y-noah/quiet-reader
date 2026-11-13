@@ -35,7 +35,7 @@ final class BatchCacheRetentionProbe {
                 test.runOnMainSync(()->{disk.enqueue(old,namespace,ArticleDiskCache.session(old.url),now+1);retained[0]=repo[0].retainBatch(Set.of(shared.url,fresh.url));});
             }
             check(disk.pruneBatch(retained[0]),"worker prunes only records outside the newly accepted batch");writer.submit(()->{}).get(5,TimeUnit.SECONDS);
-            check(disk.read(old.url,namespace,ArticleDiskCache.session(old.url),false,now+2)==null,"queued old-batch writer cannot resurrect its pruned file");
+            check(disk.read(old.url,namespace,ArticleDiskCache.session(old.url),false,now+2)!=null,"batch switching keeps the already-persisted old body while retiring speculative writes");
             ArticleDiskCache.Hit kept=disk.read(shared.url,namespace,ArticleDiskCache.session(shared.url),false,now+2);
             check(kept!=null&&kept.at==now,"shared article survives without a freshness rewrite or network request");
             test.runOnMainSync(()->{
@@ -45,7 +45,7 @@ final class BatchCacheRetentionProbe {
             });
             ArticleDiskCache.Retention[] newer={null};test.runOnMainSync(()->newer[0]=disk.retainBatch(Set.of(fresh.url)));
             check(disk.pruneBatch(retained[0])&&disk.read(shared.url,namespace,ArticleDiskCache.session(shared.url),false,now+3)!=null,"superseded cleanup cannot delete files using an old keep set");
-            check(disk.pruneBatch(newer[0])&&disk.read(shared.url,namespace,ArticleDiskCache.session(shared.url),false,now+3)==null&&disk.read(fresh.url,namespace,ArticleDiskCache.session(fresh.url),false,now+3)!=null,"latest retention replaces the keep set while retaining its new body");
+            check(disk.pruneBatch(newer[0])&&disk.read(shared.url,namespace,ArticleDiskCache.session(shared.url),false,now+3)!=null&&disk.read(fresh.url,namespace,ArticleDiskCache.session(fresh.url),false,now+3)!=null,"latest retention keeps both old persisted bodies and the new batch");
             Item versioned=new Item(Source.THEPAPER,"新版本标题",fresh.url,"");Document versionedDoc=body(fresh.url,versioned.title);
             ArticleVersion.capture(versioned,versionedDoc);ArticleSession[] inflight={null};
             test.runOnMainSync(()->{inflight[0]=new ArticleSession(context,versioned);repo[0].retainItems(List.of(versioned));});
@@ -68,7 +68,7 @@ final class BatchCacheRetentionProbe {
             writer.submit(()->{blockedWriter.countDown();try{releaseWriter.await(5,TimeUnit.SECONDS);}catch(InterruptedException error){Thread.currentThread().interrupt();}});
             if(!blockedWriter.await(5,TimeUnit.SECONDS))throw new IllegalStateException("writer barrier");
             try{test.runOnMainSync(()->{disk.verify(retired,hit->{resurrected[0]=hit!=null;retiredReceipt.countDown();});disk.retainItems(List.of(versioned));});}finally{releaseWriter.countDown();}
-            check(retiredReceipt.await(5,TimeUnit.SECONDS)&&!resurrected[0]&&disk.read(old.url,namespace,ArticleDiskCache.session(old.url),false,System.currentTimeMillis())==null,"a queued durable-verification job cannot resurrect a body after it leaves the window");
+            check(retiredReceipt.await(5,TimeUnit.SECONDS)&&!resurrected[0]&&disk.read(old.url,namespace,ArticleDiskCache.session(old.url),false,System.currentTimeMillis())!=null,"retired new-version verification stays unready while the original persisted body remains readable");
             test.runOnMainSync(()->disk.publishItems(List.of(versioned)));
             ArticleDiskCache.Hit pinned=disk.read(versioned.url,namespace,ArticleDiskCache.session(versioned.url),false,versionedDoc.cachedAt+11*60_000);
             check(pinned!=null&&pinned.at==versionedDoc.cachedAt,"displayed body remains readable beyond online TTL without forging a new acquisition time");

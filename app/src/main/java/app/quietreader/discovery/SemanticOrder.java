@@ -8,7 +8,7 @@ import org.json.*;
  * scored separately and never turned into a positive instruction with a negation.
  */
 public final class SemanticOrder {
-    public static final String VERSION="examples-rrf-conflict-v8";
+    public static final String VERSION="examples-membership-v9";
     public static final class Sample {
         public final String id,text,key;public final boolean positive,weak,read;
         Sample(String id,String text,boolean positive,boolean weak,boolean read){this.id=id;this.text=input(text);this.key=key(text);this.positive=positive;this.weak=weak;this.read=read;}
@@ -18,25 +18,30 @@ public final class SemanticOrder {
         private final String feedbackSnapshot;
         public final List<Sample> samples;public final String signature;
         private final Set<String> exactNegatives;
+        private final Set<String> negativeIds;
         public final PlatformPreference platforms;
         public Profile(JSONArray feedback){
             feedbackSnapshot=feedback.toString();
             platforms=new PlatformPreference(feedback);
-            LinkedHashMap<String,Sample> unique=new LinkedHashMap<>();
+            LinkedHashMap<String,Sample> unique=new LinkedHashMap<>();Set<String> rejectedIds=new HashSet<>();
             for(int n=0;n<feedback.length();n++){
                 JSONObject f=feedback.optJSONObject(n);if(f==null)continue;String action=f.optString("action"),text=f.optString("sample");
                 if("source".equals(f.optString("scope")))continue;
+                String target=f.optString("target");
+                if(target.matches("[a-f0-9]{64}@[a-f0-9]{64}")){
+                    String id=target.substring(0,64);if(action.equals("LESS"))rejectedIds.add(id);else if(action.equals("MORE"))rejectedIds.remove(id);
+                }
                 if(!Arrays.asList("MORE","LESS","FOLLOW","SAVED","READ","QUICK_EXIT").contains(action)||text.trim().isEmpty())continue;
                 boolean read=action.equals("READ")||action.equals("QUICK_EXIT");
                 Sample sample=new Sample(f.optString("id"),text,!action.equals("LESS")&&!action.equals("QUICK_EXIT"),action.equals("SAVED")||read,read);Sample previous=unique.get(sample.key);
                 if(previous!=null&&previous.read&&previous.positive&&!sample.positive&&sample.read)continue;
                 if(previous!=null&&(!previous.weak&&sample.weak||previous.weak&&!previous.read&&sample.read))continue;unique.remove(sample.key);unique.put(sample.key,sample);
             }
-            Set<String> knownNegatives=new HashSet<>();for(Sample sample:unique.values())if(!sample.positive&&!sample.weak)knownNegatives.add(sample.key);exactNegatives=Collections.unmodifiableSet(knownNegatives);
+            Set<String> knownNegatives=new HashSet<>();for(Sample sample:unique.values())if(!sample.positive&&!sample.weak)knownNegatives.add(sample.key);exactNegatives=Collections.unmodifiableSet(knownNegatives);negativeIds=Collections.unmodifiableSet(rejectedIds);
             List<Sample> newest=new ArrayList<>(unique.values());Collections.reverse(newest);List<Sample> chosen=new ArrayList<>();int positives=0,negatives=0;
             newest.sort(Comparator.comparingInt(sample->sample.read?2:sample.weak?1:0));int weak=0,reads=0;
             for(Sample sample:newest){if(sample.read&&reads++>=4)continue;if(sample.weak&&weak++>=8)continue;if(sample.positive?positives++<32:negatives++<32)chosen.add(sample);}
-            samples=Collections.unmodifiableList(chosen);List<String> fingerprints=new ArrayList<>();for(Sample s:samples)fingerprints.add((s.read?"r":s.weak?"w":"e")+(s.positive?"+":"-")+s.key);for(String key:exactNegatives)fingerprints.add("exact-"+key);Collections.sort(fingerprints);signature=HotCandidate.hash(VERSION+"\n"+platforms.signature+"\n"+String.join("\n",fingerprints));
+            samples=Collections.unmodifiableList(chosen);List<String> fingerprints=new ArrayList<>();for(Sample s:samples)fingerprints.add((s.read?"r":s.weak?"w":"e")+(s.positive?"+":"-")+s.key);for(String key:exactNegatives)fingerprints.add("exact-"+key);for(String id:negativeIds)fingerprints.add("id-"+id);Collections.sort(fingerprints);signature=HotCandidate.hash(VERSION+"\n"+platforms.signature+"\n"+String.join("\n",fingerprints));
         }
         public boolean empty(){return samples.isEmpty();}
         public JSONArray feedback(){try{return new JSONArray(feedbackSnapshot);}catch(JSONException error){throw new IllegalStateException(error);}}
@@ -49,17 +54,17 @@ public final class SemanticOrder {
     }
     public static List<Scored> rank(List<FeedStore.Row> neutral,Profile profile,Map<String,float[]> vectors){
         List<Scored> ranked=new ArrayList<>();Map<String,Integer> order=new HashMap<>();int index=0;
-        for(FeedStore.Row row:neutral){order.put(row.eventId,index++);String key=key(row.candidate.modelText());float[] vector=vectors.get(key);Sample best=null;double positive=0,negative=0;
+        for(FeedStore.Row row:neutral){order.put(row.eventId,index++);String key=key(row.candidate.modelText());float[] vector=vectors.get(key);Sample best=null;double positive=0,negative=0,weakNegative=0;
             // Known dislikes need neither vectors nor a place in the bounded model sample window.
-            boolean exactNegative=profile.exactNegatives.contains(key);
+            boolean exactNegative=profile.exactNegatives.contains(key)||row.entries.stream().anyMatch(member->profile.negativeIds.contains(member.id));
             for(Sample sample:profile.samples){
                 if(vector==null)continue;float[] example=vectors.get(sample.key);if(example==null)continue;double cosine=cosine(vector,example);
                 double strength=cosine*(sample.read?(sample.positive?0.65:0.35):sample.weak?0.75:1);
-                if(sample.positive&&strength>positive){positive=strength;best=sample;}else if(!sample.positive){negative=Math.max(negative,strength);}
+                if(sample.positive&&strength>positive){positive=strength;best=sample;}else if(!sample.positive){negative=Math.max(negative,strength);if(sample.weak)weakNegative=Math.max(weakNegative,strength);}
             }
-            int category=exactNegative||negative>=0.70&&negative>positive+0.04?2:best!=null&&positive>=0.60&&positive>negative+0.03?0:1;
+            int category=exactNegative||negative>=0.70&&negative>positive+0.04?2:best!=null&&positive>=0.60?0:1;
             String reason=category==0?(best.read?"接近近期阅读内容：":best.weak?"接近历史参考内容：":"接近你选择的：")+HotCandidate.clean(best.text,36):category==2?"根据你的少看反馈调整":best!=null?"按兴趣相关性初筛":row.reason;
-            ranked.add(new Scored(new FeedStore.Row(row.eventId,row.candidate,reason,row.entries,category),best,positive-0.7*negative,category,best!=null&&(negative==0||positive>negative+0.03)));
+            ranked.add(new Scored(new FeedStore.Row(row.eventId,row.candidate,reason,row.entries,category),best,positive-0.7*weakNegative,category,best!=null&&(negative==0||positive>negative+0.03)));
         }
         // Confidence categories are safeguards, not a gate that discards every
         // relative signal below an absolute similarity threshold.

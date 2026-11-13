@@ -50,7 +50,7 @@ public final class FeedSourceBalance {
     }
     private static Map<Source,Integer> allocate(Map<Source,ArrayDeque<Integer>> queues,PlatformPreference preference,int slots,long turn){
         Map<Source,Integer> quotas=new EnumMap<>(Source.class);Map<Source,Double> weights=new EnumMap<>(Source.class);
-        for(Source source:queues.keySet())weights.put(source,preference==null?1:preference.exposureWeight(source));
+        for(Source source:queues.keySet())weights.put(source,preference==null?1:1+0.75*Math.max(0,preference.score(source)));
         int left=slots;
         // Water-fill only when a source cannot supply its share. Pool length is
         // a capacity bound, never a source's weight or a popularity signal.

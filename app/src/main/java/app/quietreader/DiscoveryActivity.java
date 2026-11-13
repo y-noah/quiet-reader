@@ -483,8 +483,8 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private List<FeedStore.Row> displayedRows(){return "search".equals(page)?searchRows:feed;}
     private final class Rows extends BaseAdapter {
         @Override public int getViewTypeCount(){return 4;}
-        @Override public int getItemViewType(int position){if(settingsPage())return 3;if("sources".equals(page))return 1;int count=displayedRows().size();return count==0||("feed".equals(page)&&recommendationsExhausted&&position==count)?2:0;}
-        @Override public int getCount(){if(settingsPage())return settingsEntries().length;if("sources".equals(page))return HotSourceCatalog.HOT.size();int count=displayedRows().size();return count==0?1:count+("feed".equals(page)&&recommendationsExhausted?1:0);}
+        @Override public int getItemViewType(int position){if(settingsPage())return 3;if("sources".equals(page))return 1;int count=displayedRows().size();return count==0?2:0;}
+        @Override public int getCount(){if(settingsPage())return settingsEntries().length;if("sources".equals(page))return HotSourceCatalog.HOT.size();int count=displayedRows().size();return count==0?1:count;}
         @Override public Object getItem(int position){return position;}
         @Override public long getItemId(int position){return position;}
         @Override public View getView(int position,View recycled,android.view.ViewGroup parent){
@@ -498,7 +498,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
                         LinearLayout.LayoutParams spacing=new LinearLayout.LayoutParams(-1,-2);spacing.bottomMargin=dp(10);wrapper.addView(skeleton,spacing);
                     }return wrapper;
                 }
-                int count=feed.size();TextView value=text("search".equals(page)?searchMessage:recommendationsExhausted?"暂无新内容":loading?"正在获取热门话题…":(!"all".equals(controller.sourceFilter())?"这个来源暂无话题":"尚无话题"),14,muted);value.setPadding(dp(8),dp(12),dp(8),dp(12));value.setTextColor(muted);wrapper.addView(value);return wrapper;}
+                int count=feed.size();TextView value=text("search".equals(page)?searchMessage:recommendationsExhausted?"暂时没有可推荐的未读内容":loading?"正在获取热门话题…":(!"all".equals(controller.sourceFilter())?"这个来源暂无话题":"尚无话题"),14,muted);value.setPadding(dp(8),dp(12),dp(8),dp(12));value.setTextColor(muted);wrapper.addView(value);return wrapper;}
             if(type==1){SourceCard card=wrapper.getChildCount()>0&&wrapper.getChildAt(0) instanceof SourceCard?(SourceCard)wrapper.getChildAt(0):new SourceCard();wrapper.removeAllViews();wrapper.addView(card);card.bind(HotSourceCatalog.HOT.get(position));return wrapper;}
             Card card=wrapper.getChildCount()>0&&wrapper.getChildAt(0) instanceof Card?(Card)wrapper.getChildAt(0):new Card();wrapper.removeAllViews();wrapper.addView(card);
             card.bind(displayedRows().get(position),position);wrapper.setTag(displayedRows().get(position).eventId);return wrapper;
