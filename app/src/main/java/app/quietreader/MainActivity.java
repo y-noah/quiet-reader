@@ -72,6 +72,7 @@ public final class MainActivity extends Activity {
     private ReaderImageOwner imageOwner;
     private LinearLayout root, content;
     private FrameLayout readerSurface;
+    private View readerLoadingSurface;
     private LinearLayout readerBar;
     private ReaderToolbar readerToolbar;
     private ScrollView scroll;
@@ -224,7 +225,7 @@ public final class MainActivity extends Activity {
         repo.cancelPending();streamAnchor="";
         if(readerWeb!=null) { SourceSurface.release(readerWeb);readerWeb=null; }
         if(dynamic!=null) { dynamic.close(); dynamic=null; }
-        readerStatus=null;root=column(); root.setBackgroundColor(BG); root.setFitsSystemWindows(true);root.setClipToPadding(false);
+        readerLoadingSurface=null;readerStatus=null;root=column(); root.setBackgroundColor(BG); root.setFitsSystemWindows(true);root.setClipToPadding(false);
         root.setPadding(dp(18),0,dp(18),0); setContentView(root);
         if(preloader!=null)preloader.reattach();
         root.setOnApplyWindowInsetsListener((v,insets)-> { root.setPadding(dp(18)+insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),dp(18)+insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom()); return insets; });
@@ -244,6 +245,7 @@ public final class MainActivity extends Activity {
         scroll.setOnScrollChangeListener((v,x,y,ox,oy)->readerToolbar.scroll(y,oy));
     }
     private void status(String title,String message) {
+        String state=title+"\n"+message;if(state.equals(content.getTag()))return;content.setTag(state);
         content.removeAllViews(); space(content,30);
         LinearLayout heading=new LinearLayout(this);heading.setGravity(Gravity.CENTER_VERTICAL);
         if(title.startsWith("正在")){
@@ -326,7 +328,7 @@ public final class MainActivity extends Activity {
     }
     private void cancelPendingArticle(){if(pendingArticle!=null){pendingArticle.close();pendingArticle=null;}}
     private void dynamic(Item item,int request) {
-        status("正在加载动态内容…","使用本机登录状态读取，不会自动打开其他 App");
+        status("正在整理内容…","只提取内容，不加载原站的推荐和操作界面");
         dynamic=new DynamicReader(this,item,dynamicResult(item,request),true);
     }
     private Repository.Result<Document> dynamicResult(Item item,int request){
@@ -382,13 +384,18 @@ public final class MainActivity extends Activity {
         if(doc.hasContent()||doc.unsupportedVideo||(doc.filteredVideos>0&&AnswerStream.sameQuestion(current,doc.url))) {
             if(imageOwner==null||!imageOwner.matches(current,doc)){if(imageOwner!=null)imageOwner.close();imageOwner=new ReaderImageOwner(this,current,images,doc);}
             final ReaderImageOwner imageRequests=imageOwner;
-            frame(); reading=doc;prepareTopicAhead();
+            // Keep the existing loading surface until Chromium has drawn the body.
+            // Removing it when the data arrives exposes an empty compositor frame.
+            View loading=reading==null&&scroll!=null&&scroll.getParent()==readerSurface?scroll:null;
+            if(loading!=null)((android.view.ViewGroup)loading.getParent()).removeView(loading);
+            frame();readerLoadingSurface=loading; reading=doc;prepareTopicAhead();
             if(doc.topic!=null&&doc.sourceUrl().equals(pendingTopicPost)){
                 for(int n=0;n<doc.topic.choices.size();n++)if(doc.topic.choices.get(n).url.equals(pendingTopicPost)){streamAnchor="reading-topic-"+n;streamAnchorOffset=0;break;}
                 pendingTopicPost="";openPosition=-1;
             }
             readerStatus=text("",12,MUTED);readerStatus.setPadding(0,0,0,dp(8));readerStatus.setVisibility(View.GONE);readerStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);root.addView(readerStatus);
             readerWeb=ReaderStartup.take(this);readerWeb.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY); Theme.configureWeb(readerWeb,false);
+            if(loading!=null)readerWeb.setAlpha(0f);
             // Chromium disables native image lazy loading when scripting is off.
             // This surface loads only our escaped document; its CSP forbids all page scripts.
             readerWeb.getSettings().setJavaScriptEnabled(true);
@@ -446,6 +453,7 @@ public final class MainActivity extends Activity {
                     restoreViewport(web,revision);scheduleViewportSample();
                     web.postVisualStateCallback(revision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){
                         if(web!=readerWeb||revision!=readerRevision||!url.equals(readerPageUrl))return;
+                        revealReader(web);
                         long started=getIntent().getLongExtra("reader_open_started",0);
                         if(!openMeasured&&started>0){openMeasured=true;web.postOnAnimation(()->{if(web!=readerWeb)return;openVisibleMs=android.os.SystemClock.elapsedRealtime()-started;android.util.Log.i("NewReaderOpen","visible ms="+openVisibleMs+" whole="+TopicBundle.complete(reading));});}
                         // Text can already be read while an image keeps the page loading.
@@ -453,7 +461,7 @@ public final class MainActivity extends Activity {
                         if(reading!=null&&ReaderHtml.sections(reading).stream().flatMap(part->part.blocks.stream()).anyMatch(block->block.type.equals("text")&&!block.value.trim().isEmpty()))readerReady(web,url);
                     }});
                 }
-                @Override public void onPageFinished(WebView web,String url){if(web!=readerWeb||!url.equals(readerPageUrl))return;settleReaderImages(web,null);readerReady(web,url);scheduleViewportSample();int autoRevision=readerRevision;web.postDelayed(()->{if(autoRevision==readerRevision)maybeLoadMore(web,false);},1600);if(pendingViewport!=null){restoreViewport(web,readerRevision);return;}if(!streamAnchor.isEmpty()){int offset=streamAnchorOffset;String anchor=streamAnchor;streamAnchor="";int revision=readerRevision;web.postVisualStateCallback(revision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){restoreReadingAnchor(web,anchor,offset,revision);}});}else if(openPosition>=0){int pos=openPosition;openPosition=-1;restorePosition(pos);}}
+                @Override public void onPageFinished(WebView web,String url){if(web!=readerWeb||!url.equals(readerPageUrl))return;int paintRevision=readerRevision;web.postVisualStateCallback(paintRevision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){if(web==readerWeb&&paintRevision==readerRevision&&url.equals(readerPageUrl))revealReader(web);}});settleReaderImages(web,null);readerReady(web,url);scheduleViewportSample();int autoRevision=readerRevision;web.postDelayed(()->{if(autoRevision==readerRevision)maybeLoadMore(web,false);},1600);if(pendingViewport!=null){restoreViewport(web,readerRevision);return;}if(!streamAnchor.isEmpty()){int offset=streamAnchorOffset;String anchor=streamAnchor;streamAnchor="";int revision=readerRevision;web.postVisualStateCallback(revision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){restoreReadingAnchor(web,anchor,offset,revision);}});}else if(openPosition>=0){int pos=openPosition;openPosition=-1;restorePosition(pos);}}
                 @Override public void onReceivedError(WebView web,WebResourceRequest request,WebResourceError error){if(!request.isForMainFrame())settleReaderImages(web,request.getUrl().toString());}
                 @Override public void onReceivedHttpError(WebView web,WebResourceRequest request,WebResourceResponse response){if(!request.isForMainFrame())settleReaderImages(web,request.getUrl().toString());}
                 @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest req) {
@@ -467,6 +475,7 @@ public final class MainActivity extends Activity {
                 }
             });
             readerSurface.addView(readerWeb,0,new FrameLayout.LayoutParams(-1,-1)); readerFooter();
+            if(loading!=null)readerSurface.addView(loading,1,new FrameLayout.LayoutParams(-1,-1));
             readerWeb.setOnLongClickListener(v->{WebView.HitTestResult hit=readerWeb.getHitTestResult();String url=hit==null?null:hit.getExtra();if(url==null||!ReaderLinks.allowed(url)||reading.containsImage(url)||url.startsWith(ReaderHtml.ACTION))return false;
                 new AlertDialog.Builder(this).setTitle("链接地址").setMessage(url).setNegativeButton("取消",null).setNeutralButton("复制链接",(d,n)->{((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("链接",url));toast("已复制链接");}).setPositiveButton("打开",(d,n)->openContentLink(url)).show();return true;});
             reloadReader(doc);
@@ -489,6 +498,11 @@ public final class MainActivity extends Activity {
         if(doc.sourceUnavailable)content.addView(button("重试",()->open(current,false)));
         if(doc.filteredVideos>0&&!doc.hasContent()&&doc.related.isEmpty())content.addView(button("返回图文列表",this::goBack));
         if(doc.sourceUnavailable||doc.filteredVideos==0||doc.hasContent()||!doc.related.isEmpty())content.addView(button("来源页 / 登录后重新读取",()->login(current)));
+    }
+    private void revealReader(WebView web){
+        if(web!=readerWeb)return;
+        web.setAlpha(1f);
+        if(readerLoadingSurface!=null){readerSurface.removeView(readerLoadingSurface);readerLoadingSurface=null;}
     }
     private void readerReady(WebView web,String url){
         if(web!=readerWeb||!url.equals(readerPageUrl))return;
