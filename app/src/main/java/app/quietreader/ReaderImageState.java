@@ -8,9 +8,10 @@ final class ReaderImageState {
     static String settle(String page,String failedUrl){
         return "(()=>{const page="+JSONObject.quote(page)+",failed="+(failedUrl==null?"null":JSONObject.quote(failedUrl))+";"+"""
             if(location.href.split('#')[0]!==page.split('#')[0])return 0;
+            const settle=(target)=>{
             const images=Array.from(document.querySelectorAll('figure > a > img'));
             const broken=images.filter(i=>i.complete&&i.naturalWidth===0&&!i.closest('figure').classList.contains('image-unavailable')&&
-              (!failed||i.src===failed||i.getAttribute('src')===failed));
+              (!target||i.src===target||i.getAttribute('src')===target));
             if(!broken.length)return 0;
             const anchor=Array.from(document.querySelectorAll('p[data-reading-anchor]')).find(p=>{
               const r=p.getBoundingClientRect();return r.height>0&&r.bottom>0&&r.top<innerHeight;
@@ -25,6 +26,19 @@ final class ReaderImageState {
             }
             if(anchor){const shift=anchor.getBoundingClientRect().top-before;if(Math.abs(shift)>.5)scrollBy(0,shift);}
             return broken.length;
+            };
+            // WebView may notify native code before the image's DOM failure state
+            // is committed. Lazy images also fail after onPageFinished. Observe the
+            // actual DOM error once per document rather than polling or reloading.
+            if(!document.__quietImageErrors){
+              document.__quietImageErrors=true;
+              document.addEventListener('error',event=>{
+                const image=event.target;
+                if(image instanceof HTMLImageElement&&image.matches('figure > a > img'))
+                  requestAnimationFrame(()=>settle(image.src));
+              },true);
+            }
+            return settle(failed);
             })()
             """;
     }

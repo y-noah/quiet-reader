@@ -80,15 +80,25 @@ public final class FeedStore extends SQLiteOpenHelper {
             try(Cursor c=db.rawQuery("SELECT identity,selected,finalized FROM recommendation_window",null)){while(c.moveToNext()){decisions.put(c.getString(0),c.getInt(1)!=0);if(c.getInt(2)==0)provisional.add(c.getString(0));}}
             Map<String,Boolean> before=new HashMap<>(decisions);Set<String> previous=new HashSet<>(decisions.keySet());
             List<Row> unread=unread(ranked);PlatformPreference preference=new PlatformPreference(interests.getJSONArray("feedback"));
-            Map<Source,Integer> proposed=InterestPool.limits(unread,preference),limits=new EnumMap<>(Source.class);
+            Map<Source,Integer> baseline=InterestPool.baseline(unread,preference),limits=new EnumMap<>(Source.class);
             for(Source source:Source.values()){
-                String key="interest_source_quota_"+source.name();
-                if(preference.score(source)>=0){db.delete("meta","key=?",new String[]{key});continue;}
+                String key="interest_source_quota_"+source.name(),basisKey="interest_source_basis_"+source.name(),policyKey="interest_source_policy_"+source.name();
+                if(preference.score(source)>=0){db.delete("meta","key IN (?,?,?)",new String[]{key,basisKey,policyKey});continue;}
+                long policy=InterestPool.sourceRevision(interests.getJSONArray("feedback"),source),priorPolicy=scalar(db,"SELECT value FROM meta WHERE key=?",policyKey);
+                boolean manualChange=priorPolicy!=0&&priorPolicy!=policy;
                 long saved=scalar(db,"SELECT value FROM meta WHERE key=?",key);
-                // A read, refresh or source update must never enlarge a LESS budget.
-                // Store limit+1 so a real zero limit differs from an unset value.
-                if(saved==0){saved=proposed.getOrDefault(source,0)+1;db.execSQL("INSERT OR REPLACE INTO meta VALUES (?,?)",new Object[]{key,saved});}
-                limits.put(source,(int)saved-1);
+                long basis=scalar(db,"SELECT value FROM meta WHERE key=?",basisKey);
+                // Pre-basis versions could save zero before this source existed.
+                if(basis==0&&saved==1){db.delete("meta","key=?",new String[]{key});saved=0;}
+                // Freeze the normal share, not the penalty strength: explicit LESS
+                // must still tighten an earlier weak reading prior. Absence before
+                // this source arrives is not evidence for a permanent zero budget.
+                if(basis==0&&baseline.getOrDefault(source,0)>0){basis=baseline.get(source)+1;db.execSQL("INSERT OR REPLACE INTO meta VALUES (?,?)",new Object[]{basisKey,basis});}
+                int limit=basis==0?(saved==0?0:(int)saved-1):(int)Math.floor((basis-1)*preference.exposureWeight(source));
+                if(saved>0&&!manualChange)limit=Math.min(limit,(int)saved-1);
+                if(basis>0)db.execSQL("INSERT OR REPLACE INTO meta VALUES (?,?)",new Object[]{key,limit+1});
+                db.execSQL("INSERT OR REPLACE INTO meta VALUES (?,?)",new Object[]{policyKey,policy});
+                limits.put(source,limit);
             }
             List<Row> eligible=InterestPool.eligible(unread,limits);Set<String> delivered=delivered(now).keySet();
             // A new arrival after exhaustion owns a fresh allowance even if the
@@ -185,7 +195,7 @@ public final class FeedStore extends SQLiteOpenHelper {
     public long version(String key){if(!key.equals("sources")&&!key.equals("profile"))throw new IllegalArgumentException("Unknown version");return scalar(db(),"SELECT value FROM meta WHERE key=?",key);}
     /** Rebuild pre-policy snapshots once; keep feedback and reusable vectors. */
     public void ensureCandidatePolicy(){SQLiteDatabase db=db();db.beginTransaction();try{
-        if(scalar(db,"SELECT value FROM meta WHERE key='candidate_policy'")!=5){db.execSQL("INSERT OR REPLACE INTO meta VALUES ('candidate_policy',5)");bump(db,"sources");}
+        if(scalar(db,"SELECT value FROM meta WHERE key='candidate_policy'")!=6){db.execSQL("INSERT OR REPLACE INTO meta VALUES ('candidate_policy',6)");bump(db,"sources");}
         db.setTransactionSuccessful();
     }finally{db.endTransaction();}}
     public long beginRefresh(Source source){return beginRefresh(source,System.currentTimeMillis());}

@@ -450,6 +450,7 @@ public final class MainActivity extends Activity {
                 }
                 @Override public void onPageCommitVisible(WebView web,String url){
                     if(web!=readerWeb||!url.equals(readerPageUrl))return;int revision=readerRevision;
+                    settleReaderImages(web,null);
                     restoreViewport(web,revision);scheduleViewportSample();
                     web.postVisualStateCallback(revision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){
                         if(web!=readerWeb||revision!=readerRevision||!url.equals(readerPageUrl))return;

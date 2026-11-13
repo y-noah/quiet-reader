@@ -33,4 +33,26 @@ public final class WindowDistributionTest {
     @Test public void aSingleAvailableSourceIsNeverDuplicatedOrPretendedToBeDiverse(){
         List<FeedStore.Row> one=new ArrayList<>();for(int n=0;n<18;n++)one.add(row(Source.V2EX,n));assertEquals(one,FeedSourceBalance.spread(one));
     }
+    @Test public void onlyManualFeedbackForThisSourceChangesItsBudgetRevision()throws Exception{
+        JSONArray feedback=new JSONArray();long original=InterestPool.sourceRevision(feedback,Source.V2EX);
+        for(String action:List.of("READ","QUICK_EXIT"))feedback.put(new JSONObject().put("action",action).put("scope","sample").put("source","V2EX").put("target","body"));
+        feedback.put(new JSONObject().put("action","LESS").put("scope","source").put("target","BBC"));
+        assertEquals(original,InterestPool.sourceRevision(feedback,Source.V2EX));
+        feedback.put(new JSONObject().put("id","manual").put("action","LESS").put("scope","source").put("target","V2EX"));
+        assertNotEquals(original,InterestPool.sourceRevision(feedback,Source.V2EX));
+        feedback.remove(feedback.length()-1);assertEquals(original,InterestPool.sourceRevision(feedback,Source.V2EX));
+    }
+    @Test public void randomizedUnevenPoolsPreserveMembershipOrderAndDoNotCreateNegativeHeads(){
+        for(int seed=0;seed<300;seed++){
+            Random random=new Random(seed);List<FeedStore.Row> input=new ArrayList<>();
+            int size=1+random.nextInt(300);for(int n=0;n<size;n++){
+                FeedStore.Row r=row(List.of(Source.V2EX,Source.BBC,Source.THEPAPER,Source.ITHOME,Source.ZHIHU).get(random.nextInt(5)),seed*300+n);
+                input.add(new FeedStore.Row(r.eventId,r.candidate,"",r.entries,random.nextInt(3)));
+            }
+            Collections.shuffle(input,random);List<FeedStore.Row> output=FeedSourceBalance.spread(input);
+            assertEquals("seed="+seed,input.size(),output.size());assertEquals(new HashSet<>(input),new HashSet<>(output));
+            boolean negative=false;for(FeedStore.Row r:output){if(r.interestBand==2)negative=true;else assertFalse("negative before usable, seed="+seed,negative);}
+            for(Source source:Source.values())for(boolean band:List.of(false,true))assertEquals(input.stream().filter(r->r.candidate.source==source&&(r.interestBand==2)==band).toList(),output.stream().filter(r->r.candidate.source==source&&(r.interestBand==2)==band).toList());
+        }
+    }
 }

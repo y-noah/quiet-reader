@@ -78,6 +78,8 @@ public final class TopicThreadInstrumentation extends Instrumentation {
     private String viewText(View view){StringBuilder text=new StringBuilder();if(view instanceof android.widget.TextView)text.append(((android.widget.TextView)view).getText());if(view instanceof android.view.ViewGroup)for(int n=0;n<((android.view.ViewGroup)view).getChildCount();n++)text.append(viewText(((android.view.ViewGroup)view).getChildAt(n)));return text.toString();}
     private View find(View view,String label){if(label.contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))return view;if(view instanceof android.view.ViewGroup)for(int n=0;n<((android.view.ViewGroup)view).getChildCount();n++){View found=find(((android.view.ViewGroup)view).getChildAt(n),label);if(found!=null)return found;}return null;}
     @Override public void onStart(){
+        if("true".equals(arguments.getString("image_failure"))){new ReaderImageFailureProbe(this).run();return;}
+        if("true".equals(arguments.getString("source_transitions"))){new SourceQuotaTransitionProbe(this).run();return;}
         if("true".equals(arguments.getString("reader_first_paint"))){new ReaderFirstPaintProbe(this).run();return;}
         if("true".equals(arguments.getString("finite_platforms"))){new FiniteRecommendationProbe(this,true).run();return;}
         if("true".equals(arguments.getString("finite_recommendations"))){new FiniteRecommendationProbe(this).run();return;}

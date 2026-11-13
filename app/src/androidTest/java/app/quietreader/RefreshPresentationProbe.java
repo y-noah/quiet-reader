@@ -90,7 +90,8 @@ final class RefreshPresentationProbe {
         check(firstFrameBusy.get()==0,"the first actual frame of the replacement list already has an idle refresh dot");
         check(firstFrameContent.get()==1,"that same first frame contains the replacement headline in the actual first card view");
         ui(()->list.getViewTreeObserver().removeOnDrawListener(drawn));
-        check(serial.submit(()->store.snapshotInfo((long)field(controller,"snapshot")).getInt("count")).get(5,TimeUnit.SECONDS)==70,"refresh retains the full pool rather than truncating stored ranking");
+        int[] after=reportPool("after-refresh");
+        check(after[0]==70-size&&after[1]==70&&after[2]==70,"refresh retains all seventy candidates and selected identities while its snapshot holds exactly the unshown remainder");
         int refreshedSize=onUi(()->fitsOneSwipe())?list.getCount():0;swipeUp();await("second batch bottom",()->!list.canScrollVertically(1));Thread.sleep(300);
         check(refreshedSize>0&&onUi(()->list.getCount()==refreshedSize),"the refreshed batch also fits one swipe without automatic pagination");
         DiscoveryActivity previous=home;DiscoveryController previousController=controller;
@@ -103,9 +104,14 @@ final class RefreshPresentationProbe {
             if(!(replacement instanceof DiscoveryActivity)||replacement==previous)throw new IllegalStateException("Actual replacement home not observed");
             home=(DiscoveryActivity)replacement;controller=(DiscoveryController)field(home,"controller");list=(ListView)field(home,"list");serial=(ExecutorService)field(controller,"storage");store=(FeedStore)field(controller,"store");
             await("recreated home draws its bounded batch",()->home.hasWindowFocus()&&(boolean)field(controller,"ready")&&list.getChildCount()>0);
-            check(onUi(()->list.getCount()>0&&list.getCount()<20&&fitsOneSwipe()&&((List<?>)field(controller,"allRows")).size()==70),"real activity recreation preserves the adaptive batch and complete ranked pool");
+            int[] reopened=reportPool("after-recreate");
+            check(onUi(()->list.getCount()>0&&list.getCount()<20&&fitsOneSwipe()&&((List<?>)field(controller,"allRows")).size()==70-size)&&reopened[0]==70-size&&reopened[1]==70&&reopened[2]==70,"real activity recreation preserves the batch, every selected identity and the exact unshown remainder");
             check(onUi(()->!(boolean)field(previousController,"explicitRefreshRunning")&&field(previous,"refreshDraw")==null&&!(boolean)field(home,"refreshing")),"recreation cancels the old queued refresh and does not revive its animation in the new home");
         }finally{test.removeMonitor(monitor);release.countDown();}
+    }
+    private int[] reportPool(String label)throws Exception{
+        int[] facts=serial.submit(()->{try(android.database.Cursor c=store.getWritableDatabase().rawQuery("SELECT COUNT(*) FROM recommendation_window WHERE selected=1",null)){c.moveToFirst();return new int[]{store.snapshotInfo((long)field(controller,"snapshot")).getInt("count"),store.candidates(300,0).size(),c.getInt(0)};}}).get(5,TimeUnit.SECONDS);
+        report.append("POOL ").append(label).append(" snapshot=").append(facts[0]).append(" candidates=").append(facts[1]).append(" selected=").append(facts[2]).append(" controller=").append(((List<?>)field(controller,"allRows")).size()).append('\n');return facts;
     }
     private void animationCase(long original)throws Exception{
         RefreshIndicatorDrawable indicator=(RefreshIndicatorDrawable)field(home,"refreshIndicator");android.widget.TextView button=(android.widget.TextView)field(home,"updates");
@@ -153,7 +159,7 @@ final class RefreshPresentationProbe {
         check(onUi(()->!(boolean)field(home,"refreshing")&&(long)field(controller,"pending")==0),"queued rebuild leaves no stale pending update or spinner");
     }
     @SuppressWarnings("unchecked") void run(){String database="test-ui-refresh-boundary-"+UUID.randomUUID()+".db";try{
-        if(animation&&(!test.getTargetContext().getPackageName().equals("app.quietreader.discoveryprobe")||!Build.MODEL.startsWith("sdk_gphone")))throw new IllegalStateException("Animation fixture requires isolated emulator");
+        if(animation&&(!List.of("app.quietreader.discoveryprobe","app.quietreader.topicprobe").contains(test.getTargetContext().getPackageName())||!Build.MODEL.startsWith("sdk_gphone")))throw new IllegalStateException("Animation fixture requires isolated emulator");
         int count=pull||animation||batch?70:3;long now=System.currentTimeMillis();List<HotCandidate> items=new ArrayList<>();for(int n=0;n<count;n++)items.add(new HotCandidate(Source.THEPAPER,"https://www.thepaper.cn/newsDetail_forward_"+(99800000+n),"刷新展示边界受控中文话题"+n,"","",false,n+1,null,now));
         try(FeedStore seed=new FeedStore(test.getTargetContext(),database)){for(Source source:Source.values())seed.enable(source,source==Source.THEPAPER);seed.upsertSnapshot(Source.THEPAPER,seed.beginRefresh(Source.THEPAPER),items,now);seed.finishInterestSetup(List.of(),Map.of(),now);}
         home=(DiscoveryActivity)test.startActivitySync(new Intent(test.getTargetContext(),DiscoveryActivity.class).putExtra("test_database",database).putExtra("test_skip_fetch",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TASK));controller=(DiscoveryController)field(home,"controller");list=(ListView)field(home,"list");serial=(ExecutorService)field(controller,"storage");store=(FeedStore)field(controller,"store");
