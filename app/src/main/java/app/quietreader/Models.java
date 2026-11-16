@@ -15,6 +15,8 @@ public final class Models {
         CLS("财联社", "资讯热榜", "https://api3.cls.cn/v1/hot_list?app=cailianpress&os=android&sv=835&sign=e89e141e1391c13c7d2b99d8c142848c", "https://api3.cls.cn/quote/toplist?app=cailianpress&os=android&sv=835&tab=1"),
         IFANR("爱范儿", "最新文章·非热榜", "https://www.ifanr.com/", "https://www.ifanr.com/"),
         V2EX("V2EX", "最热", "https://www.v2ex.com/?tab=hot", "https://www.v2ex.com/signin"),
+        INFOQ("InfoQ 中文", "最新技术文章·非热榜", "https://www.infoq.cn/feed", "https://www.infoq.cn/"),
+        SOLIDOT("奇客 Solidot", "热门文章", "https://www.solidot.org/", "https://www.solidot.org/"),
         ITHOME("IT之家", "日榜", "https://www.ithome.com/", "https://www.ithome.com/"),
         THEPAPER("澎湃新闻", "热榜", "https://cache.thepaper.cn/contentapi/wwwIndex/rightSidebar", "https://www.thepaper.cn/"),
         BBC("BBC中文", "热门阅读", "https://www.bbc.com/zhongwen/popular/read/simp", "https://www.bbc.com/zhongwen/simp"),
@@ -29,7 +31,7 @@ public final class Models {
         public boolean readable(){return true;}
         public boolean webReading(){return this==BAIDU||this==TIEBA||this==DOUYIN||this==BILIBILI||this==XHS;}
         public boolean unifiedReading(){return !webReading()||StructuredSources.supports(this);}
-        public String boardPage(){return this==NYT?"https://cn.nytimes.com/":this==THEPAPER?"https://www.thepaper.cn/":this==TIEBA?"https://tieba.baidu.com/":this==V2EX?"https://www.v2ex.com/?tab=hot":this==BILIBILI?"https://www.bilibili.com/v/popular/rank/all":this==WEIBO?"https://s.weibo.com/top/summary":endpoint;}
+        public String boardPage(){return this==INFOQ?"https://www.infoq.cn/":this==NYT?"https://cn.nytimes.com/":this==THEPAPER?"https://www.thepaper.cn/":this==TIEBA?"https://tieba.baidu.com/":this==V2EX?"https://www.v2ex.com/?tab=hot":this==BILIBILI?"https://www.bilibili.com/v/popular/rank/all":this==WEIBO?"https://s.weibo.com/top/summary":endpoint;}
         public static Source[] displayOrder(){return new Source[]{ZHIHU,WEIBO,HUPU,CLS,V2EX};}
         public final String label, category, endpoint, login;
         Source(String label, String category, String endpoint, String login) {

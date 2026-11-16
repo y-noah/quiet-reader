@@ -18,6 +18,8 @@ public final class SourceParser {
     private SourceParser() {}
     public static List<Item> list(Source source,String raw) throws Exception {
         if(!source.readable())throw new IllegalArgumentException("不支持此榜单来源");
+        if(source==Source.INFOQ)return InfoqSource.list(raw);
+        if(source==Source.SOLIDOT)return SolidotSource.list(raw);
         if(source==Source.ITHOME)return IthomeSource.list(raw);
         if(source==Source.THEPAPER)return ThepaperSource.list(raw);
         if(source==Source.BBC)return BbcChineseSource.list(raw);
@@ -110,7 +112,7 @@ public final class SourceParser {
         if(StructuredSources.supports(source))return StructuredSources.article(source,d,url);
         if(source==Source.CLS)d.select(".related-article-box,.related-article-content-box").remove();
         Document result=new Document(); result.url=url;
-        Element h=d.selectFirst("h1");
+        Element h=d.selectFirst(source==Source.SOLIDOT?".bg_htit h2":"h1");
         result.title=h==null?d.title():h.text();
         if(source==Source.CLS){Element title=d.selectFirst(".title-box");if(title!=null)result.title=title.text();}
         boolean mainVideo=VideoPolicy.mainPost(source,d,url);
@@ -144,6 +146,8 @@ public final class SourceParser {
             case V2EX: selector=".topic_content,.reply_content"; break;
             case SSPAI: selector=".post__body__extend__item,.article__main__content,.ss__article__body"; break;
             case IFANR: selector="article.c-article-content"; break;
+            case INFOQ: selector=".ProseMirror"; break;
+            case SOLIDOT: selector=".p_mainnew"; break;
             case ITHOME: selector="#paragraph.post_content"; break;
             case THEPAPER: selector="#quiet-paper-body"; break;
             default: selector="article";

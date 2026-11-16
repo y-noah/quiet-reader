@@ -38,11 +38,22 @@ final class ExplicitFeedCacheActionProbe {
             ui(()->{try{((ArticlePreloader)field(controller,"preloader")).close();ArticlePreloader loader=new ArticlePreloader(activity,()->{},new ArticlePreloader.Loader(){public void load(Item item,Repository.Result<Document> result){calls++;}public void cancel(){}},40,()->{},true);Field f=DiscoveryController.class.getDeclaredField("preloader");f.setAccessible(true);f.set(controller,loader);}catch(Exception e){throw new IllegalStateException(e);}});
             await("initial foreground prefetch",()->calls>0&&!((List<?>)field(controller,"rows")).isEmpty()&&((List<?>)field(controller,"rows")).size()<=FeedBatch.SIZE);
             check(true,"actual foreground controller starts body transport with fresh source data");
+            long frozen=(long)field(controller,"snapshot");String frozenRows=((List<?>)field(controller,"rows")).toString();
+            check(onUi(()->field(controller,"admission")==null),"initial body warmup cannot schedule a replacement of the visible list");
+            for(int tick=0;tick<10;tick++){ui(()->{controller.viewport(0);controller.readerReady();});Thread.sleep(100);}
+            check(onUi(()->frozen==(long)field(controller,"snapshot")&&frozenRows.equals(((List<?>)field(controller,"rows")).toString())),"passive ready and layout callbacks preserve the initial list");
+            HotCandidate read=((List<FeedStore.Row>)field(controller,"rows")).get(0).candidate;
+            new ArticleReadHistory(activity,database).mark(read,System.currentTimeMillis());
+            ui(()->{controller.stop();controller.start();});
+            check(onUi(()->frozenRows.equals(((List<?>)field(controller,"rows")).toString())),"returning from a read article preserves the visible batch until explicit refresh");
+
             ui(this::clear);int before=calls;
             FeedStore store=(FeedStore)field(controller,"store");List<FeedStore.Row> rows=new ArrayList<>((List<FeedStore.Row>)field(controller,"allRows"));Collections.reverse(rows);
             long passive=worker.submit(()->store.commitRanking(store.version("sources"),store.profile(now).getLong("version"),now+1,"cold","all",rows)).get(5,TimeUnit.SECONDS);
-            ui(()->{publish(passive);controller.applyPending(false);});
-            await("passive snapshot applied",()->(long)field(controller,"snapshot")==passive);
+            // A passive collection result stages pending work. applyPending is
+            // the presentation path used by explicit settings/refresh actions.
+            ui(()->{publish(passive);controller.viewport(0);});
+            check(onUi(()->(long)field(controller,"snapshot")==frozen),"unprepared passive snapshot cannot replace the visible list");
             Thread.sleep(1100);
             check(onUi(()->!active()&&calls==before),"automatic snapshot application and layout do not grant cache credit");
             Collections.reverse(rows);long clicked=worker.submit(()->store.commitRanking(store.version("sources"),store.profile(now).getLong("version"),now+2,"cold","all",rows)).get(5,TimeUnit.SECONDS);
@@ -51,8 +62,14 @@ final class ExplicitFeedCacheActionProbe {
             // Explicit presentation may commit a new identity to cool down
             // measured exposures; accepting the clicked pool need not reuse its id.
             await("clicked pool applied",()->(long)field(controller,"snapshot")>=clicked&&!(boolean)field(controller,"explicitRefreshRunning")&&(long)field(controller,"pending")==0&&fromPool((List<FeedStore.Row>)field(controller,"rows"),rows));
+            check(onUi(()->((List<FeedStore.Row>)field(controller,"rows")).stream().noneMatch(row->row.candidate.id.equals(read.id))),"explicit refresh excludes the original already read article");
             report.append("ACCEPTED_POOL clicked=").append(clicked).append(" actual=").append(field(controller,"snapshot")).append(" finite-members-belong-to-clicked-pool=true\n");
-            long end=SystemClock.elapsedRealtime()+1800;while(SystemClock.elapsedRealtime()<end&&onUi(()->calls==before))Thread.sleep(30);
+            // Allow the source collector/storage gate to settle, while continuing
+            // to reproduce passive same-position layouts faster than the 650ms
+            // prefetch debounce. The old controller never launches under these callbacks.
+            long waitStarted=SystemClock.elapsedRealtime(),end=waitStarted+15000;while(SystemClock.elapsedRealtime()<end&&onUi(()->calls==before)){ui(()->controller.viewport(0));Thread.sleep(100);}
+            report.append("TRANSPORT_WAIT_MS ").append(SystemClock.elapsedRealtime()-waitStarted).append('\n');
+            ui(()->report.append("PREFETCH_AFTER_CLICK calls=").append(calls).append(" before=").append(before).append(" readerPending=").append(ReaderStartup.pending()).append(" interacting=").append(field(controller,"interacting")).append(" loading=").append(field(controller,"loading")).append(" recommendation=").append(field(controller,"recommendation")!=null).append(" collectorAllows=").append(((HotSourceCollector)field(controller,"collector")).allowsPrefetch()).append(" restriction=").append(app.quietreader.ai.RecommendationPolicy.restriction(activity)).append("\n"));
             check(onUi(()->calls>before),"accepted update starts new body transport without scrolling");
             int afterClick=calls;long expiry=SystemClock.elapsedRealtime()+((ActionPrefetchBudget)field(controller,"prefetchBudget")).remaining(SystemClock.elapsedRealtime())+1000;
             while(SystemClock.elapsedRealtime()<expiry){ui(()->controller.viewport(0));Thread.sleep(250);}

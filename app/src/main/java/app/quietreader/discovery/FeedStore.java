@@ -22,7 +22,7 @@ public final class FeedStore extends SQLiteOpenHelper {
     private final Context context;
     private final String databaseName;
     public FeedStore(Context context){this(context,DATABASE);}
-    public FeedStore(Context context,String databaseName){super(context,databaseName,null,12);this.context=context.getApplicationContext();this.databaseName=databaseName;readHistory=new ArticleReadHistory(context,databaseName);setWriteAheadLoggingEnabled(true);}
+    public FeedStore(Context context,String databaseName){super(context,databaseName,null,13);this.context=context.getApplicationContext();this.databaseName=databaseName;readHistory=new ArticleReadHistory(context,databaseName);setWriteAheadLoggingEnabled(true);}
     @Override public void onConfigure(SQLiteDatabase db){db.setForeignKeyConstraintsEnabled(true);}
     @Override public void onCreate(SQLiteDatabase db){
         db.execSQL("CREATE TABLE meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)");
@@ -61,7 +61,8 @@ public final class FeedStore extends SQLiteOpenHelper {
         if(oldVersion<10)createPresentations(db);
         if(oldVersion<11){ContentValues source=new ContentValues();source.put("id",Source.NYT.name());source.put("enabled",1);db.insertWithOnConflict("sources",null,source,SQLiteDatabase.CONFLICT_IGNORE);}
         if(oldVersion<12)createRecommendationWindow(db);
-        if(newVersion>12)throw new IllegalStateException("Explicit data migration required");
+        if(oldVersion<13){for(Source added:List.of(Source.SOLIDOT,Source.INFOQ)){ContentValues source=new ContentValues();source.put("id",added.name());source.put("enabled",1);db.insertWithOnConflict("sources",null,source,SQLiteDatabase.CONFLICT_IGNORE);}}
+        if(newVersion>13)throw new IllegalStateException("Explicit data migration required");
     }
     private static void createRecommendationWindow(SQLiteDatabase db){db.execSQL("CREATE TABLE IF NOT EXISTS recommendation_window (identity TEXT PRIMARY KEY, selected INTEGER NOT NULL, finalized INTEGER NOT NULL DEFAULT 0, offered_at INTEGER NOT NULL DEFAULT 0, assessed_at INTEGER NOT NULL)");}
     /** Durable membership separate from read history and exposure. Worker only. */

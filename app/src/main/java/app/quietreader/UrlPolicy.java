@@ -23,6 +23,8 @@ public final class UrlPolicy {
             case CLS: return domain(h,"cls.cn");
             case IFANR: return domain(h,"ifanr.com");
             case V2EX:return domain(h,"v2ex.com");
+            case INFOQ:return h.equals("www.infoq.cn")||h.equals("infoq.cn");
+            case SOLIDOT:return h.equals("www.solidot.org")||h.equals("solidot.org");
             case ITHOME:return domain(h,"ithome.com");
             case THEPAPER:return domain(h,"thepaper.cn");
             case NYT:return h.equals("cn.nytimes.com");

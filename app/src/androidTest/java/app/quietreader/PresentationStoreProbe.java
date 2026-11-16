@@ -32,7 +32,7 @@ final class PresentationStoreProbe {
                 SQLiteDatabase raw=store.getWritableDatabase();raw.execSQL("DROP TABLE presentations");raw.execSQL("DROP TABLE recommendation_window");raw.setVersion(9);
             }
             try(FeedStore upgraded=new FeedStore(test.getTargetContext(),database)){
-                check(upgraded.getWritableDatabase().getVersion()==12&&count(upgraded.getWritableDatabase(),"presentations")==0&&count(upgraded.getWritableDatabase(),"recommendation_window")==0,"v9 to v12 adds delivery storage without destructive recreation");
+                check(upgraded.getWritableDatabase().getVersion()==13&&count(upgraded.getWritableDatabase(),"presentations")==0&&count(upgraded.getWritableDatabase(),"recommendation_window")==0,"v9 to v12 adds delivery storage without destructive recreation");
                 check(upgraded.candidates(200,0).size()==60&&upgraded.profile(now).getLong("version")==profile,"migration preserves source candidates and profile version");check(upgraded.activeSnapshot()>0&&upgraded.readSnapshot(upgraded.activeSnapshot(),15,0).size()==15,"migration preserves the previous visible snapshot");
                 // The earlier disabled-source case deliberately invalidated the
                 // old snapshot; seed a current v11 ranking before testing resume.
@@ -41,7 +41,7 @@ final class PresentationStoreProbe {
                 SQLiteDatabase raw=upgraded.getWritableDatabase();raw.execSQL("DROP TABLE recommendation_window");raw.setVersion(11);
             }
             try(FeedStore upgraded=new FeedStore(test.getTargetContext(),database)){
-                check(upgraded.getWritableDatabase().getVersion()==12&&count(upgraded.getWritableDatabase(),"recommendation_window")==0,"v11 installed-version upgrade creates the recommendation window");
+                check(upgraded.getWritableDatabase().getVersion()==13&&count(upgraded.getWritableDatabase(),"recommendation_window")==0,"v11 installed-version upgrade creates the recommendation window");
                 check(count(upgraded.getWritableDatabase(),"presentations")==15&&upgraded.candidates(200,0).size()==60&&upgraded.profile(now).getLong("version")==profile,"v11 upgrade preserves delivery history, candidates and preference version");
                 long next=upgraded.presentationSnapshot(upgraded.activeSnapshot(),"all",Collections.emptyList(),now+4);
                 check(next>0&&upgraded.readSnapshot(next,15,0).get(0).eventId.equals(pool.get(15).eventId),"v11 upgrade resumes after previously delivered content rather than replaying it");

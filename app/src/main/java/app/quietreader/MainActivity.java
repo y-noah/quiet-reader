@@ -736,14 +736,11 @@ public final class MainActivity extends Activity {
     }
     private void topicPrepared(Document doc){
         if(reading==null||readerWeb==null||reading.topic==null||!reading.url.equals(doc.url)||!ArticleSession.contentCurrent(doc))return;
-        Set<String> missing=new HashSet<>();for(Item choice:reading.topic.choices)if(TopicBundle.find(reading,choice.url)==null)missing.add(choice.url);
         if(!TopicBundle.merge(reading,doc))return;
         repo.cacheArticle(reading);
         int readyAnchor=-1;for(int n=0;n<reading.topic.choices.size();n++)if(reading.topic.choices.get(n).url.equals(pendingTopicPost)&&TopicBundle.find(reading,pendingTopicPost)!=null){readyAnchor=n;pendingTopicPost="";break;}
-        String next=renderedReaderHtml(reading);org.jsoup.nodes.Document html=org.jsoup.Jsoup.parse(next);org.json.JSONArray fragments=new org.json.JSONArray();
-        for(int n=0;n<reading.topic.choices.size();n++){String post=reading.topic.choices.get(n).url;if(missing.contains(post)||post.equals(doc.sourceUrl())){org.jsoup.nodes.Element card=html.getElementById("reading-topic-"+n);if(card!=null)fragments.put(new org.json.JSONArray().put(card.id()).put(card.outerHtml()));}}
-        org.jsoup.nodes.Element progress=html.selectFirst(".topic-cache-state");WebView web=readerWeb;int revision=readerRevision;long mutation=++topicDomRevision;
-        readerScript(web,"(()=>{for(const [id,markup] of "+fragments+"){const old=document.getElementById(id);if(!old)continue;const t=document.createElement('template');t.innerHTML=markup;old.replaceWith(t.content.firstElementChild);}const status=document.querySelector('.topic-cache-state');if(status)status.textContent="+org.json.JSONObject.quote(progress==null?"":progress.text())+";const target=document.getElementById('reading-topic-"+readyAnchor+"');if(target)scrollBy(0,target.getBoundingClientRect().top-60);return true})()",value->{if(web==readerWeb&&revision==readerRevision&&mutation==topicDomRevision){readerHtml=next;settleReaderImages(web,null);rememberReading();}});
+        String next=renderedReaderHtml(reading);WebView web=readerWeb;int revision=readerRevision;long mutation=++topicDomRevision;
+        readerScript(web,"(()=>{if(!"+ReaderDomPatch.script(next)+")return false;const target=document.getElementById('reading-topic-"+readyAnchor+"');if(target)scrollBy(0,target.getBoundingClientRect().top-60);return true})()",value->{if(web==readerWeb&&revision==readerRevision&&mutation==topicDomRevision){if(!"true".equals(value)){reloadReader(reading);return;}readerHtml=next;settleReaderImages(web,null);rememberReading();}});
     }
     private void topicMore(int index){
         if(reading==null||reading.topic==null||index<0||index>=reading.topic.choices.size())return;
@@ -773,6 +770,20 @@ public final class MainActivity extends Activity {
         suppressAutoUntil=System.currentTimeMillis()+1500;
         sampledViewport=null;sampledViewportPage="";viewportRestoreRunning=false;preloadHandler.removeCallbacks(sampleViewport);
         if(readerWeb!=null){readerWeb.getSettings().setTextZoom(Math.round(font*100f/19));readerHtml=renderedReaderHtml(doc);readerPageUrl=ReaderHtml.ACTION+"?render="+System.nanoTime()+"-"+(++readerRevision)+(!streamAnchor.isEmpty()?"#"+streamAnchor:pendingAnchor>=0?"#part-"+pendingAnchor:"");pendingAnchor=-1;readerWeb.loadUrl(readerPageUrl);}
+    }
+    private void patchReader(Document doc){
+        WebView web=readerWeb;if(web==null){reloadReader(doc);return;}
+        cancelDeferredContinuation();readerPrefetch.rendering();closeVideo();
+        int revision=readerRevision;String next=renderedReaderHtml(doc);
+        readerScript(web,ReaderDomPatch.script(next),result->{
+            if(web!=readerWeb||revision!=readerRevision)return;
+            if(!"true".equals(result)){reloadReader(doc);return;}
+            readerHtml=next;settleReaderImages(web,null);readerReady(web,readerPageUrl);scheduleViewportSample();
+            if(!streamAnchor.isEmpty()){
+                String anchor=streamAnchor;int offset=streamAnchorOffset;streamAnchor="";
+                web.postVisualStateCallback(revision,new WebView.VisualStateCallback(){@Override public void onComplete(long id){restoreReadingAnchor(web,anchor,offset,revision);}});
+            }else if(openPosition>=0){int position=openPosition;openPosition=-1;restorePosition(position);}
+        });
     }
     private String renderedReaderHtml(Document doc){return TopicReaderHtml.decorate(current,doc,ReaderHtml.render(doc,current.source,19,dark,expanded,loadingMore,font,Theme.style(this)),expanded).replace("<main>","<main style=\"padding-top:60px\">");}
     private void settleReaderImages(WebView web,String failedUrl){
@@ -852,7 +863,7 @@ public final class MainActivity extends Activity {
         Runnable commit=()->{
             loadingMore=false;morePaused=paused;reading=doc;repo.cacheArticle(doc);
             ReadingLanguageRecorder.record(this,getIntent().getStringExtra("test_database"),discoveryCandidate,doc);
-            reloadReader(doc);
+            patchReader(doc);
         };
         atReadingPosition(commit,()->{int pos=readerWeb==null?0:readerWeb.getScrollY();streamAnchor="";commit.run();restorePosition(pos);});
     }
@@ -935,7 +946,7 @@ public final class MainActivity extends Activity {
     }
     private void continuationFailure(String reason){
         if(reading==null)return;loadingMore=false;morePaused=true;reading.moreStatus="error";reading.notice=reason;
-        atReadingPosition(()->reloadReader(reading),()->{});
+        atReadingPosition(()->patchReader(reading),()->{});
     }
     private void recordReadFact(){
         if(!readingVisible()||readerWeb==null||!TopicReaderHtml.bodyVisible(reading,expanded)||!readPresentedPage.equals(readerPageUrl)||!ArticleReadHistory.displayed(current,reading)||!ArticleSession.contentCurrent(reading))return;

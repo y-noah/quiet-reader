@@ -32,6 +32,8 @@ public final class ReaderLinks {
                 case HUPU: pattern="/\\d+(?:-\\d+)?\\.html";break;
                 case CLS: pattern="/(?:detail|share/article)/\\d+/?";break;
                 case V2EX: pattern="/t/\\d+/?";break;
+                case INFOQ: return !InfoqSource.canonical(url).isEmpty()?source:null;
+                case SOLIDOT: return SolidotSource.articleUrl(url)?source:null;
                 case ITHOME: return IthomeSource.articleUrl(url)?source:null;
                 case THEPAPER: return !ThepaperSource.articleId(url).isEmpty()?source:null;
                 case NYT:return NytChineseSource.articleUrl(url)?source:null;

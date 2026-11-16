@@ -308,11 +308,10 @@ final class DiscoveryController implements AutoCloseable {
         if(!autoRefresh||next.info==null||next.rows.isEmpty()||SourceFilter.apply(next.rows,SourceFilter.source(next.info.optString("filter"))).isEmpty()){publish(next,keepAnchor);listener.beforeFeedDraw(drawn);return;}
         // A cold/restored native feed must remain usable even when optional reader
         // warmup, resource policy or network acquisition cannot prepare every body.
-        // Existing-screen refreshes still wait for verified bodies before swapping.
+        // Warmup may prepare future refreshes, but cannot replace this visible screen.
         boolean initial=rows.isEmpty();
-        if(initial)publish(next,keepAnchor);
-        admission=next;admissionAnchor=keepAnchor;afterAdmission=initial?()->{}:drawn;admissionEpoch++;admissionCommitting=false;
-        if(initial)listener.beforeFeedDraw(drawn);
+        if(initial){publish(next,keepAnchor);listener.beforeFeedDraw(drawn);return;}
+        admission=next;admissionAnchor=keepAnchor;afterAdmission=drawn;admissionEpoch++;admissionCommitting=false;
         state();tryAdmission();if(!admissionCommitting)restoreAdmission();
     }
     private void publish(Snapshot next,boolean keepAnchor){
@@ -552,9 +551,8 @@ final class DiscoveryController implements AutoCloseable {
     }
     void start(){
         if(foreground)return;
-        ArticleReadHistory readHistory=new ArticleReadHistory(activity,ArticleReadHistory.database(activity,activity.getIntent().getStringExtra("test_database")));
-        List<FeedStore.Row> unread=readHistory.unread(rows);allRows=readHistory.unread(allRows);
-        if(!rows.equals(unread)){rows=unread;position=Math.min(position,Math.max(0,rows.size()-1));listener.feed(Collections.unmodifiableList(rows),position,offset,newest);}
+        // Returning from an article updates read styling, not membership or order.
+        // The next explicit refresh applies the durable unread filter.
         foreground=true;interacting=false;cacheAction();tryAdmission();armPoolUpdate();maybeStart();viewport(viewport);cacheAcceptedBatch(false);
         String restriction=RecommendationPolicy.restriction(activity);if(!restriction.isEmpty())recommendationStatus(RecommendationState.Phase.PAUSED,restriction);
         if(ready){scheduleRecommendation(false);readSources();work(()->new long[]{store.version("sources"),store.profile(System.currentTimeMillis()).getLong("version")},versions->{if(versions[0]!=visibleSourceVersion||versions[1]!=visibleProfileVersion)prepare(false);});}
@@ -707,7 +705,13 @@ final class DiscoveryController implements AutoCloseable {
         Runnable pruneImages=retainImages?ReaderImages.shared.retainBatch(keep):()->{};
         storage.execute(()->{try{new ArticleDiskCache(activity).pruneBatch(retained);pruneImages.run();}catch(RuntimeException ignored){/* Derivative cleanup must not undo the accepted screen. */}});
     }
-    void viewport(int first){prefetchEpoch++;imagePreloader.pause();viewport=Math.max(0,first);main.removeCallbacks(prefetch);if(autoRefresh&&feedPage&&foreground&&!interacting&&!closed)main.postDelayed(prefetch,650);}
+    void viewport(int first){
+        int next=Math.max(0,first);boolean moved=next!=viewport;viewport=next;
+        // Layout/source callbacks repeatedly report the same viewport. They must
+        // not keep postponing the scheduled body acquisition or cancel images.
+        if(moved){prefetchEpoch++;imagePreloader.pause();main.removeCallbacks(prefetch);}
+        if(autoRefresh&&feedPage&&foreground&&!interacting&&!closed&&!main.hasCallbacks(prefetch))main.postDelayed(prefetch,650);
+    }
     String handoff(Item item){
         imagePreloader.pause();
         String token=ArticleHandoff.offer(item,preloader);
@@ -783,9 +787,10 @@ final class DiscoveryController implements AutoCloseable {
     }
     private void offerPrefetch(){
         if(!canPrefetch())return;
-        List<Item> window=new ArrayList<>();for(int n:cacheWindow.positions(rows.size(),viewport,visibleCount,SystemClock.elapsedRealtime()))window.add(rows.get(n).candidate.readerItem());
-        for(FeedStore.Row row:admissionPool())window.add(row.candidate.readerItem());
-        for(FeedStore.Row row:reserve.future())window.add(row.candidate.readerItem());
+        List<Item> visible=new ArrayList<>();for(int n:cacheWindow.positions(rows.size(),viewport,visibleCount,SystemClock.elapsedRealtime()))visible.add(rows.get(n).candidate.readerItem());
+        List<Item> future=new ArrayList<>();for(FeedStore.Row row:admissionPool())future.add(row.candidate.readerItem());
+        for(FeedStore.Row row:reserve.future())future.add(row.candidate.readerItem());
+        List<Item> window=ArticleWarmupOrder.arrange(visible,future,source->SourceSession.usesWeb(activity,source));
         if(listener.preparesTopics())window.removeIf(TopicPreparation::supports);
         imagePreloader.offer(window,rows.size());preloader.offer(window,FeedReserve.CAPACITY,true);
     }

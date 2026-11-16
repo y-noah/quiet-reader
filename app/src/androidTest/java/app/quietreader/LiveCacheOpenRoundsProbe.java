@@ -32,6 +32,16 @@ final class LiveCacheOpenRoundsProbe {
     @SuppressWarnings("unchecked") private List<FeedStore.Row> batch(){List<FeedStore.Row> out=new ArrayList<>();ui(()->out.addAll((List<FeedStore.Row>)field(controller,"rows")));return out;}
     private File bodyFile(Item item){String[] key={""};ui(()->{ArticleDiskCache disk=new ArticleDiskCache(test.getTargetContext());key[0]=HotCandidate.hash(disk.namespace()+"\n"+ArticleDiskCache.session(item.url)+"\n"+item.url);});return new File(test.getTargetContext().getCacheDir(),"article-bodies-v1/"+key[0]+".json");}
     private void emit(String text){report.append(text).append('\n');Bundle status=new Bundle();status.putString("stream",text+"\n");test.sendStatus(1,status);}
+    private static String nativeText(android.view.View view){
+        StringBuilder text=new StringBuilder();if(view instanceof android.widget.TextView)text.append(((android.widget.TextView)view).getText()).append('\n');
+        if(view instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)view;for(int i=0;i<group.getChildCount();i++)text.append(nativeText(group.getChildAt(i)));}return text.toString();
+    }
+    private String warmStatus(){
+        List<FeedStore.Row> rows=batch();String[] status={""};ui(()->{
+            int cached=0;for(FeedStore.Row row:rows)if(repo.cachedArticle(row.candidate.readerItem())!=null)cached++;
+            status[0]=" cached="+cached+" readerPending="+ReaderStartup.pending()+" preloaderBusy="+((ArticlePreloader)field(controller,"preloader")).busy()+" budgetMs="+((ActionPrefetchBudget)field(controller,"prefetchBudget")).remaining(SystemClock.elapsedRealtime())+" collecting="+field(controller,"loading")+" modelBusy="+(field(controller,"recommendation")!=null)+" foreground="+field(controller,"foreground")+" restriction="+RecommendationPolicy.restriction(home);
+        });return status[0];
+    }
     private JSONObject open(int round,int index,FeedStore.Row row)throws Exception{
         Item item=row.candidate.readerItem();boolean[] memory={false};ui(()->memory[0]=repo.cachedArticle(item)!=null);
         boolean disk=bodyFile(item).isFile();reader=null;long[] clicked={0},wall={0};
@@ -40,14 +50,20 @@ final class LiveCacheOpenRoundsProbe {
         long deadline=clicked[0]+25000;
         while(SystemClock.elapsedRealtime()<deadline){
             if(reader==null){Thread.sleep(20);continue;}
-            WebView[] web={null};String[] marker={""},page={""};boolean[] fetching={false};
+            WebView[] web={null};String[] marker={""},image={""},page={""};boolean[] fetching={false};
             ui(()->{acquired[0]=(Document)field(reader,"reading");web[0]=(WebView)field(reader,"readerWeb");page[0]=(String)field(reader,"readerPageUrl");fetching[0]=field(reader,"dynamic")!=null||field(reader,"pendingArticle")!=null;
-                Document doc=acquired[0];if(doc!=null&&doc.hasContent())for(Block block:doc.blocks)if("text".equals(block.type)&&block.value.length()>=20){marker[0]=block.value.substring(0,20);break;}});
+                Document doc=acquired[0];if(doc!=null&&doc.hasContent())for(Section part:ReaderHtml.sections(doc)){
+                    for(Block block:part.blocks){if("image".equals(block.type)&&image[0].isEmpty())image[0]=block.value;if("text".equals(block.type)&&!block.value.trim().isEmpty()){marker[0]=block.value.substring(0,Math.min(20,block.value.length()));break;}}
+                    // A later folded answer is not evidence for the primary body.
+                    // In particular, a picture-only question must be measured by its picture.
+                    if(!marker[0].isEmpty()||!image[0].isEmpty())break;
+                }});
             sourceWork|=fetching[0];Document doc=acquired[0];
             if(doc!=null&&(doc.loginRequired||doc.sourceUnavailable||doc.filteredVideo)){terminal=doc.loginRequired?"login_required":doc.sourceUnavailable?"source_unavailable":"filtered_video";break;}
-            if(web[0]!=null&&!marker[0].isEmpty()){
+            if(web[0]!=null&&(!marker[0].isEmpty()||!image[0].isEmpty())){
                 CountDownLatch evaluated=new CountDownLatch(1);boolean[] ready={false};
-                ui(()->{boolean js=web[0].getSettings().getJavaScriptEnabled();web[0].getSettings().setJavaScriptEnabled(true);web[0].evaluateJavascript("location.href==="+JSONObject.quote(page[0])+"&&document.readyState==='complete'&&document.body.innerText.includes("+JSONObject.quote(marker[0])+")",value->{ready[0]="true".equals(value);web[0].getSettings().setJavaScriptEnabled(js);evaluated.countDown();});});
+                String evidence=!marker[0].isEmpty()?"document.body.innerText.includes("+JSONObject.quote(marker[0])+")":"Array.from(document.querySelectorAll('main img')).some(i=>i.getAttribute('src')==="+JSONObject.quote(image[0])+"&&i.complete&&i.naturalWidth>0&&i.getBoundingClientRect().bottom>0&&i.getBoundingClientRect().top<innerHeight)";
+                ui(()->{boolean js=web[0].getSettings().getJavaScriptEnabled();web[0].getSettings().setJavaScriptEnabled(true);web[0].evaluateJavascript("location.href==="+JSONObject.quote(page[0])+"&&document.readyState==='complete'&&("+evidence+")",value->{ready[0]="true".equals(value);web[0].getSettings().setJavaScriptEnabled(js);evaluated.countDown();});});
                 if(evaluated.await(2,TimeUnit.SECONDS)&&ready[0]){
                     domMs=SystemClock.elapsedRealtime()-clicked[0];CountDownLatch visual=new CountDownLatch(1);long[] visualAt={0};
                     ui(()->{web[0].postVisualStateCallback(index,new WebView.VisualStateCallback(){public void onComplete(long request){visualAt[0]=SystemClock.elapsedRealtime();visual.countDown();}});web[0].invalidate();});
@@ -60,6 +76,14 @@ final class LiveCacheOpenRoundsProbe {
         if(acquired[0]!=null&&acquired[0].cachedAt>0&&acquired[0].cachedAt<=wall[0])cache=memory[0]?"memory":disk?"disk_or_history":"prepared_handoff_or_history";
         else if(sourceWork)cache="foreground_acquisition";
         JSONObject result=new JSONObject().put("round",round).put("index",index).put("source",item.source.name()).put("url",item.url).put("title",item.title).put("memoryHitBeforeClick",memory[0]).put("diskFileBeforeClick",disk).put("sourceWorkObserved",sourceWork).put("bodyOrigin",cache).put("domMs",domMs).put("readableMs",visibleMs).put("instant",visibleMs>=0&&visibleMs<=1000).put("terminal",terminal);
+        if(!"readable".equals(terminal)&&reader!=null){
+            CountDownLatch diagnosed=new CountDownLatch(1);String[] evidence={"no reader WebView"};
+            ui(()->{WebView web=(WebView)field(reader,"readerWeb");Document doc=(Document)field(reader,"reading");
+                evidence[0]="document="+(doc!=null)+" content="+(doc!=null&&doc.hasContent())+" dynamic="+(field(reader,"dynamic")!=null)+" pending="+(field(reader,"pendingArticle")!=null)+" native="+nativeText(reader.getWindow().getDecorView());
+                if(web==null){diagnosed.countDown();return;}boolean js=web.getSettings().getJavaScriptEnabled();web.getSettings().setJavaScriptEnabled(true);
+                web.evaluateJavascript("JSON.stringify({text:document.body.innerText.slice(0,1000),images:Array.from(document.querySelectorAll('main img')).map(i=>({src:i.getAttribute('src'),complete:i.complete,width:i.naturalWidth,top:i.getBoundingClientRect().top,bottom:i.getBoundingClientRect().bottom}))})",value->{evidence[0]+=" dom="+value;web.getSettings().setJavaScriptEnabled(js);diagnosed.countDown();});});
+            diagnosed.await(3,TimeUnit.SECONDS);result.put("diagnostic",evidence[0]);
+        }
         observations.put(result);emit("OPEN "+result);if(dwellMs>0&&"readable".equals(terminal))Thread.sleep(dwellMs);
         if(reader!=null){MainActivity closing=reader;ui(closing::finish);await("reader closes",closing::isDestroyed,5000);reader=null;}
         await("home resumes",()->(boolean)field(controller,"foreground"),5000);
@@ -71,7 +95,7 @@ final class LiveCacheOpenRoundsProbe {
         try{
             if(!test.getTargetContext().getPackageName().equals("app.quietreader.discoveryprobe")||!Build.HARDWARE.equals("ranchu"))throw new IllegalStateException("Isolated emulator only");
             ui(()->repo=new Repository(test.getTargetContext()));List<HotCandidate> pool=new ArrayList<>();long observed=System.currentTimeMillis();
-            for(Source source:List.of(Source.ITHOME,Source.THEPAPER,Source.BBC,Source.BAIDU,Source.SSPAI)){
+            for(Source source:List.of(Source.ZHIHU,Source.WEIBO,Source.HUPU,Source.CLS,Source.V2EX,Source.ITHOME,Source.THEPAPER,Source.BBC,Source.BAIDU,Source.SOLIDOT,Source.INFOQ)){
                 List<Item> items=new ArrayList<>();CountDownLatch done=new CountDownLatch(1);String[] error={""};
                 ui(()->repo.board(source,new Repository.Result<List<Item>>(){public void success(List<Item> value){items.addAll(value);done.countDown();}public void failure(String message){error[0]=message;done.countDown();}}));
                 if(!done.await(35,TimeUnit.SECONDS))error[0]="timeout";
@@ -87,7 +111,7 @@ final class LiveCacheOpenRoundsProbe {
                 long before=(long)field(controller,"snapshot");
                 if(round>1){ui(controller::refreshRecommendations);await("refresh ends",()->!(boolean)field(controller,"explicitRefreshRunning"),15000);}
                 long warmStarted=SystemClock.elapsedRealtime(),warmSnapshot=(long)field(controller,"snapshot");
-                if(homeWaitMs>0){emit("HOME_WAIT round="+round+" durationMs="+homeWaitMs+" snapshot="+warmSnapshot);long nextStatus=warmStarted+15000;while(SystemClock.elapsedRealtime()-warmStarted<homeWaitMs){Thread.sleep(1000);if(SystemClock.elapsedRealtime()>=nextStatus){emit("HOME_WAIT_PROGRESS round="+round+" elapsedMs="+(SystemClock.elapsedRealtime()-warmStarted));nextStatus+=15000;}}}
+                if(homeWaitMs>0){emit("HOME_WAIT round="+round+" durationMs="+homeWaitMs+" snapshot="+warmSnapshot);long nextStatus=warmStarted+15000;while(SystemClock.elapsedRealtime()-warmStarted<homeWaitMs){Thread.sleep(1000);if(SystemClock.elapsedRealtime()>=nextStatus){emit("HOME_WAIT_PROGRESS round="+round+" elapsedMs="+(SystemClock.elapsedRealtime()-warmStarted)+warmStatus());nextStatus+=15000;}}}
                 long actualHomeWait=SystemClock.elapsedRealtime()-warmStarted;
                 List<FeedStore.Row> rows=batch();Collections.shuffle(rows,new Random(20261103+round));int slow=0,failed=0,uncached=0;List<Long> durations=new ArrayList<>();
                 for(int index=0;index<rows.size();index++){JSONObject result=open(round,index+1,rows.get(index));if(!result.getBoolean("instant"))slow++;if(!result.getString("terminal").equals("readable"))failed++;if(result.getString("bodyOrigin").equals("foreground_acquisition"))uncached++;if(result.getLong("readableMs")>=0)durations.add(result.getLong("readableMs"));}
