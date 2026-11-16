@@ -102,7 +102,7 @@ public final class SourceParser {
         return result;
     }
     private static Document parseArticle(Source source,org.jsoup.nodes.Document d,String url,boolean explicitReading){
-        ReadingContent.prune(d);if(source==Source.SSPAI)ReadingContent.sspai(d);
+        ReadingContent.prune(d);if(source==Source.ZHIHU)ZhihuImages.prepare(d,url);if(source==Source.SSPAI)ReadingContent.sspai(d);
         if(source==Source.BBC)return BbcChineseSource.article(d,url);
         if(source==Source.NYT)return NytChineseSource.article(d,url);
         if(source==Source.HUPU){Document structured=HupuDiscussion.article(d,url);if(structured!=null)return structured;}

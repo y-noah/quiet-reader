@@ -53,6 +53,7 @@ final class ReadingContent {
     private static boolean sspaiPromotion(String text){return text.trim().matches(">\\s*下载少数派客户端.*|>\\s*实用、好用的正版软件.*少数派.*");}
     /** Remove known source footer text from snapshots made by older app versions. */
     static void cleanStored(Models.Document doc){
+        if(UrlPolicy.belongs(Models.Source.ZHIHU,doc.url)){ZhihuImages.cleanStored(doc);return;}
         if(!UrlPolicy.belongs(Models.Source.SSPAI,doc.url))return;
         for(Models.Section section:doc.sections){
             boolean tail=false;java.util.Iterator<Models.Block> blocks=section.blocks.iterator();
