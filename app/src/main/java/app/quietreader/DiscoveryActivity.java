@@ -28,7 +28,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private boolean exposureForeground;
     private final Rows adapter=new Rows();
     private ArticleReadHistory readHistory;
-    private List<FeedStore.Row> feed=Collections.emptyList(),pendingFeed=Collections.emptyList(),pendingSearch=Collections.emptyList(),warmingTopics=Collections.emptyList();
+    private List<FeedStore.Row> feed=Collections.emptyList(),pendingSearch=Collections.emptyList(),warmingTopics=Collections.emptyList();
     private Map<Source,JSONObject> sources=new EnumMap<>(Source.class);
     private String page="feed",sourcesReturnPage="feed";
     private int feedPosition,feedOffset;
@@ -49,10 +49,10 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private ScrollView setupScroll;
     private Bundle pendingSetup;
     private boolean loading,newest,feedReceived,emptyConfirmed,recommendationsExhausted;
-    private final Runnable confirmEmpty=()->{if(feedReceived&&feed.isEmpty()&&pendingFeed.isEmpty()&&!loading){emptyConfirmed=true;adapter.notifyDataSetChanged();}};
+    private final Runnable confirmEmpty=()->{if(feedReceived&&feed.isEmpty()&&!loading){emptyConfirmed=true;adapter.notifyDataSetChanged();}};
     private void settleEmpty(){
         searchHandler.removeCallbacks(confirmEmpty);
-        if(!feed.isEmpty()||!pendingFeed.isEmpty()||loading){emptyConfirmed=false;return;}
+        if(!feed.isEmpty()||loading){emptyConfirmed=false;return;}
         if(feedReceived&&!emptyConfirmed)searchHandler.postDelayed(confirmEmpty,1200);
     }
     private boolean updateAvailable;
@@ -222,7 +222,6 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     private void open(HotCandidate candidate){
         if(openingReader)return;
         Item selected=candidate.readerItem();Document prepared=TopicPreparation.supports(selected)?topicPreparation.ready(selected):null;
-        if(TopicPreparation.supports(selected)&&prepared==null){publishPreparedTopics();return;}
         hideSearchKeyboard();
         if(ReaderStartup.failed()){new AlertDialog.Builder(this).setMessage("阅读器暂时未准备好，可以重试准备。当前列表会保留。").setNegativeButton("取消",null).setPositiveButton("重试准备",(dialog,which)->prepareReader(candidate,true)).show();return;}
         if(ReaderStartup.pending()){prepareReader(candidate,false);return;}
@@ -381,7 +380,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         pauseExposure();feedIdentities=new HashSet<>();for(FeedStore.Row row:rows)feedIdentities.add(row.eventId);
         nativeFeedReady=true;readerAfterNativeDraw();
         if(restoreAnchor!=null){position=Math.min(restorePosition,Math.max(0,rows.size()-1));for(int n=0;n<rows.size();n++)if(EventGroups.matches(rows.get(n),restoreAnchor)){position=n;break;}offset=restoreOffset;restoreAnchor=null;}
-        feedReceived=true;pendingFeed=rows;planTopics();publishPreparedTopics();this.newest=newest;feedPosition=position;feedOffset=offset;
+        feedReceived=true;feed=rows;planTopics();settleEmpty();this.newest=newest;feedPosition=position;feedOffset=offset;
         updateToolbar();
         if("feed".equals(page)){adapter.notifyDataSetChanged();if(position==0&&offset==0)list.setSelectionFromTop(0,0);else selectPosition(position,offset);}
         if(pendingSetup!=null){Bundle restored=pendingSetup;pendingSetup=null;list.post(()->{
@@ -394,7 +393,7 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
         if(topicPreparation==null)return;
         List<Item> items=new ArrayList<>();
         if("search".equals(page))for(FeedStore.Row row:pendingSearch)items.add(row.candidate.readerItem());
-        for(List<FeedStore.Row> rows:List.of(pendingFeed,feed,searchRows,warmingTopics))for(FeedStore.Row row:rows)items.add(row.candidate.readerItem());
+        for(List<FeedStore.Row> rows:List.of(feed,searchRows,warmingTopics))for(FeedStore.Row row:rows)items.add(row.candidate.readerItem());
         topicPreparation.plan(items);
     }
     private boolean topicPrepared(FeedStore.Row row){Item item=row.candidate.readerItem();return !TopicPreparation.supports(item)||topicPreparation.ready(item)!=null;}
@@ -403,13 +402,11 @@ public final class DiscoveryActivity extends Activity implements DiscoveryContro
     }
     private void publishTopicSnapshot(){
         if(topicPreparation==null||topicScrolling)return;
-        List<FeedStore.Row> nextFeed=TopicPublication.select(pendingFeed,feed,this::topicPrepared);
         List<FeedStore.Row> nextSearch=TopicPublication.select(pendingSearch,searchRows,this::topicPrepared);
-        if(feed.equals(nextFeed)&&searchRows.equals(nextSearch))return;
-        feed=nextFeed;searchRows=nextSearch;
+        if(searchRows.equals(nextSearch))return;
+        searchRows=nextSearch;
         planTopics();
-        feedIdentities=new HashSet<>();for(FeedStore.Row row:feed)feedIdentities.add(row.eventId);
-        settleEmpty();adapter.notifyDataSetChanged();
+        if("search".equals(page))adapter.notifyDataSetChanged();
     }
     @Override public void sources(Map<Source,JSONObject> states){sources=states;if("sources".equals(page))adapter.notifyDataSetChanged();}
     @Override public void recommendationState(RecommendationState value){recommendationState=value;updateStatusDescription();if(recommendationDialog!=null&&recommendationDialog.isShowing())recommendationDialog.setMessage(value.detail);}

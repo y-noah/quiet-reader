@@ -42,7 +42,7 @@ public class ReaderLinksTest {
     }
     @Test public void exactlyFiveDomesticSourcesVisible(){
         assertEquals(5,java.util.Arrays.stream(Source.values()).filter(Source::visible).count());
-        assertEquals(18,Source.values().length);
+        assertEquals(20,Source.values().length);
     }
     @Test public void shoppingRedirectsAndUnadaptedPagesGoToBrowser(){
         assertNull(ReaderLinks.readerSource("https://www.smzdm.com/p/1832826816/"));

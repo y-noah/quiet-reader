@@ -33,6 +33,7 @@ public final class ReaderLinks {
                 case CLS: pattern="/(?:detail|share/article)/\\d+/?";break;
                 case V2EX: pattern="/t/\\d+/?";break;
                 case INFOQ: return !InfoqSource.canonical(url).isEmpty()?source:null;
+                case QBITAI:case LEIPHONE_AI:return !AiChineseSources.canonical(source,url).isEmpty()?source:null;
                 case SOLIDOT: return SolidotSource.articleUrl(url)?source:null;
                 case ITHOME: return IthomeSource.articleUrl(url)?source:null;
                 case THEPAPER: return !ThepaperSource.articleId(url).isEmpty()?source:null;

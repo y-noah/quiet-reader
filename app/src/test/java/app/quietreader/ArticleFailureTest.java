@@ -4,6 +4,26 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class ArticleFailureTest {
+    @Test public void nytNativeTransportFailureReportsUnreachableSourceWithoutBrowserRetry(){
+        ArticleFailure timeout=ArticleFailure.from(new java.net.SocketTimeoutException());
+        assertFalse(timeout.mayFallbackFromNative(Models.Source.NYT));
+        assertTrue(timeout.mayFallbackFromNative(Models.Source.WEIBO));
+        ArticleFailure displayed=timeout.forNativeArticle(Models.Source.NYT);
+        assertTrue(displayed.retryable());
+        assertTrue(displayed.message.contains("当前网络"));
+        assertFalse(displayed.message.contains("登录"));
+        assertTrue(ArticleFailure.http("temporary",503,0).mayFallbackFromNative(Models.Source.NYT));
+        assertTrue(ArticleFailure.http("restricted",403,0).mayFallbackFromNative(Models.Source.NYT));
+    }
+    @Test public void retriesAnEarlyPromotedFailureWithoutRepeatingASlowForegroundRequest(){
+        ArticleFailure transientFailure=ArticleFailure.from(new java.net.SocketTimeoutException());
+        assertTrue(transientFailure.retryAfterPromotion(4_999,10_000));
+        assertFalse(transientFailure.retryAfterPromotion(5_000,10_000));
+        assertFalse(transientFailure.retryAfterPromotion(25_000,30_000));
+        assertTrue(ArticleFailure.session().retryAfterPromotion(25_000,30_000));
+        assertFalse(ArticleFailure.http("retry later",503,40_000).retryAfterPromotion(0,30_000));
+        assertFalse(ArticleFailure.http("forbidden",403,0).retryAfterPromotion(0,30_000));
+    }
     @Test public void networkInterruptionCanRetryButCertificateAndPermissionFailuresCannot(){
         assertTrue(ArticleFailure.from(new java.net.SocketTimeoutException()).retryable());
         assertTrue(ArticleFailure.from(new java.net.UnknownHostException()).retryable());

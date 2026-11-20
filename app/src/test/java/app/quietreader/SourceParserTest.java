@@ -4,6 +4,24 @@ import static org.junit.Assert.*;
 import static app.quietreader.Models.*;
 
 public class SourceParserTest {
+    @Test public void weiboRecognizesTheOfficialVisitorGateWithoutTreatingItAsPostContent(){
+        String topic="https://s.weibo.com/weibo?q=hot";
+        String shell="<html><head><title>Sina Visitor System</title><script src='/js/visitor/mini_original.js?v=20161116'></script></head><body>访客验证</body></html>";
+        Document gate=SourceParser.readingArticle(Source.WEIBO,shell,topic);
+        assertTrue(gate.loginRequired);
+        assertFalse(gate.hasContent());
+        assertTrue(SourceParser.readingArticle(Source.WEIBO,"<html>登录</html>","https://passport.weibo.cn/signin/login").loginRequired);
+        assertTrue(WeiboPost.visitor("https://passport.weibo.com/visitor/visitor?entry=miniblog"));
+        assertTrue(WeiboPost.visitor("https://visitor.passport.weibo.cn/visitor/visitor"));
+        assertTrue(WeiboPost.gateRedirect(topic,"https://passport.weibo.com/visitor/visitor"));
+        assertFalse(WeiboPost.gateRedirect("https://m.weibo.cn/status/123","https://passport.weibo.com/visitor/visitor"));
+        assertFalse(WeiboPost.visitor("https://s.weibo.com/visitor/visitor"));
+        assertFalse(WeiboPost.signIn("https://passport.weibo.com.example.org/sso/v2/login"));
+        String post="<title>普通话题</title><div class=card-wrap><p class=txt>正文引用 Sina Visitor System</p></div>";
+        Document ordinary=SourceParser.readingArticle(Source.WEIBO,post,topic);
+        assertFalse(ordinary.loginRequired);
+        assertTrue(ordinary.hasContent());
+    }
     @Test public void renderedV2exImageDoesNotLeaveEmptyMarkdownSyntax()throws Exception{
         String html;try(java.io.InputStream in=getClass().getResourceAsStream("/fixtures/v2ex-hybrid-image-fragment-20261027.html")){assertNotNull(in);html=new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
         Document d=SourceParser.article(Source.V2EX,html,"https://www.v2ex.com/t/1251768");

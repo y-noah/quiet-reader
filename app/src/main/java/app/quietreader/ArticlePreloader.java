@@ -41,6 +41,7 @@ final class ArticlePreloader implements AutoCloseable {
     private ArticleFailure bufferedFailure;
     private int revision;
     private long requestStarted;
+    private long foregroundStarted=-1;
     private void trace(String state){if(active!=null)android.util.Log.d("NewPrefetch",active.source.name()+" "+state+" ms="+(SystemClock.elapsedRealtime()-requestStarted));}
     private boolean closed;
     private boolean wholeTopics;
@@ -116,7 +117,7 @@ final class ArticlePreloader implements AutoCloseable {
             if(previous!=null&&!previous.scope.equals(session.scopeIdentity()))previous=null;
             if(previous!=null&&now<previous.until){if(previous.retryPending){queue.addLast(item);earliest=Math.min(earliest,previous.until);}continue;}
             int count=previous!=null&&previous.retryPending?previous.count+1:1;
-            active=item;requestStarted=now;trace("start");activeSession=session;attempted.put(attemptKey(item),new Attempt(now+5*60_000,session.scopeIdentity(),count,false));int request=++revision;
+            active=item;requestStarted=now;foregroundStarted=-1;trace("start");activeSession=session;attempted.put(attemptKey(item),new Attempt(now+5*60_000,session.scopeIdentity(),count,false));int request=++revision;
             if(loader!=null)loader.load(item,new Repository.Result<Document>(){
                 public void success(Document doc){if(valid(request))complete(item,doc);}
                 public void failure(String why){failed(request,why);}
@@ -145,9 +146,13 @@ final class ArticlePreloader implements AutoCloseable {
         if(closed||retainedForeground)return false;
         stopWatch();
         queue.clear();main.removeCallbacks(pump);
-        if(active!=null&&ArticleVersion.sameRequest(active,item)){foreground=callback;if(dynamic!=null)dynamic.promote();return true;}
+        if(active!=null&&ArticleVersion.sameRequest(active,item)){
+            if(foregroundStarted<0)foregroundStarted=SystemClock.elapsedRealtime();
+            foreground=callback;if(dynamic!=null)dynamic.promote();return true;
+        }
         cancelActive();return false;
     }
+    long foregroundWaitMillis(){return foregroundStarted<0?Long.MAX_VALUE:SystemClock.elapsedRealtime()-foregroundStarted;}
     private boolean valid(int request){return !closed&&active!=null&&request==revision;}
     boolean canRetainForeground(Item item){
         return !closed&&(foreground!=null||retainedForeground)&&active!=null&&item!=null&&ArticleVersion.sameRequest(active,item)
@@ -175,15 +180,16 @@ final class ArticlePreloader implements AutoCloseable {
         if(retainedForeground){deferredNetwork=true;return;}
         if(repo.offline()){failed(request,"当前离线且正文尚未缓存",false);return;}
         trace("native-route");
-        if(SourceSession.usesWeb(activity,item.source)){loadDynamic(item,request);return;}
+        if(SourceSession.usesWeb(activity,item)){loadDynamic(item,request);return;}
         repo.article(item,new Repository.Result<Document>(){
             public void success(Document doc){
                 if(!valid(request))return;
                 // Repository.article has already saved this session-checked acquisition.
-                if(SourceSession.nativeDocumentReady(item.source,doc)&&!doc.loginRequired&&!doc.sourceUnavailable)complete(item,doc,false);else loadDynamic(item,request);
+                if(SourceSession.nativeDocumentReady(item.source,doc)&&!doc.loginRequired&&!doc.sourceUnavailable)complete(item,doc,false);
+                else{loadDynamic(item,request);if(dynamic!=null)dynamic.confirmWeiboGate(doc);}
             }
             public void failure(String why){if(valid(request))loadDynamic(item,request);}
-            public void failure(ArticleFailure failure){if(!valid(request))return;if(failure.mayFallback())loadDynamic(item,request);else failed(request,failure);}
+            public void failure(ArticleFailure failure){if(!valid(request))return;if(failure.mayFallbackFromNative(item.source))loadDynamic(item,request);else failed(request,failure);}
         });
     }
     private void loadDynamic(Item item,int request){

@@ -48,8 +48,10 @@ public final class Repository {
     private boolean cacheArticle(Document d,long expectedEpoch,String session){synchronized(Repository.class){
         if(expectedEpoch!=articleEpoch||!ArticleSession.contentCurrent(d)||!session.equals(ArticleDiskCache.session(d.url))||(d.cachedSession!=null&&(!session.equals(d.cachedSession)||!disk.namespace().equals(d.cachedNamespace))))return false;
         if(d.filteredVideo||d.loginRequired||d.sourceUnavailable){
-            // Retain the validated acquisition stamp for type evidence without caching video bodies.
-            if(d.filteredVideo&&d.cachedSession==null){d.cachedAt=System.currentTimeMillis();d.cachedSession=session;d.cachedNamespace=disk.namespace();}
+            // Keep the session stamp for evidence without persisting the response.
+            if((d.filteredVideo||d.loginRequired&&WeiboPost.VISITOR_NOTICE.equals(d.notice))&&d.cachedSession==null){
+                d.cachedAt=System.currentTimeMillis();d.cachedSession=session;d.cachedNamespace=disk.namespace();
+            }
             articles.remove(d.url);articleTimes.remove(d.url);articleSessions.remove(d.url);return true;
         }
         CachedDocument previous=articles.get(d.url);if(previous!=null&&ArticleSession.contentCurrent(previous.document))TopicBundle.merge(d,previous.document);
@@ -198,16 +200,30 @@ public final class Repository {
     public void articleForReading(Item item,Result<Document> cb){article(item,cb,true);}
     private void article(Item item,Result<Document> cb,boolean explicitReading){
         if(!item.source.readable()){cb.failure("此平台已移除");return;}
-        String cookie=CookieManager.getInstance().getCookie(item.url);
+        CookieManager manager=CookieManager.getInstance();
+        String cookie=manager.getCookie(item.url),searchPeer=WeiboPost.searchPeer(item.url);
+        String peerCookie=searchPeer.isEmpty()?null:manager.getCookie(searchPeer);
+        java.util.function.Function<String,String> redirectCookies=searchPeer.isEmpty()?null:target->{
+            if(WeiboPost.sameSearchCookiePath(item.url,target))return cookie;
+            if(WeiboPost.sameSearchCookiePath(searchPeer,target))return peerCookie;
+            return null;
+        };
         String userAgent=SourceSession.readingUserAgent(context,item.source);
         long cacheEpoch=articleCacheEpoch();
-        String cacheSession=ArticleCookies.fingerprint(item.url,cookie);
+        String cacheSession=ArticleCookies.fingerprint(item.url,cookie,peerCookie);
         requests.submit(ticket->{
             try {
                 boolean topic=item.source==Source.TIEBA&&TiebaTopic.isTopic(item.url);
-                java.util.function.Predicate<String> pageGuard=topic?target->TiebaTopic.id(target)==TiebaTopic.id(item.url):DiscussionPages.supports(item.source,item.url)?target->DiscussionPages.samePage(item.source,item.url,target):null;
-                String html=new String(bytes(item.url,cookie,item.url,4*1024*1024,ticket,userAgent,pageGuard),StandardCharsets.UTF_8);
-                Document doc=explicitReading?SourceParser.readingArticle(item.source,html,item.url):SourceParser.article(item.source,html,item.url);
+                java.util.function.Predicate<String> pageGuard=topic?target->TiebaTopic.id(target)==TiebaTopic.id(item.url):
+                        !searchPeer.isEmpty()?VideoPolicy::weiboTopic:DiscussionPages.supports(item.source,item.url)?target->DiscussionPages.samePage(item.source,item.url,target):null;
+                Document doc;
+                try{
+                    String[] responseUrl={item.url};
+                    String html=new String(bytes(item.url,cookie,item.url,4*1024*1024,ticket,userAgent,pageGuard,redirectCookies,
+                            searchPeer.isEmpty()?null:target->responseUrl[0]=target),StandardCharsets.UTF_8);
+                    doc=explicitReading?SourceParser.readingArticle(item.source,html,responseUrl[0]):SourceParser.article(item.source,html,responseUrl[0]);
+                    doc.url=item.url;
+                }catch(WeiboPost.VisitorRequired gate){doc=WeiboPost.gateDocument(item.url);}
                 if(topic){
                     List<Item> choices=List.copyOf(doc.related);Item post=TiebaTopic.target(item,choices);if(post==null)throw new java.io.IOException("话题当前没有所选的可读取帖子");
                     ticket.check();String postCookie=CookieManager.getInstance().getCookie(post.url),postSession=ArticleCookies.fingerprint(post.url,postCookie);long selectedAt=System.currentTimeMillis();
@@ -220,7 +236,7 @@ public final class Repository {
                 ArticleVersion.capture(item,doc);
                 ticket.check();if(!cacheArticle(doc,cacheEpoch,cacheSession)){main.post(()->{if(!ticket.cancelled())cb.failure("登录或缓存状态已变化，请重新读取");});return;}Document result=doc;main.post(()->{if(!ticket.cancelled()){if(cacheEpoch==articleCacheEpoch()&&ArticleSession.contentCurrent(result)&&cacheSession.equals(ArticleDiskCache.session(item.url)))cb.success(result);else cb.failure("登录或缓存状态已变化，请重新读取");}});
             }
-            catch(Exception e) { main.post(()->{if(!ticket.cancelled())cb.failure(ArticleFailure.from(e));}); }
+            catch(Exception e) { main.post(()->{if(!ticket.cancelled())cb.failure(ArticleFailure.from(e).forNativeArticle(item.source));}); }
         });
     }
     public static String explain(Exception e) {
@@ -257,29 +273,37 @@ public final class Repository {
     private static byte[] bytes(String url,String cookie,String referer,int limit,RequestQueue.Ticket ticket,String userAgent,java.util.function.Predicate<String> pageGuard) throws Exception {
         return bytes(url,cookie,referer,limit,ticket,userAgent,pageGuard,null);
     }
-    private static byte[] bytes(String url,String cookie,String referer,int limit,RequestQueue.Ticket ticket,String userAgent,java.util.function.Predicate<String> pageGuard,java.util.function.Function<String,String> imageCookies) throws Exception {
+    private static byte[] bytes(String url,String cookie,String referer,int limit,RequestQueue.Ticket ticket,String userAgent,java.util.function.Predicate<String> pageGuard,java.util.function.Function<String,String> redirectCookies) throws Exception {
+        return bytes(url,cookie,referer,limit,ticket,userAgent,pageGuard,redirectCookies,null);
+    }
+    private static byte[] bytes(String url,String cookie,String referer,int limit,RequestQueue.Ticket ticket,String userAgent,java.util.function.Predicate<String> pageGuard,java.util.function.Function<String,String> redirectCookies,java.util.function.Consumer<String> responseUrl) throws Exception {
         String current=url;
         for(int redirect=0;redirect<5;redirect++) {
             if(ticket!=null)ticket.check();
             if(pageGuard!=null&&!pageGuard.test(current))throw new SecurityException("来源跳转到了其他帖子或页码");
             UrlPolicy.requirePublicHost(current);
             HttpURLConnection c=(HttpURLConnection)new URL(current).openConnection();
-            if(imageCookies!=null)c.setUseCaches(false);
+            if(redirectCookies!=null)c.setUseCaches(false);
             if(WeiboBoard.endpoint(current)){c.setUseCaches(false);c.setRequestProperty("Cache-Control","no-cache");}
             c.setInstanceFollowRedirects(false); c.setConnectTimeout(5000); c.setReadTimeout(7000);
             c.setRequestProperty("User-Agent",userAgent);
             c.setRequestProperty("Accept","text/html,application/json,image/*;q=0.8,*/*;q=0.5");
             if(referer!=null) c.setRequestProperty("Referer",referer);
             // Never forward a session cookie to a different host on a redirect.
-            if(imageCookies!=null){String scoped=imageCookies.apply(current);if(scoped!=null&&!scoped.isEmpty())c.setRequestProperty("Cookie",scoped);}
+            if(redirectCookies!=null){String scoped=redirectCookies.apply(current);if(scoped!=null&&!scoped.isEmpty())c.setRequestProperty("Cookie",scoped);}
             else if(cookie!=null&&UrlPolicy.host(current).equals(UrlPolicy.host(url))) c.setRequestProperty("Cookie",cookie);
             try {
                 if(ticket!=null){ticket.bind(c);ticket.check();}
                 int code=c.getResponseCode();
                 if(ticket!=null)ticket.check();
-                if(code>=300&&code<400) { current=UrlPolicy.normalize(current,c.getHeaderField("Location")); continue; }
+                if(code>=300&&code<400) {
+                    current=UrlPolicy.normalize(current,c.getHeaderField("Location"));
+                    if(WeiboPost.gateRedirect(url,current))throw new WeiboPost.VisitorRequired();
+                    continue;
+                }
                 if(code!=200) throw new HttpFailure(code,app.quietreader.discovery.RefreshBackoff.retryAfter(c.getHeaderField("Retry-After"),System.currentTimeMillis()));
                 if(c.getContentLengthLong()>limit) throw new java.io.IOException("Response too large");
+                if(responseUrl!=null)responseUrl.accept(current);
                 try(InputStream in=c.getInputStream(); ByteArrayOutputStream out=new ByteArrayOutputStream()) {
                     byte[] block=new byte[8192]; int size;
                     while((size=in.read(block))!=-1) { if(ticket!=null)ticket.check();if(out.size()+size>limit) throw new java.io.IOException("Response too large"); out.write(block,0,size); }

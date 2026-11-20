@@ -20,7 +20,13 @@ public class ZhihuImagesTest {
         }
         org.jsoup.nodes.Document oldDom=org.jsoup.Jsoup.parse(html);for(var fallback:new ArrayList<>(oldDom.select("noscript")))fallback.unwrap();
         Document old=SourceParser.article(Source.ZHIHU,oldDom.outerHtml(),URL);assertEquals(15,images(old));
-        assertEquals(8,images(ReadingHistory.decode(ReadingHistory.encode(old))));
+        Document restored=ReadingHistory.decode(ReadingHistory.encode(old));
+        assertEquals(8,images(restored));
+        Set<String> expanded=new HashSet<>();
+        for(Section section:restored.sections)expanded.add(section.id);
+        String reader=ReaderHtml.render(restored,Source.ZHIHU,19,true,expanded,false);
+        var rendered=org.jsoup.Jsoup.parse(reader);
+        assertEquals(8,rendered.select("section.part img").size());
     }
     @Test public void fallbackVariantIsRemovedOnlyInsideItsOwnFigure(){
         Document doc=parse("<figure><noscript><img src='"+SMALL+"'></noscript><div><img src='"+LARGE+"'></div></figure>");

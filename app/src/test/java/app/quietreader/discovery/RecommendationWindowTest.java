@@ -11,18 +11,18 @@ public final class RecommendationWindowTest {
         for(int n=0;n<count;n++){HotCandidate c=new HotCandidate(Source.V2EX,"https://www.v2ex.com/t/"+(100000+n),"推荐候选 "+n,"","",false,n+1,null,1);rows.add(new FeedStore.Row(c.id,c,"按兴趣匹配"));}
         return rows;
     }
-    @Test public void fiveBatchesThenExhaustedWithoutRecyclingOrTailBackfill(){
+    @Test public void fourBatchesThenExhaustedWithoutRecyclingOrTailBackfill(){
         List<FeedStore.Row> pool=rows(300);Map<String,Boolean> decisions=new HashMap<>();Set<String> delivered=new HashSet<>();
-        for(int round=0;round<5;round++){
+        for(int round=0;round<4;round++){
             List<FeedStore.Row> selected=RecommendationWindow.select(pool,decisions,delivered);
             List<FeedStore.Row> batch=FeedBatch.first(RecommendationWindow.undelivered(selected,delivered));
             assertEquals(15,batch.size());for(FeedStore.Row row:batch)assertTrue(delivered.add(row.candidate.id));
         }
-        assertEquals(75,delivered.size());
+        assertEquals(60,delivered.size());
         assertTrue(RecommendationWindow.undelivered(RecommendationWindow.select(pool,decisions,delivered),delivered).isEmpty());
         // A restart restores decisions, not just the current screen.
         Map<String,Boolean> restored=new HashMap<>(decisions);
-        assertTrue(RecommendationWindow.undelivered(RecommendationWindow.select(pool.subList(75,300),restored,delivered),delivered).isEmpty());
+        assertTrue(RecommendationWindow.undelivered(RecommendationWindow.select(pool.subList(60,300),restored,delivered),delivered).isEmpty());
     }
     @Test public void onlyGenuinelyNewContentReopensAnExhaustedWindow(){
         List<FeedStore.Row> pool=rows(300);Map<String,Boolean> decisions=new HashMap<>();Set<String> delivered=new HashSet<>();
@@ -48,11 +48,11 @@ public final class RecommendationWindowTest {
         RecommendationWindow.select(pool,decisions,delivered);
         List<FeedStore.Row> updated=new ArrayList<>(pool);FeedStore.Row newcomer=rows(301).get(300);updated.add(0,newcomer);
         List<FeedStore.Row> selected=RecommendationWindow.select(updated,decisions,delivered);
-        assertEquals(75,selected.size());assertSame(newcomer,selected.get(0));assertFalse(selected.contains(pool.get(74)));
+        assertEquals(60,selected.size());assertSame(newcomer,selected.get(0));assertFalse(selected.contains(pool.get(59)));
         for(FeedStore.Row row:selected)delivered.add(row.candidate.id);
         assertTrue(RecommendationWindow.undelivered(RecommendationWindow.select(updated,decisions,delivered),delivered).isEmpty());
     }
-    @Test public void firstModelPassCanReplaceProvisionalChoicesButCannotExpandPastSeventyFive(){
+    @Test public void firstModelPassCanReplaceProvisionalChoicesButCannotExpandPastSixty(){
         List<FeedStore.Row> pool=rows(300);Map<String,Boolean> decisions=new HashMap<>();Set<String> delivered=new HashSet<>();
         List<FeedStore.Row> initial=RecommendationWindow.select(pool,decisions,delivered);
         for(FeedStore.Row row:FeedBatch.first(initial))delivered.add(row.candidate.id);
@@ -60,9 +60,26 @@ public final class RecommendationWindowTest {
         List<FeedStore.Row> ranked=new ArrayList<>(pool);Collections.reverse(ranked);
         List<FeedStore.Row> refined=RecommendationWindow.select(ranked,decisions,delivered,provisional,true);
         List<FeedStore.Row> remaining=RecommendationWindow.undelivered(refined,delivered);
-        assertEquals(60,remaining.size());assertSame(pool.get(299),remaining.get(0));
+        assertEquals(45,remaining.size());assertSame(pool.get(299),remaining.get(0));
         for(FeedStore.Row row:remaining)delivered.add(row.candidate.id);
-        assertEquals(75,delivered.size());
+        assertEquals(60,delivered.size());
         assertTrue(RecommendationWindow.undelivered(RecommendationWindow.select(pool,decisions,delivered),delivered).isEmpty());
+    }
+    @Test public void recyclingDisplayDoesNotGiveTheOldRejectedTailANewModelAllowance(){
+        List<FeedStore.Row> pool=rows(300);Map<String,Boolean> decisions=new HashMap<>();Set<String> offered=new HashSet<>();
+        for(FeedStore.Row row:RecommendationWindow.select(pool,decisions,Set.of()))offered.add(row.candidate.id);
+        Set<String> provisional=new HashSet<>(decisions.keySet());
+        List<FeedStore.Row> tail=pool.subList(60,pool.size());
+        assertTrue(RecommendationWindow.select(tail,decisions,Set.of(),provisional,true,offered).isEmpty());
+    }
+    @Test public void newArrivalsDoNotAddOnTopOfSixtyUnopenedCards(){
+        List<FeedStore.Row> pool=rows(300);Map<String,Boolean> decisions=new HashMap<>();Set<String> shown=new HashSet<>();
+        for(FeedStore.Row row:RecommendationWindow.select(pool,decisions,shown))shown.add(row.candidate.id);
+        for(int n=300;n<310;n++){
+            FeedStore.Row fresh=rows(n+1).get(n);pool.add(0,fresh);
+            List<FeedStore.Row> next=RecommendationWindow.select(pool,decisions,shown);
+            assertEquals(60,next.size());assertSame(fresh,next.get(0));assertEquals(60,next.stream().map(r->r.eventId).distinct().count());
+            for(FeedStore.Row row:next)shown.add(row.candidate.id);
+        }
     }
 }

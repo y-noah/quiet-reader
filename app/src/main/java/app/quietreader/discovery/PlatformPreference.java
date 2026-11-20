@@ -4,11 +4,11 @@ import app.quietreader.Models.Source;
 import org.json.*;
 import java.util.*;
 
-/** Separate local source prior. Never uses heat, fetch counts or unread impressions.
+/** Source prior comes from feedback, never fetch counts or unread impressions.
  * Explicit source choices dominate; three distinct engaged articles are required
  * for a weak prior. Bounded rank shifts preserve content-negative categories. */
 public final class PlatformPreference {
-    public static final String VERSION="platform-prior-v2";
+    public static final String VERSION="platform-prior-v3";
     private final Map<Source,Double> values=new EnumMap<>(Source.class);
     public final String signature;
     public PlatformPreference(JSONArray feedback){
@@ -43,8 +43,13 @@ public final class PlatformPreference {
     private static Source parse(String name){try{return Source.valueOf(name);}catch(Exception ignored){return null;}}
     public boolean empty(){return values.isEmpty();}
     public double score(Source source){return values.getOrDefault(source,0.0);}
-    /** Neutral=1; explicit LESS=0.25, MORE=1.75; weak reading evidence stays within 0.74..1.27. */
-    public double exposureWeight(Source source){return 1+0.75*score(source);}
+    /** LESS reduces opportunity, without turning a small source's integer share into zero. */
+    public double exposureWeight(Source source){double score=score(source);return 1+(score<0?0.5:0.75)*score;}
+    /** A source's strongest real hot topic can soften, but never erase, its penalty. */
+    public double selectionWeight(HotCandidate item,double normalSlots){
+        double base=exposureWeight(item.source);
+        return base>=1?base:base+Math.min((1-base)*0.8,1/Math.max(1,normalSlots))*SourceHeat.strength(item);
+    }
     public List<FeedStore.Row> apply(List<FeedStore.Row> rows){return apply(rows,Collections.emptyMap());}
     public List<FeedStore.Row> apply(List<FeedStore.Row> rows,Map<String,Integer> categories){
         List<FeedStore.Row> result=new ArrayList<>();Map<String,Integer> order=new HashMap<>();int index=0;
@@ -55,7 +60,7 @@ public final class PlatformPreference {
             result.add(new FeedStore.Row(row.eventId,selected,reason,row.entries,row.interestBand,row.refreshBasePosition));order.put(row.eventId,index++);
         }
         // Source prior shifts a rank key by at most four; weak evidence by <1.5.
-        // Negative source feedback changes membership, never position.
+        // Negative source feedback is handled by weighted selection below this stage.
         result.sort(Comparator.comparingInt((FeedStore.Row row)->categories.getOrDefault(row.eventId,0))
             .thenComparingDouble(row->order.get(row.eventId)-4*Math.max(0,score(row.candidate.source)))
             .thenComparingInt(row->order.get(row.eventId)));

@@ -54,12 +54,17 @@ public final class FeedSourceBalance {
         // positive above a fresh neutral again. Negative content stays last.
         if(!deliveryOrdered)for(Map<Source,ArrayDeque<Integer>> queues:bands.values())for(Source source:queues.keySet()){
             List<Integer> ordered=new ArrayList<>(queues.get(source));ordered.sort(Comparator.comparingInt(n->rows.get(n).interestBand==0?0:1));
+            if(preference!=null&&preference.score(source)<0&&rows.get(ordered.get(0)).interestBand!=2){
+                List<Integer> hot=new ArrayList<>();for(int index:ordered)if(SourceHeat.strong(rows.get(index).candidate))hot.add(index);
+                hot.sort(Comparator.comparingInt(index->rows.get(index).candidate.sourceRank));
+                ordered.removeAll(hot);ordered.addAll(0,hot);
+            }
             queues.put(source,new ArrayDeque<>(ordered));
         }
         for(Map<Source,ArrayDeque<Integer>> queues:bands.values())while(!queues.isEmpty()){
             int remaining=0;for(ArrayDeque<Integer> queue:queues.values())remaining+=queue.size();
             int slots=Math.min(FeedBatch.SIZE-result.size()%FeedBatch.SIZE,remaining);
-            Map<Source,Integer> quotas=allocate(queues,preference,slots,turn+result.size()/FeedBatch.SIZE);
+            Map<Source,Integer> quotas=allocate(queues,rows,preference,slots,turn+result.size()/FeedBatch.SIZE);
             Map<Source,Integer> emitted=new EnumMap<>(Source.class);
             for(int slot=0;slot<slots;slot++){
                 Source chosen=null;double best=Double.MAX_VALUE;int first=Integer.MAX_VALUE;
@@ -74,9 +79,9 @@ public final class FeedSourceBalance {
         }
         return result;
     }
-    private static Map<Source,Integer> allocate(Map<Source,ArrayDeque<Integer>> queues,PlatformPreference preference,int slots,long turn){
+    private static Map<Source,Integer> allocate(Map<Source,ArrayDeque<Integer>> queues,List<FeedStore.Row> rows,PlatformPreference preference,int slots,long turn){
         Map<Source,Integer> quotas=new EnumMap<>(Source.class);Map<Source,Double> weights=new EnumMap<>(Source.class);
-        for(Source source:queues.keySet())weights.put(source,preference==null?1:1+0.75*Math.max(0,preference.score(source)));
+        for(Source source:queues.keySet())weights.put(source,preference==null?1:preference.selectionWeight(rows.get(queues.get(source).peek()).candidate,slots/(double)queues.size()));
         int left=slots;
         // Water-fill only when a source cannot supply its share. Pool length is
         // a capacity bound, never a source's weight or a popularity signal.

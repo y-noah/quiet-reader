@@ -19,6 +19,7 @@ public final class SourceParser {
     public static List<Item> list(Source source,String raw) throws Exception {
         if(!source.readable())throw new IllegalArgumentException("不支持此榜单来源");
         if(source==Source.INFOQ)return InfoqSource.list(raw);
+        if(source==Source.QBITAI||source==Source.LEIPHONE_AI)return AiChineseSources.list(source,raw);
         if(source==Source.SOLIDOT)return SolidotSource.list(raw);
         if(source==Source.ITHOME)return IthomeSource.list(raw);
         if(source==Source.THEPAPER)return ThepaperSource.list(raw);
@@ -111,9 +112,15 @@ public final class SourceParser {
         if(source==Source.XHS)return XhsArticle.article(d,url);
         if(StructuredSources.supports(source))return StructuredSources.article(source,d,url);
         if(source==Source.CLS)d.select(".related-article-box,.related-article-content-box").remove();
+        if(source==Source.WEIBO&&WeiboPost.accessGate(url,d))return WeiboPost.gateDocument(url);
         Document result=new Document(); result.url=url;
         Element h=d.selectFirst(source==Source.SOLIDOT?".bg_htit h2":"h1");
         result.title=h==null?d.title():h.text();
+        if(source==Source.QBITAI||source==Source.LEIPHONE_AI){
+            if(AiChineseSources.canonical(source,url).isEmpty()){result.sourceUnavailable=true;result.notice="此页面不是已支持的AI文章";return result;}
+            Element writer=d.selectFirst(source==Source.QBITAI?".article_info .author":".article-title .name");if(writer!=null)result.byline=writer.text();
+            AiChineseSources.prepare(source,d,url);
+        }
         if(source==Source.CLS){Element title=d.selectFirst(".title-box");if(title!=null)result.title=title.text();}
         boolean mainVideo=VideoPolicy.mainPost(source,d,url);
         result.videoTopic=mainVideo;
@@ -147,6 +154,8 @@ public final class SourceParser {
             case SSPAI: selector=".post__body__extend__item,.article__main__content,.ss__article__body"; break;
             case IFANR: selector="article.c-article-content"; break;
             case INFOQ: selector=".ProseMirror"; break;
+            case QBITAI: selector=".article"; break;
+            case LEIPHONE_AI: selector=".lphArticle-detail .lph-article-comView"; break;
             case SOLIDOT: selector=".p_mainnew"; break;
             case ITHOME: selector="#paragraph.post_content"; break;
             case THEPAPER: selector="#quiet-paper-body"; break;

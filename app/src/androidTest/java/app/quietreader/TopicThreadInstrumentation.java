@@ -123,22 +123,33 @@ public final class TopicThreadInstrumentation extends Instrumentation {
             windowPrefetch(warm);
             ui(()->{
                 discovery.feed(List.of(row),0,0,false);
-                try{check(((List<?>)publishedField.get(discovery)).isEmpty(),"unfinished topic title is never published as a clickable loading card");}catch(Exception error){throw new IllegalStateException(error);}
+                try{check(((List<?>)publishedField.get(discovery)).equals(List.of(row)),"home publishes the selected topic before its body is ready");}catch(Exception error){throw new IllegalStateException(error);}
                 Repository local=new Repository(discovery);Document all=body(A,"预取正文","独立评论");TopicBundle.merge(all,body(B,"预取正文","独立评论"));local.cacheArticle(all);local.close();
             });
             waitFor(()->preparation.ready(item)!=null,"off-screen whole-topic preparation did not finish");
             ui(()->{
-                try{check(((List<?>)publishedField.get(discovery)).size()==1,"whole-topic completion publishes its title without binding or opening a card first");}catch(Exception error){throw new IllegalStateException(error);}
-                app.quietreader.discovery.HotCandidate incoming=new app.quietreader.discovery.HotCandidate(Source.TIEBA,ROOT,item.title+" 新版","","",false,1,null,System.currentTimeMillis());
-                discovery.feed(List.of(new app.quietreader.discovery.FeedStore.Row("publication-topic-next",incoming,"",List.of(incoming))),0,0,false);
-                try{List<?> shown=(List<?>)publishedField.get(discovery);check(shown.size()==1&&shown.get(0)==row,"refresh keeps the prior fully readable title while a replacement is incomplete");}catch(Exception error){throw new IllegalStateException(error);}
+                try{check(((List<?>)publishedField.get(discovery)).equals(List.of(row)),"background preparation leaves the published home batch unchanged");}catch(Exception error){throw new IllegalStateException(error);}
+                String incomingUrl="https://tieba.baidu.com/hottopic/browse/hottopic?topic_id=999991074";
+                app.quietreader.discovery.HotCandidate incoming=new app.quietreader.discovery.HotCandidate(Source.TIEBA,incomingUrl,item.title+" 新版","","",false,1,null,System.currentTimeMillis());
                 app.quietreader.discovery.HotCandidate available=new app.quietreader.discovery.HotCandidate(Source.V2EX,"https://www.v2ex.com/t/999991099","刷新后的可读条目","","",false,1,null,System.currentTimeMillis());
                 app.quietreader.discovery.FeedStore.Row availableRow=new app.quietreader.discovery.FeedStore.Row("publication-available",available,"",List.of(available));
-                discovery.feed(List.of(new app.quietreader.discovery.FeedStore.Row("publication-blocked",incoming,"",List.of(incoming)),availableRow),0,0,false);
-                try{List<?> shown=(List<?>)publishedField.get(discovery);check(shown.size()==1&&shown.get(0)==availableRow,"a pending topic cannot keep an entire refreshed screen on the old batch");}catch(Exception error){throw new IllegalStateException(error);}
+                app.quietreader.discovery.FeedStore.Row incomingRow=new app.quietreader.discovery.FeedStore.Row("publication-next",incoming,"",List.of(incoming));
+                discovery.feed(List.of(incomingRow,availableRow),0,0,false);
+                try{check(((List<?>)publishedField.get(discovery)).equals(List.of(incomingRow,availableRow)),"refresh publishes the entire replacement batch in order");}catch(Exception error){throw new IllegalStateException(error);}
             });
             waitFor(()->viewText(discovery.getWindow().getDecorView()).contains("刷新后的可读条目"),"refreshed available row did not become visible");
-            ui(()->check(viewText(discovery.getWindow().getDecorView()).contains("刷新后的可读条目"),"available refreshed content is actually bound in the visible list"));
+            ActivityMonitor uncachedReader=addMonitor(MainActivity.class.getName(),null,true);
+            try{
+                ui(()->{
+                    View root=discovery.getWindow().getDecorView();
+                    View menu=find(root,"话题选项："+item.title+" 新版");
+                    Item uncached=new Item(Source.TIEBA,item.title+" 新版","https://tieba.baidu.com/hottopic/browse/hottopic?topic_id=999991074","");
+                    check(menu!=null&&viewText(root).contains("刷新后的可读条目"),"both refreshed titles are bound in the visible list");
+                    check(preparation.ready(uncached)==null,"the refreshed topic has no prepared handoff");
+                    if(menu!=null)((View)menu.getParent()).performClick();
+                });
+                check(uncachedReader.getHits()==1,"tapping an unfinished home topic opens the reader once");
+            }finally{removeMonitor(uncachedReader);}
             ui(warm::finish);
             ui(()->{repo=new Repository(getTargetContext());repo.invalidateArticles();getTargetContext().getSharedPreferences("reading-history",0).edit().remove(ROOT).commit();repo.cacheArticle(body(B,choices.get(1).title,"只属于乙帖的评论"));repo.cacheArticle(body(A,choices.get(0).title,"只属于甲帖的评论"));});launch(item);
             ArticlePreloader[] topicQueue={null};CountDownLatch preparedPosts=new CountDownLatch(2);Set<String> preparedUrls=new HashSet<>();

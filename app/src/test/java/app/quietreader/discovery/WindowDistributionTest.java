@@ -22,25 +22,22 @@ public final class WindowDistributionTest {
         for(int round=0;round<5;round++){List<FeedStore.Row> ordered=FeedPresentationOrder.arrange(remaining,Map.of(),1000);List<FeedStore.Row> page=new ArrayList<>(ordered.subList(0,15));assertEquals(9,count(page,Source.V2EX));assertEquals(4,page.stream().map(r->r.candidate.source).distinct().count());for(FeedStore.Row row:page)assertTrue(seen.add(row.eventId));remaining.removeAll(page);}
         assertEquals(75,seen.size());assertTrue(remaining.isEmpty());
     }
-    @Test public void dislikedSourceBudgetComesFromActualNormalSelectionNotRawFirstSeventyFive()throws Exception{
+    @Test public void sourceDislikeUsesWeightedSelectionInsteadOfDeletingItsTail()throws Exception{
         List<FeedStore.Row> raw=new ArrayList<>();for(int n=0;n<200;n++)raw.add(row(Source.V2EX,n));for(Source source:List.of(Source.BBC,Source.THEPAPER,Source.ITHOME,Source.ZHIHU))for(int n=0;n<25;n++)raw.add(row(source,n));
         PlatformPreference less=new PlatformPreference(new JSONArray().put(new JSONObject().put("action","LESS").put("scope","source").put("target","V2EX")));
-        assertEquals(15,count(FeedSourceBalance.arrange(raw,less).subList(0,75),Source.V2EX));
-        List<FeedStore.Row> eligible=InterestPool.eligible(raw,less);assertEquals(3,count(eligible,Source.V2EX));
-        List<FeedStore.Row> selected=RecommendationWindow.select(FeedSourceBalance.arrange(eligible,less),new HashMap<>(),Set.of());assertEquals(75,selected.size());assertEquals(3,count(selected,Source.V2EX));
-        List<FeedStore.Row> visible=FeedSourceBalance.spread(selected);for(int start=0;start<75;start+=15)assertTrue(count(visible.subList(start,start+15),Source.V2EX)<=1);
+        List<FeedStore.Row> eligible=InterestPool.eligible(raw);assertEquals(200,count(eligible,Source.V2EX));
+        List<FeedStore.Row> selected=RecommendationWindow.select(FeedSourceBalance.arrange(eligible,less),new HashMap<>(),Set.of());
+        assertEquals(RecommendationWindow.SIZE,selected.size());assertTrue(count(selected,Source.V2EX)>0);assertTrue(count(selected,Source.V2EX)<count(selected,Source.BBC));
+        assertTrue(selected.stream().anyMatch(r->r.candidate.source==Source.V2EX&&r.candidate.sourceRank==1));
     }
     @Test public void aSingleAvailableSourceIsNeverDuplicatedOrPretendedToBeDiverse(){
         List<FeedStore.Row> one=new ArrayList<>();for(int n=0;n<18;n++)one.add(row(Source.V2EX,n));assertEquals(one,FeedSourceBalance.spread(one));
     }
-    @Test public void onlyManualFeedbackForThisSourceChangesItsBudgetRevision()throws Exception{
-        JSONArray feedback=new JSONArray();long original=InterestPool.sourceRevision(feedback,Source.V2EX);
+    @Test public void onlyManualFeedbackReopensMembership()throws Exception{
+        JSONArray feedback=new JSONArray();long original=InterestPool.revision(feedback);
         for(String action:List.of("READ","QUICK_EXIT"))feedback.put(new JSONObject().put("action",action).put("scope","sample").put("source","V2EX").put("target","body"));
-        feedback.put(new JSONObject().put("action","LESS").put("scope","source").put("target","BBC"));
-        assertEquals(original,InterestPool.sourceRevision(feedback,Source.V2EX));
-        feedback.put(new JSONObject().put("id","manual").put("action","LESS").put("scope","source").put("target","V2EX"));
-        assertNotEquals(original,InterestPool.sourceRevision(feedback,Source.V2EX));
-        feedback.remove(feedback.length()-1);assertEquals(original,InterestPool.sourceRevision(feedback,Source.V2EX));
+        assertEquals(original,InterestPool.revision(feedback));feedback.put(new JSONObject().put("action","LESS").put("scope","source").put("target","BBC"));
+        assertNotEquals(original,InterestPool.revision(feedback));assertEquals(0,new PlatformPreference(feedback).score(Source.V2EX),0);
     }
     @Test public void randomizedUnevenPoolsPreserveMembershipOrderAndDoNotCreateNegativeHeads(){
         for(int seed=0;seed<300;seed++){

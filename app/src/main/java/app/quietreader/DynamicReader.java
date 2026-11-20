@@ -89,6 +89,15 @@ public final class DynamicReader {
             }
             @Override public void onPageCommitVisible(WebView w,String url) { ready(w,url); }
             @Override public void onPageFinished(WebView w,String url) { ready(w,url); }
+            @Override public void onPageStarted(WebView w,String url,android.graphics.Bitmap icon){
+                if(item.source!=Source.WEIBO||ended)return;
+                if(WeiboPost.signIn(url)){
+                    handler.post(()->{if(!ended&&WeiboPost.signIn(web.getUrl()))weiboAccessRequired();});
+                }else if(WeiboPost.visitor(url)){
+                    // Give the source's guest flow time to complete normally.
+                    if(!weiboVisitorPending){weiboVisitorPending=true;handler.postDelayed(weiboVisitorTimeout,6_000);}
+                }else{weiboVisitorPending=false;handler.removeCallbacks(weiboVisitorTimeout);}
+            }
             @Override public void onReceivedSslError(WebView w,SslErrorHandler h,android.net.http.SslError e) { h.cancel(); fail(new ArticleFailure(ArticleFailure.Kind.PERMANENT,"来源证书异常，已停止读取")); }
             @Override public void onReceivedError(WebView w,WebResourceRequest r,WebResourceError e){if(r.isForMainFrame()){
                 int code=e.getErrorCode();boolean transientError=code==WebViewClient.ERROR_HOST_LOOKUP||code==WebViewClient.ERROR_CONNECT||code==WebViewClient.ERROR_TIMEOUT||code==WebViewClient.ERROR_IO;
@@ -110,6 +119,26 @@ public final class DynamicReader {
         // Closing in the same UI turn cancels this pending navigation too.
         handler.post(()->{if(!ended){web.loadUrl(topicPostUrl.isEmpty()?item.url:topicPostUrl);scheduleInspection(1200);}});
     }
+    private boolean weiboVisitorPending;
+    private Document confirmedWeiboGate;
+    private final Runnable checkWeiboGate=this::settleConfirmedWeiboGate;
+    void confirmWeiboGate(Document document){
+        if(item.source!=Source.WEIBO||!document.loginRequired||!WeiboPost.VISITOR_NOTICE.equals(document.notice)||!session.owns(document))return;
+        confirmedWeiboGate=document;
+        handler.removeCallbacks(checkWeiboGate);
+        handler.postDelayed(checkWeiboGate,8_000);
+    }
+    private void settleConfirmedWeiboGate(){
+        if(ended||confirmedWeiboGate==null)return;
+        if(session.owns(confirmedWeiboGate))expire();
+        else if(session.cookieChanged())retryChangedSession();
+    }
+    private final Runnable weiboVisitorTimeout=this::expireWeiboVisitor;
+    private void expireWeiboVisitor(){
+        weiboVisitorPending=false;
+        if(!ended&&(WeiboPost.visitor(web.getUrl())||WeiboPost.signIn(web.getUrl())))weiboAccessRequired();
+    }
+    private void weiboAccessRequired(){if(!retryChangedSession())fail(new ArticleFailure(ArticleFailure.Kind.AUTH,WeiboPost.VISITOR_NOTICE));}
     private void navigating(String url){
         navigation.begin(url);best=null;lastSnapshot="";attempts=0;
         // A renderer navigation can abandon evaluateJavascript without delivering
@@ -270,6 +299,7 @@ public final class DynamicReader {
                 &&expectedSource(web.getUrl())&&session.current()&&topicCurrent()){
             finish(best);return;
         }
+        if(confirmedWeiboGate!=null&&session.owns(confirmedWeiboGate)){weiboAccessRequired();return;}
         fail(new ArticleFailure(ArticleFailure.Kind.TRANSIENT,"未能及时取得正文，可打开来源页确认后重试"));
     }
     private void finish(Document doc) {

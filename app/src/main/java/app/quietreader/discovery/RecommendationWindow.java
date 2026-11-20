@@ -4,7 +4,7 @@ import java.util.*;
 
 /** A finite interest selection. Rebuilding a feed never fills it with rejected old rows. */
 public final class RecommendationWindow {
-    public static final int POOL_SIZE=300, SIZE=75;
+    public static final int POOL_SIZE=300, SIZE=60;
     private RecommendationWindow(){}
     public static String key(HotCandidate candidate){return candidate.id+"@"+candidate.textHash;}
     public static boolean startsNewWindow(List<FeedStore.Row> ranked,Map<String,Boolean> decisions,Set<String> delivered){
@@ -19,20 +19,26 @@ public final class RecommendationWindow {
         return select(ranked,decisions,delivered,Collections.emptySet(),false);
     }
     /** A first completed model pass may refine provisional, unshown choices.
-     * Already delivered provisional choices consume this window's 75 slots. */
+     * Already delivered provisional choices consume this window's 60 slots. */
     public static List<FeedStore.Row> select(List<FeedStore.Row> ranked,Map<String,Boolean> decisions,Set<String> delivered,Set<String> provisional,boolean refine){
+        return select(ranked,decisions,delivered,provisional,refine,delivered);
+    }
+    /** Replaying unread cards resets display rotation, not the model's selection allowance. */
+    public static List<FeedStore.Row> select(List<FeedStore.Row> ranked,Map<String,Boolean> decisions,Set<String> delivered,Set<String> provisional,boolean refine,Set<String> offered){
         Set<String> deliveredProvisional=new HashSet<>();
-        if(refine)for(String key:provisional){int at=key.indexOf('@');if(at>0&&delivered.contains(key.substring(0,at))&&Boolean.TRUE.equals(decisions.get(key)))deliveredProvisional.add(key.substring(0,at));}
-        if(refine)for(FeedStore.Row row:ranked)for(HotCandidate member:row.entries){String key=key(member);if(provisional.contains(key)){if(!delivered.contains(member.id))decisions.remove(key);}}
-        List<FeedStore.Row> result=new ArrayList<>();Set<String> chosen=new HashSet<>();int pending=0;
+        if(refine)for(String key:provisional){int at=key.indexOf('@');if(at>0&&offered.contains(key.substring(0,at))&&Boolean.TRUE.equals(decisions.get(key)))deliveredProvisional.add(key.substring(0,at));}
+        if(refine)for(FeedStore.Row row:ranked)for(HotCandidate member:row.entries){String key=key(member);if(provisional.contains(key)){if(!offered.contains(member.id))decisions.remove(key);}}
+        List<FeedStore.Row> result=new ArrayList<>(),replayed=new ArrayList<>();Set<String> chosen=new HashSet<>();int pending=0;
         for(FeedStore.Row row:ranked){
             boolean selected=false,known=false,shown=false;
             for(HotCandidate member:row.entries){String key=key(member);known|=decisions.containsKey(key);selected|=Boolean.TRUE.equals(decisions.get(key));shown|=delivered.contains(member.id);}
             if(row.interestBand==2||(!selected&&known)||shown&&!selected)continue;
+            if(shown){replayed.add(row);continue;}
             if(!shown&&pending>=SIZE-deliveredProvisional.size())continue;
             result.add(row);if(!shown)pending++;
-            for(HotCandidate member:row.entries)chosen.add(key(member));
         }
+        for(FeedStore.Row row:replayed){if(result.size()==SIZE)break;result.add(row);}
+        for(FeedStore.Row row:result)for(HotCandidate member:row.entries)chosen.add(key(member));
         // A better new candidate may displace an unshown selection. Remember that
         // rejection too: consuming the newcomer must not backfill the old tail.
         for(FeedStore.Row row:ranked)for(HotCandidate member:row.entries){String key=key(member);if(!delivered.contains(member.id))decisions.put(key,chosen.contains(key));else decisions.putIfAbsent(key,chosen.contains(key));}

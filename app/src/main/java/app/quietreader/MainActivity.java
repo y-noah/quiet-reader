@@ -303,25 +303,30 @@ public final class MainActivity extends Activity {
         public void failure(String why){if(request==generation){status("暂时没读到正文",why);content.addView(button("重试",()->open(item,false)));content.addView(button("来源 / 登录",()->login(item)));}}
         public void failure(ArticleFailure failure){
             if(request!=generation)return;
-            // A speculative request may be near its deadline when tapped. Give the
-            // explicit read one fresh acquisition; its failure does not recurse here.
-            if(readingResumed&&!isFinishing()&&!isDestroyed()&&(failure.retryable()||failure.kind==ArticleFailure.Kind.SESSION_CHANGED)&&failure.retryAt<=System.currentTimeMillis())loadArticleAfterCache(item,request);
+            // Give a nearly expired prefetch a fresh attempt when it fails soon
+            // after a tap. A slow foreground failure already used that opportunity.
+            if(readingResumed&&!isFinishing()&&!isDestroyed()&&failure.retryAfterPromotion(preloader.foregroundWaitMillis(),System.currentTimeMillis()))loadArticleAfterCache(item,request);
             else failure(failure.message);
         }
     };}
     private void loadArticleAfterCache(Item item,int request){
         if(repo.offline()){status("当前没有网络","此篇正文尚未缓存在本机。连接网络后可重试。");content.addView(button("重试",()->open(item,false)));return;}
         videoFallbackRequested=true;
-        if(SourceSession.usesWeb(this,item.source)){dynamic(item,request);return;}
+        if(SourceSession.usesWeb(this,item)){dynamic(item,request);return;}
         cancelPendingArticle();PendingArticle pending=new PendingArticle(this,item);pendingArticle=pending;bindPendingArticle(pending,item,request);pending.start();
     }
     private void bindPendingArticle(PendingArticle pending,Item item,int request){
         pending.attach(new Repository.Result<Document>(){
-            public void success(Document doc){if(pendingArticle!=pending||request!=generation)return;pendingArticle=null;if(doc.title.trim().isEmpty())doc.title=item.title;if(SourceSession.nativeDocumentReady(item.source,doc))renderCached(doc);else dynamic(item,request);}
+            public void success(Document doc){
+                if(pendingArticle!=pending||request!=generation)return;pendingArticle=null;
+                if(doc.title.trim().isEmpty())doc.title=item.title;
+                if(SourceSession.nativeDocumentReady(item.source,doc))renderCached(doc);
+                else{dynamic(item,request);dynamic.confirmWeiboGate(doc);}
+            }
             public void failure(String reason){if(pendingArticle!=pending||request!=generation)return;pendingArticle=null;dynamic(item,request);}
             public void failure(ArticleFailure failure){
                 if(pendingArticle!=pending||request!=generation)return;pendingArticle=null;
-                if(failure.mayFallback())dynamic(item,request);
+                if(failure.mayFallbackFromNative(item.source))dynamic(item,request);
                 else{status("暂时没读到正文",failure.message);content.addView(button("重试",()->open(item,false)));content.addView(button("来源 / 登录",()->login(item)));}
             }
         });

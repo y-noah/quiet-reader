@@ -2,6 +2,32 @@ package app.quietreader;
 import org.junit.Test;
 import static org.junit.Assert.*;
 public class ArticleCookiesTest {
+    @Test public void weiboSearchCacheTracksBothHostsWithoutSharingCookieHeaders(){
+        String desktop="https://s.weibo.com/weibo?q=demo",mobile="https://m.weibo.cn/search";
+        assertEquals(mobile,WeiboPost.searchPeer(desktop));
+        assertEquals("https://s.weibo.com/weibo",WeiboPost.searchPeer(mobile));
+        assertTrue(WeiboPost.sameSearchCookiePath(mobile,mobile+"?containerid=demo"));
+        assertFalse(WeiboPost.sameSearchCookiePath(desktop,mobile));
+        assertFalse(WeiboPost.sameSearchCookiePath(mobile,"https://m.weibo.cn/search/"));
+        assertFalse(WeiboPost.sameSearchCookiePath(mobile,"https://m.weibo.cn.example.org/search"));
+        assertFalse(WeiboPost.sameSearchCookiePath(mobile,"https://visitor.passport.weibo.cn/visitor/visitor"));
+        String scoped=ArticleCookies.fingerprint(desktop,"SUB=origin","SUB=mobile");
+        assertNotEquals(scoped,ArticleCookies.fingerprint(desktop,"SUB=changed","SUB=mobile"));
+        assertNotEquals(scoped,ArticleCookies.fingerprint(desktop,"SUB=origin","SUB=changed"));
+        assertNotEquals(scoped,ArticleCookies.fingerprint(desktop,"SUB=origin",null));
+        String status="https://m.weibo.cn/status/123";
+        assertEquals(ArticleCookies.fingerprint(status,"SUB=mobile"),ArticleCookies.fingerprint(status,"SUB=mobile","unused"));
+    }
+    @Test public void mobileWeiboSearchContextRotatesIndependentlyOfLogin(){
+        String desktop="https://s.weibo.com/weibo?q=demo",mobile="https://m.weibo.cn/search";
+        String first="mweibo_short_token=login; SUB=account; M_WEIBOCN_PARAMS=before";
+        String next=first.replace("before","after");
+        assertEquals(ArticleCookies.fingerprint(desktop,"SUB=desktop",first),ArticleCookies.fingerprint(desktop,"SUB=desktop",next));
+        assertEquals(ArticleCookies.fingerprint(mobile,first),ArticleCookies.fingerprint(mobile,next));
+        assertNotEquals(ArticleCookies.fingerprint(mobile,first),ArticleCookies.fingerprint(mobile,next.replace("=login","=changed")));
+        assertNotEquals(ArticleCookies.fingerprint(mobile,first),ArticleCookies.fingerprint(mobile,next.replace("=account","=other")));
+        assertNotEquals(ArticleCookies.fingerprint("https://m.weibo.cn/status/123",first),ArticleCookies.fingerprint("https://m.weibo.cn/status/123",next));
+    }
     @Test public void searchNavigationAnalyticsCannotInvalidatePreviouslyPreparedTopics(){
         String url="https://www.baidu.com/s?wd=test";
         assertEquals(ArticleCookies.fingerprint(url,"BDUSS=account; COOKIE_SESSION=first"),ArticleCookies.fingerprint(url,"BDUSS=account; COOKIE_SESSION=second"));

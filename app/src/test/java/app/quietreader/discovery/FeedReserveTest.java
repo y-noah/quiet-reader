@@ -12,17 +12,17 @@ public class FeedReserveTest {
             rows.add(new FeedStore.Row(c.id,c,"",List.of(c),0));
         }return rows;
     }
-    @Test public void fourPreparedRoundsDoNotRepeatOrCountAsExposure(){
+    @Test public void threePreparedRoundsDoNotRepeatOrCountAsExposure(){
         List<FeedStore.Row> pool=pool(100);FeedReserve reserve=new FeedReserve();Set<String> seen=new HashSet<>();
         List<FeedStore.Row> visible=FeedBatch.first(pool);reserve.accepted(visible);visible.forEach(row->seen.add(row.eventId));reserve.stage(pool,"all");
-        assertEquals(60,reserve.future().size());assertEquals(15,reserve.next("all").size());
+        assertEquals(45,reserve.future().size());assertEquals(15,reserve.next("all").size());
         assertEquals(reserve.next("all"),reserve.next("all"));
-        for(int n=0;n<4;n++){
+        for(int n=0;n<3;n++){
             List<FeedStore.Row> ordered=FeedReserve.promote(pool,reserve.next("all"));visible=FeedBatch.first(ordered);
             for(FeedStore.Row row:visible)assertTrue("No earlier screen repeats",seen.add(row.eventId));
             reserve.accepted(visible);reserve.stage(ordered,"all");
         }
-        assertEquals(75,seen.size());assertEquals(100,pool.size());
+        assertEquals(60,seen.size());assertEquals(100,pool.size());
     }
     @Test public void sourceChangesAndExhaustionNeverInventEntries(){
         List<FeedStore.Row> pool=pool(23);FeedReserve reserve=new FeedReserve();reserve.accepted(FeedBatch.first(pool));reserve.stage(pool,"all");
@@ -60,6 +60,6 @@ public class FeedReserveTest {
         // Acquisition fails after staging; removing that concrete failed body must
         // keep the next future body ahead of already presented original ranks 0..19.
         promoted.remove(3);Set<String> presented=new HashSet<>();for(FeedStore.Row row:FeedBatch.first(rows))presented.add(row.eventId);
-        for(int n=0;n<59;n++){assertFalse(presented.contains(promoted.get(n).eventId));assertEquals(rows.get(15+n+(n>=3?1:0)).eventId,promoted.get(n).eventId);}
+        for(int n=0;n<44;n++){assertFalse(presented.contains(promoted.get(n).eventId));assertEquals(rows.get(15+n+(n>=3?1:0)).eventId,promoted.get(n).eventId);}
     }
 }

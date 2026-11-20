@@ -6,8 +6,24 @@ import java.util.*;
 final class ArticleCookies {
     private ArticleCookies(){}
     static String fingerprint(String url,String raw){return app.quietreader.discovery.HotCandidate.hash(identity(url,raw));}
+    static String fingerprint(String url,String raw,String peerCookie){
+        String peer=WeiboPost.searchPeer(url);
+        String initial=fingerprint(url,raw);
+        if(peer.isEmpty())return initial;
+        return app.quietreader.discovery.HotCandidate.hash("weibo-search-v1:"+initial+":"+fingerprint(peer,peerCookie));
+    }
     static String identity(String url,String raw){
         if(raw==null)raw="";
+        if(VideoPolicy.weiboTopic(url)&&"m.weibo.cn".equals(UrlPolicy.host(url))){
+            List<String> fields=new ArrayList<>();
+            for(String field:raw.split(";")){
+                String value=field.trim();
+                // The mobile search rewrites this entry context as it navigates.
+                // mweibo_short_token and every account or unknown field still count.
+                if(!value.isEmpty()&&!cookieName(value).equals("M_WEIBOCN_PARAMS"))fields.add(value);
+            }
+            return "weibo-mobile-search-v2;"+String.join("; ",fields);
+        }
         // Cookie header order and analytics/CSRF request context are not account
         // changes. Keep authentication, device/risk and every unknown cookie.
         // Stable sorting retains relative order of duplicate-name path cookies.

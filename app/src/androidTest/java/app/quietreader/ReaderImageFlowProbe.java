@@ -75,4 +75,65 @@ final class ReaderImageFlowProbe {
         finally{MainActivity owner=activity;test.runOnMainSync(()->{if(owner!=null)owner.finish();});test.waitForIdleSync();}
         report.append("checks=").append(checks).append(" failures=").append(failures).append('\n');Bundle result=new Bundle();result.putString("stream",report.toString());test.finish(failures==0?Activity.RESULT_OK:Activity.RESULT_CANCELED,result);
     }
+
+    void capturedZhihuAnswer() {
+        MainActivity activity = null;
+        try (InputStream input = test.getContext().getAssets().open("zhihu-20261116/image-fallback.html")) {
+            String url = "https://www.zhihu.com/question/2104954238514230174";
+            String html = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            Document body = SourceParser.readingArticle(Source.ZHIHU, html, url);
+            Item item = new Item(Source.ZHIHU, body.title, url, "");
+            ArticleVersion.capture(item, body);
+            test.runOnMainSync(() -> {
+                Repository repo = new Repository(test.getTargetContext());
+                try { repo.cacheArticle(body); } finally { repo.close(); }
+            });
+            int index = -1;
+            for (int i = 0; i < body.sections.size(); i++) {
+                if ("2105401197649838538".equals(body.sections.get(i).id)) index = i;
+            }
+            if (index < 0) throw new IOException("Original answer missing");
+            String section = "document.querySelector('#part-" + index + "')";
+            activity = (MainActivity)test.startActivitySync(new Intent(test.getTargetContext(), MainActivity.class)
+                .putExtra("direct_reader", true).putExtra("discovery_item", item.json().toString())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+            MainActivity owner = activity;
+            awaitDom(owner, "!!" + section + "?.querySelector('[aria-expanded]')");
+            if ("true".equals(js((WebView)field(owner, "readerWeb"), "!!" + section + "?.querySelector('[aria-expanded=\"true\"]')"))) {
+                js((WebView)field(owner, "readerWeb"), section + ".querySelector('[aria-expanded]').click()");
+            }
+            for (boolean open : new boolean[]{true, false, true}) {
+                String action = section + "?.querySelector('[aria-expanded=\"" + !open + "\"]')";
+                String expected = section + "?.querySelector('[aria-expanded=\"" + open + "\"]')";
+                awaitDom(owner, "!!" + action);
+                js((WebView)field(owner, "readerWeb"), action + ".click()");
+                awaitDom(owner, "!!" + expected);
+                if (open) {
+                    String count = js((WebView)field(owner, "readerWeb"), section + ".querySelectorAll('figure img').length");
+                    check("3".equals(count), "expanded original answer renders exactly three images, actual=" + count);
+                }
+            }
+        } catch (Throwable failure) {
+            failures++;
+            report.append("ERROR ").append(failure).append('\n');
+        } finally {
+            MainActivity owner = activity;
+            if (owner != null) test.runOnMainSync(owner::finish);
+        }
+        Bundle result = new Bundle();
+        result.putString("stream", "Captured original Zhihu HTML in Android reader\n" + report.substring(report.indexOf("\n") + 1)
+            + "checks=" + checks + " failures=" + failures);
+        test.finish(failures == 0 ? Activity.RESULT_OK : Activity.RESULT_CANCELED, result);
+    }
+
+    private void awaitDom(MainActivity owner, String condition) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 12000;
+        do {
+            WebView[] web = new WebView[1];
+            test.runOnMainSync(() -> web[0] = (WebView)field(owner, "readerWeb"));
+            if (web[0] != null && "true".equals(js(web[0], condition))) return;
+            Thread.sleep(80);
+        } while (SystemClock.elapsedRealtime() < deadline);
+        throw new IOException("Reader did not reach " + condition);
+    }
 }

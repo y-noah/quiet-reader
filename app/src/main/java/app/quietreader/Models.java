@@ -16,6 +16,8 @@ public final class Models {
         IFANR("爱范儿", "最新文章·非热榜", "https://www.ifanr.com/", "https://www.ifanr.com/"),
         V2EX("V2EX", "最热", "https://www.v2ex.com/?tab=hot", "https://www.v2ex.com/signin"),
         INFOQ("InfoQ 中文", "最新技术文章·非热榜", "https://www.infoq.cn/feed", "https://www.infoq.cn/"),
+        QBITAI("量子位", "热门文章", "https://www.qbitai.com/", "https://www.qbitai.com/"),
+        LEIPHONE_AI("雷峰网·人工智能", "AI最新文章·非热榜", "https://www.leiphone.com/category/ai", "https://www.leiphone.com/"),
         SOLIDOT("奇客 Solidot", "热门文章", "https://www.solidot.org/", "https://www.solidot.org/"),
         ITHOME("IT之家", "日榜", "https://www.ithome.com/", "https://www.ithome.com/"),
         THEPAPER("澎湃新闻", "热榜", "https://cache.thepaper.cn/contentapi/wwwIndex/rightSidebar", "https://www.thepaper.cn/"),

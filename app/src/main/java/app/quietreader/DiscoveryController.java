@@ -189,6 +189,7 @@ final class DiscoveryController implements AutoCloseable {
     private String visibleMode="cold";
     private Map<Source,JSONObject> states=new EnumMap<>(Source.class);
     private static final class Snapshot {
+        boolean replayed;
         long id,turn;JSONObject info;List<FeedStore.Row> rows,future;int readyCount=-1,remaining;PlatformPreference preference;
     }
     DiscoveryController(Activity activity,Listener listener,boolean autoRefresh){
@@ -395,7 +396,8 @@ final class DiscoveryController implements AutoCloseable {
             },next->{
                 if(request!=explicitRefreshEpoch)return;
                 if(generation!=feedGeneration||!foreground||!feedPage){explicitRefreshing(false);return;}
-                if(next.info==null||SourceFilter.apply(next.rows,filter).isEmpty()){finishExhaustedRefresh(collect);return;}
+                if(next.info==null){explicitRefreshing(false);listener.error("本次更新暂未完成，已保留当前内容");return;}
+                if(SourceFilter.apply(next.rows,filter).isEmpty()){finishExhaustedRefresh();return;}
                 long newer=pending!=capturedPending?pending:0;
                 accept(next,false,()->{if(request!=explicitRefreshEpoch)return;if(newer>0&&newer!=next.id){pending=newer;state();}explicitRefreshing(false);if(collect&&foreground&&feedPage)refresh();});
             });
@@ -450,7 +452,7 @@ final class DiscoveryController implements AutoCloseable {
             // action, with a bounded retry rather than an unbounded callback loop.
             if(pending>capturedPending&&attempt<2){refreshPresentation(request,generation,pending,pending,collect,filter,latest,attempt+1);return;}
             if(next.info==null||progressGeneration!=progressEpoch||!context.current()||progressScopes.values().stream().anyMatch(scope->!scope.current())){explicitRefreshing(false);listener.error("本次更新暂未完成，已保留当前内容");return;}
-            if(SourceFilter.apply(next.rows,filter).isEmpty()){finishExhaustedRefresh(collect);return;}
+            if(SourceFilter.apply(next.rows,filter).isEmpty()){finishExhaustedRefresh();return;}
             // A newer pending computation belongs to a later explicit action.
             long newer=pending>capturedPending?pending:0;
             try{next.info.put("anchor","").put("offset",0);}catch(JSONException impossible){throw new IllegalStateException(impossible);}
@@ -464,17 +466,25 @@ final class DiscoveryController implements AutoCloseable {
             });
         });
     }
-    private void finishExhaustedRefresh(boolean collect){
+    private void finishExhaustedRefresh(){
         explicitRefreshing(false);exhausted(true);recycleRecommendations();
     }
     private void recycleRecommendations(){
         cacheAction();explicitRefreshing(true);long request=++explicitRefreshEpoch;int generation=feedGeneration;String filter=sourceFilter;boolean latest=newest;
         boolean collect=!loading&&SystemClock.elapsedRealtime()-lastPoolRefresh>=FeedReserve.UPDATE_MS;
-        work(()->{long rebuilt=build(latest);long next=rebuilt>0?store.recycleSnapshot(rebuilt,filter,System.currentTimeMillis()):-1;return next>0?read(next):new Snapshot();},next->{
+        work(()->{
+            long rebuilt=build(latest);
+            if(rebuilt<=0)return new Snapshot();
+            FeedStore.RefreshFallback fallback=store.advanceOrRecycle(rebuilt,filter,System.currentTimeMillis());
+            if(fallback.snapshot<=0)return new Snapshot();
+            Snapshot next=read(fallback.snapshot);
+            next.replayed=fallback.replayed;
+            return next;
+        },next->{
             if(request!=explicitRefreshEpoch)return;
             if(generation!=feedGeneration||!foreground||!feedPage){explicitRefreshing(false);return;}
             if(next.info==null){explicitRefreshing(false);listener.error("本次更新暂未完成，已保留当前内容");return;}
-            accept(next,false,()->{if(request!=explicitRefreshEpoch)return;explicitRefreshing(false);listener.error("暂无新内容");if(collect&&foreground&&feedPage)refresh();});
+            accept(next,false,()->{if(request!=explicitRefreshEpoch)return;explicitRefreshing(false);if(next.replayed)listener.error("暂无新内容");if(collect&&foreground&&feedPage)refresh();});
         });
     }
     private void exhausted(boolean value){recommendationExhausted=value;listener.exhausted(value);}

@@ -2,9 +2,9 @@ package app.quietreader.discovery;
 
 import java.util.*;
 
-/** Metadata for four future screens. Reserving never records a view or a preference. */
+/** Metadata for three future screens. Reserving never records a view or a preference. */
 public final class FeedReserve {
-    public static final int ROUNDS=4, CAPACITY=FeedBatch.SIZE*(ROUNDS+1);
+    public static final int ROUNDS=3, CAPACITY=FeedBatch.SIZE*(ROUNDS+1);
     public static final long UPDATE_MS=5*60_000L;
     private final LinkedHashSet<String> presented=new LinkedHashSet<>();
     private List<FeedStore.Row> future=Collections.emptyList();

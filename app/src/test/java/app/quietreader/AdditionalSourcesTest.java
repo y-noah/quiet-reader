@@ -7,7 +7,7 @@ import static app.quietreader.Models.*;
 
 public class AdditionalSourcesTest {
     @Test public void allConfiguredSourcesRemainReadable(){
-        assertEquals(18,Source.values().length);
+        assertEquals(20,Source.values().length);
         for(Source source:Source.values())assertTrue(source.readable());
     }
     @Test public void ifanrListUsesObservedArticleContainersAndSkipsForeignDuplicates()throws Exception{

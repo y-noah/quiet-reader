@@ -45,7 +45,7 @@ final class FiniteRecommendationProbe {
                 seed.ensureCandidatePolicy();for(Source source:Source.values())seed.enable(source,source==Source.THEPAPER||multi&&List.of(Source.V2EX,Source.BBC,Source.ITHOME).contains(source));
                 for(Source source:Source.values()){List<HotCandidate> group=candidates.stream().filter(c->c.source==source).toList();if(!group.isEmpty())seed.upsertSnapshot(source,seed.beginRefresh(source),group,now);}seed.finishInterestSetup(List.of(),Map.of(),now);
                 List<FeedStore.Row> selected=seed.selectRecommendations(ranked,now,false);
-                check(selected.size()==75&&selected.get(0).candidate.sourceRank==300,"preference selection admits 75 relevant rows rather than top source heat ranks");
+                check(selected.size()==60&&selected.stream().allMatch(row->row.candidate.sourceRank>=226),"preference selection admits 60 relevant rows rather than top source heat ranks");
                 long id=seed.commitRanking(seed.version("sources"),seed.profile(now).getLong("version"),now,"personal","all",multi?FeedSourceBalance.spread(selected):selected);seed.activateSnapshot(id);
             }
             test.getUiAutomation().setOnAccessibilityEventListener(event->{if(event.getEventType()==AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED&&event.getText().toString().contains("暂无新内容"))exhaustedToast=true;});
@@ -53,10 +53,10 @@ final class FiniteRecommendationProbe {
             controller=(DiscoveryController)field(home,"controller");serial=(ExecutorService)field(controller,"storage");store=(FeedStore)field(controller,"store");
             await("focused fifteen",()->home.hasWindowFocus()&&(boolean)field(controller,"ready")&&visible().size()==15);ui(()->controller.interacting(true));
             Set<String> seen=new HashSet<>();
-            for(int round=0;round<5;round++){
+            for(int round=0;round<4;round++){
                 if(round>0){if(round%2==0)pull();else refresh();}
                 List<FeedStore.Row> rows=visible();check(rows.size()==15,"screen "+(round+1)+" contains exactly fifteen recommendations");
-                if(multi){Map<Source,Long> counts=new EnumMap<>(Source.class);for(FeedStore.Row row:rows)counts.merge(row.candidate.source,1L,Long::sum);report.append("PAGE ").append(round+1).append(" ").append(counts).append('\n');check(counts.size()==4&&counts.getOrDefault(Source.V2EX,0L)==9,"all four platforms remain visible on actual page "+(round+1)+", including the fifth");}
+                if(multi){Map<Source,Long> counts=new EnumMap<>(Source.class);for(FeedStore.Row row:rows)counts.merge(row.candidate.source,1L,Long::sum);report.append("PAGE ").append(round+1).append(" ").append(counts).append('\n');check(counts.size()==4&&counts.getOrDefault(Source.V2EX,0L)>0,"all four platforms remain visible on actual page "+(round+1)+"");}
                 for(FeedStore.Row row:rows)check(seen.add(row.eventId),"new visible identity "+row.candidate.title);
                 await("bound first title",()->text(home.getWindow().getDecorView(),rows.get(0).candidate.title));
                 int expectedCount=15;check(onUi(()->((ListView)field(home,"list")).getCount()==expectedCount),"actual adapter has exactly fifteen data rows without an exhaustion footer, round "+(round+1));shot("finite-round-"+(round+1));
@@ -64,10 +64,10 @@ final class FiniteRecommendationProbe {
             ui(()->((ListView)field(home,"list")).setSelection(14));test.waitForIdleSync();check(onUi(()->!text(home.getWindow().getDecorView(),"暂无新内容")),"no persistent no-new-content message below the hot list");shot("finite-no-footer");ui(()->((ListView)field(home,"list")).setSelection(0));
             refresh();Thread.sleep(300);check(exhaustedToast,"actual exhausted refresh displays no-new-recommendations message");
             check(visible().size()==15&&visible().stream().allMatch(row->seen.contains(row.candidate.id)),"exhaustion cycles fifteen unread selected rows without admitting rejected tail");shot("finite-cycle");
-            check(seen.size()==75,"five real home batches contain exactly 75 distinct recommendations");
+            check(seen.size()==60,"four real home batches contain exactly 60 distinct recommendations");
             HotCandidate consumed=visible().get(0).candidate;serial.submit(()->{store.recordConsumed(consumed,System.currentTimeMillis());return null;}).get(10,TimeUnit.SECONDS);
             ui(()->{controller.stop();controller.start();controller.interacting(true);});
-            check(visible().stream().noneMatch(row->row.candidate.id.equals(consumed.id)),"returning from reading immediately removes the read card before another refresh");
+            check(visible().stream().anyMatch(row->row.candidate.id.equals(consumed.id)),"returning from reading retains the visible card until explicit refresh");
             for(int round=0;round<6;round++){if(round%2==0)pull();else refresh();check(visible().size()<=15&&visible().stream().noneMatch(row->row.candidate.id.equals(consumed.id))&&visible().stream().allMatch(row->seen.contains(row.candidate.id)),"unread cycle excludes a read item across repeated pull/dot refresh "+round);}
             serial.submit(()->{for(FeedStore.Row row:ranked)if(seen.contains(row.eventId))store.recordConsumed(row.candidate,System.currentTimeMillis());return null;}).get(10,TimeUnit.SECONDS);
             refresh();await("all selected content read",()->visible().isEmpty());

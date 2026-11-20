@@ -24,6 +24,8 @@ public final class UrlPolicy {
             case IFANR: return domain(h,"ifanr.com");
             case V2EX:return domain(h,"v2ex.com");
             case INFOQ:return h.equals("www.infoq.cn")||h.equals("infoq.cn");
+            case QBITAI:return h.equals("www.qbitai.com")||h.equals("qbitai.com");
+            case LEIPHONE_AI:return h.equals("www.leiphone.com")||h.equals("leiphone.com");
             case SOLIDOT:return h.equals("www.solidot.org")||h.equals("solidot.org");
             case ITHOME:return domain(h,"ithome.com");
             case THEPAPER:return domain(h,"thepaper.cn");

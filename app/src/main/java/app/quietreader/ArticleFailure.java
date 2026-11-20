@@ -2,6 +2,7 @@ package app.quietreader;
 
 /** Acquisition outcome retained across asynchronous delivery; no account information. */
 final class ArticleFailure {
+    private static final long EARLY_FOREGROUND_FAILURE_MS=5_000;
     enum Kind { TRANSIENT, OFFLINE, SESSION_CHANGED, AUTH, RATE_LIMIT, PERMANENT, UNKNOWN }
     final Kind kind;
     final String message;
@@ -23,5 +24,13 @@ final class ArticleFailure {
         return unknown(message);
     }
     boolean retryable(){return kind==Kind.TRANSIENT;}
+    boolean retryAfterPromotion(long foregroundWaitMillis,long now){
+        return retryAt<=now&&(kind==Kind.SESSION_CHANGED||retryable()&&foregroundWaitMillis<EARLY_FOREGROUND_FAILURE_MS);
+    }
+    private boolean nytTransportFailure(Models.Source source){return source==Models.Source.NYT&&kind==Kind.TRANSIENT&&httpStatus==0;}
+    boolean mayFallbackFromNative(Models.Source source){return !nytTransportFailure(source)&&mayFallback();}
+    ArticleFailure forNativeArticle(Models.Source source){
+        return nytTransportFailure(source)?new ArticleFailure(kind,"纽约时报中文网连接失败。请确认当前网络可访问来源后重试。"):this;
+    }
     boolean mayFallback(){return kind!=Kind.RATE_LIMIT&&kind!=Kind.PERMANENT&&retryAt<=System.currentTimeMillis();}
 }

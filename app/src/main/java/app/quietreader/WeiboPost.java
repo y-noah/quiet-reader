@@ -8,6 +8,38 @@ import static app.quietreader.Models.*;
 /** Only observed mobile post routes may continue a truncated search-card body. */
 final class WeiboPost {
     private WeiboPost(){}
+    static final String VISITOR_NOTICE="微博要求完成访客验证或登录。请打开来源页确认后重新读取。";
+    static final class VisitorRequired extends java.io.IOException {}
+    static String searchPeer(String url){
+        if(!VideoPolicy.weiboTopic(url))return "";
+        return "s.weibo.com".equals(UrlPolicy.host(url))?"https://m.weibo.cn/search":"https://s.weibo.com/weibo";
+    }
+    static boolean sameSearchCookiePath(String first,String second){
+        return VideoPolicy.weiboTopic(first)&&VideoPolicy.weiboTopic(second)
+                &&UrlPolicy.host(first).equals(UrlPolicy.host(second))
+                &&URI.create(first).getRawPath().equals(URI.create(second).getRawPath());
+    }
+    static boolean gateRedirect(String original,String destination){
+        return VideoPolicy.weiboTopic(original)&&(visitor(destination)||signIn(destination));
+    }
+    static Document gateDocument(String url){
+        Document result=new Document();result.url=url;result.loginRequired=true;result.notice=VISITOR_NOTICE;return result;
+    }
+    static boolean signIn(String url){
+        if(!UrlPolicy.belongs(Source.WEIBO,url))return false;
+        String host=UrlPolicy.host(url),path=URI.create(url).getPath();
+        return "passport.weibo.com".equals(host)&&"/sso/v2/login".equals(path)
+                ||"passport.weibo.cn".equals(host)&&"/signin/login".equals(path);
+    }
+    static boolean visitor(String url){
+        if(!UrlPolicy.belongs(Source.WEIBO,url))return false;
+        String host=UrlPolicy.host(url),path=URI.create(url).getPath();
+        return "/visitor/visitor".equals(path)&&("passport.weibo.com".equals(host)||"visitor.passport.weibo.cn".equals(host));
+    }
+    static boolean accessGate(String url,org.jsoup.nodes.Document page){
+        return UrlPolicy.belongs(Source.WEIBO,url)&&(signIn(url)||"Sina Visitor System".equals(page.title())
+                &&page.selectFirst("head script[src^=/js/visitor/mini_original.js]")!=null);
+    }
     static String id(String url){
         if(!UrlPolicy.https(url)||!"m.weibo.cn".equals(UrlPolicy.host(url)))return "";
         try{

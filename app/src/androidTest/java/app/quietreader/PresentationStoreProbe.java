@@ -32,7 +32,7 @@ final class PresentationStoreProbe {
                 SQLiteDatabase raw=store.getWritableDatabase();raw.execSQL("DROP TABLE presentations");raw.execSQL("DROP TABLE recommendation_window");raw.setVersion(9);
             }
             try(FeedStore upgraded=new FeedStore(test.getTargetContext(),database)){
-                check(upgraded.getWritableDatabase().getVersion()==13&&count(upgraded.getWritableDatabase(),"presentations")==0&&count(upgraded.getWritableDatabase(),"recommendation_window")==0,"v9 to v12 adds delivery storage without destructive recreation");
+                check(upgraded.getWritableDatabase().getVersion()==14&&count(upgraded.getWritableDatabase(),"presentations")==0&&count(upgraded.getWritableDatabase(),"recommendation_window")==0,"v9 to v12 adds delivery storage without destructive recreation");
                 check(upgraded.candidates(200,0).size()==60&&upgraded.profile(now).getLong("version")==profile,"migration preserves source candidates and profile version");check(upgraded.activeSnapshot()>0&&upgraded.readSnapshot(upgraded.activeSnapshot(),15,0).size()==15,"migration preserves the previous visible snapshot");
                 // The earlier disabled-source case deliberately invalidated the
                 // old snapshot; seed a current v11 ranking before testing resume.
@@ -41,10 +41,22 @@ final class PresentationStoreProbe {
                 SQLiteDatabase raw=upgraded.getWritableDatabase();raw.execSQL("DROP TABLE recommendation_window");raw.setVersion(11);
             }
             try(FeedStore upgraded=new FeedStore(test.getTargetContext(),database)){
-                check(upgraded.getWritableDatabase().getVersion()==13&&count(upgraded.getWritableDatabase(),"recommendation_window")==0,"v11 installed-version upgrade creates the recommendation window");
+                check(upgraded.getWritableDatabase().getVersion()==14&&count(upgraded.getWritableDatabase(),"recommendation_window")==0,"v11 installed-version upgrade creates the recommendation window");
                 check(count(upgraded.getWritableDatabase(),"presentations")==15&&upgraded.candidates(200,0).size()==60&&upgraded.profile(now).getLong("version")==profile,"v11 upgrade preserves delivery history, candidates and preference version");
                 long next=upgraded.presentationSnapshot(upgraded.activeSnapshot(),"all",Collections.emptyList(),now+4);
                 check(next>0&&upgraded.readSnapshot(next,15,0).get(0).eventId.equals(pool.get(15).eventId),"v11 upgrade resumes after previously delivered content rather than replaying it");
+                upgraded.recordPresentation(pool,now+5);
+                List<FeedStore.Row> rebuilt=new ArrayList<>(pool.subList(1,60));
+                FeedStore.Row arrival=rows(6000,1,now+6).get(0);
+                rebuilt.add(arrival);
+                long rebuiltId=upgraded.commitRanking(upgraded.version("sources"),profile,now+6,"cold","all",rebuilt);
+                FeedStore.RefreshFallback fresh=upgraded.advanceOrRecycle(rebuiltId,"all",now+6);
+                check(!fresh.replayed&&upgraded.readSnapshot(fresh.snapshot,60,0).stream().map(row->row.eventId).toList().equals(List.of(arrival.eventId)),
+                    "stale exhaustion cannot replay older cards when rebuild discovers a new title");
+                check(upgraded.unpresented(rebuilt,now+6).size()==1,"the new arrival does not reset previous delivery history");
+                upgraded.recordPresentation(List.of(arrival),now+7);
+                FeedStore.RefreshFallback replay=upgraded.advanceOrRecycle(rebuiltId,"all",now+8);
+                check(replay.replayed&&upgraded.readSnapshot(replay.snapshot,60,0).size()==60,"fully exhausted unread selection can still be replayed");
             }
         }catch(Throwable error){failures++;report.append("ERROR ").append(android.util.Log.getStackTraceString(error));}
         finally{test.getTargetContext().deleteDatabase(database);}

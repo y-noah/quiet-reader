@@ -23,6 +23,9 @@ final class SourceSession {
     static void preferWeb(Context context,Source source){
         context.getSharedPreferences("source-session",0).edit().putBoolean(source.name()+"-web",true).apply();
     }
+    static boolean usesWeb(Context context,Item item){
+        return !(item.source==Source.WEIBO&&VideoPolicy.weiboTopic(item.url))&&usesWeb(context,item.source);
+    }
     static boolean usesWeb(Context context,Source source){
         // V2EX and Hupu render their thread/replies in the HTML. Send the shared account
         // cookies through Repository first; a past login visit must not force

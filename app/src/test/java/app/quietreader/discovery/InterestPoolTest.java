@@ -18,31 +18,28 @@ public final class InterestPoolTest {
         return rows;
     }
     private JSONObject less(Source source)throws Exception{return new JSONObject().put("action","LESS").put("scope","source").put("target",source.name());}
-    private List<FeedStore.Row> selected(List<FeedStore.Row> pool,JSONArray feedback){return RecommendationWindow.select(InterestPool.eligible(pool,new PlatformPreference(feedback)),new HashMap<>(),Set.of());}
-    @Test public void sourceLessReducesWholePoolInsteadOfPushingItsRowsToTheEnd()throws Exception{
-        List<FeedStore.Row> pool=pool(300),selected=selected(pool,new JSONArray().put(less(Source.V2EX)));
-        assertEquals(75,selected.size());assertEquals(6,selected.stream().filter(r->r.candidate.source==Source.V2EX).count());
-        int previous=-1;for(FeedStore.Row row:selected){int position=pool.indexOf(row);assertTrue(position>previous);previous=position;}
-        assertTrue(selected.subList(60,75).stream().noneMatch(r->r.candidate.source==Source.V2EX));
+    private List<FeedStore.Row> selected(List<FeedStore.Row> pool,JSONArray feedback){return RecommendationWindow.select(FeedSourceBalance.arrange(InterestPool.eligible(pool),new PlatformPreference(feedback)),new HashMap<>(),Set.of());}
+    private long count(List<FeedStore.Row> rows,Source source){return rows.stream().filter(r->r.candidate.source==source).count();}
+    @Test public void sourceLessReducesShareWithoutDeletingCandidates()throws Exception{
+        List<FeedStore.Row> pool=pool(300),chosen=selected(pool,new JSONArray().put(less(Source.V2EX)));
+        assertEquals(RecommendationWindow.SIZE,chosen.size());assertTrue(count(chosen,Source.V2EX)>0);assertTrue(count(chosen,Source.V2EX)<count(chosen,Source.ZHIHU));
+        assertEquals(pool,InterestPool.eligible(pool));assertTrue(chosen.stream().anyMatch(r->r.candidate.source==Source.V2EX&&r.candidate.sourceRank==1));
     }
-    @Test public void multipleLessSourcesHaveIndependentBudgetsWithoutTailFallback()throws Exception{
-        List<FeedStore.Row> selected=selected(pool(300),new JSONArray().put(less(Source.V2EX)).put(less(Source.ZHIHU)));
-        assertEquals(75,selected.size());assertEquals(6,selected.stream().filter(r->r.candidate.source==Source.ZHIHU).count());assertEquals(6,selected.stream().filter(r->r.candidate.source==Source.V2EX).count());
+    @Test public void multipleLessSourcesRemainAvailable()throws Exception{
+        List<FeedStore.Row> chosen=selected(pool(300),new JSONArray().put(less(Source.V2EX)).put(less(Source.ZHIHU)));
+        assertEquals(RecommendationWindow.SIZE,chosen.size());for(Source source:List.of(Source.V2EX,Source.ZHIHU)){assertTrue(count(chosen,source)>0);assertTrue(count(chosen,source)<count(chosen,Source.TIEBA));}
     }
-    @Test public void insufficientUsableSupplyLeavesPoolShort()throws Exception{
-        List<FeedStore.Row> selected=selected(pool(75),new JSONArray().put(less(Source.V2EX)));
-        assertEquals(56,selected.size());assertEquals(6,selected.stream().filter(r->r.candidate.source==Source.V2EX).count());
-    }
-    @Test public void onlyOneDislikedSourceStillHasSmallerMembership()throws Exception{
-        List<FeedStore.Row> pool=new ArrayList<>();for(FeedStore.Row row:pool(300))if(row.candidate.source==Source.V2EX)pool.add(row);
-        assertEquals(18,selected(pool,new JSONArray().put(less(Source.V2EX))).size());
+    @Test public void scarcityDoesNotTurnASoftDislikeIntoEmptySpace()throws Exception{
+        List<FeedStore.Row> pool=pool(45);assertEquals(new HashSet<>(pool),new HashSet<>(selected(pool,new JSONArray().put(less(Source.V2EX)))));
+        List<FeedStore.Row> one=pool(300).stream().filter(r->r.candidate.source==Source.V2EX).toList();
+        assertEquals(RecommendationWindow.SIZE,selected(one,new JSONArray().put(less(Source.V2EX))).size());
     }
     @Test public void semanticNegativeContentIsExcludedEvenWhenFewerThanSeventyFiveRemain(){
         List<FeedStore.Row> pool=pool(80);for(int n=10;n<pool.size();n++)pool.set(n,pool.get(n).withInterestBand(2));
         assertEquals(pool.subList(0,10),selected(pool,new JSONArray()));
     }
     @Test public void undoRestoresNormalMembershipAndNeverChangesRanking()throws Exception{
-        List<FeedStore.Row> pool=pool(300);assertEquals(25,selected(pool,new JSONArray()).stream().filter(r->r.candidate.source==Source.V2EX).count());
+        List<FeedStore.Row> pool=pool(300);assertEquals(RecommendationWindow.SIZE/3,selected(pool,new JSONArray()).stream().filter(r->r.candidate.source==Source.V2EX).count());
         PlatformPreference preference=new PlatformPreference(new JSONArray().put(less(Source.V2EX)));
         assertEquals(pool.stream().map(r->r.eventId).toList(),preference.apply(pool).stream().map(r->r.eventId).toList());
     }
@@ -59,7 +56,7 @@ public final class InterestPoolTest {
         List<FeedStore.Row> ranked=SemanticOrder.fuse(SemanticOrder.rank(pool,profile,vectors),Map.of(),profile.platforms);
         List<FeedStore.Row> chosen=selected(ranked,profile.feedback());
         List<String> expected=new ArrayList<>();for(int n=0;n<pool.size();n++)if(n%3!=0&&n!=20)expected.add(pool.get(n).eventId);
-        assertEquals(59,chosen.size());assertEquals(expected,chosen.stream().map(row->row.eventId).toList());
+        assertEquals(59,chosen.size());assertEquals(new HashSet<>(expected),new HashSet<>(chosen.stream().map(row->row.eventId).toList()));
     }
     @Test public void explicitDislikedIdentityCannotReturnAfterTitleEditOrGroupRepresentativeChange()throws Exception{
         List<FeedStore.Row> pool=pool(3);HotCandidate old=pool.get(0).candidate;
